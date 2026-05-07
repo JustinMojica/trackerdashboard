@@ -2,10 +2,10 @@ import React, { FormEvent, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
-type AssignmentSource = "Email" | "DAM";
-type AssignmentType = "DCA" | "CH" | "MGA" | "Company Contract";
-type AuditType = "Remote" | "Onsite";
-type Stage =
+export type AssignmentSource = "Email" | "DAM";
+export type AssignmentType = "DCA" | "CH" | "MGA" | "Company Contract";
+export type AuditType = "Remote" | "Onsite";
+export type Stage =
   | "Intake"
   | "Registration"
   | "Quote"
@@ -18,37 +18,37 @@ type Stage =
   | "Final Submission"
   | "Invoice"
   | "Closed";
-type AssignmentStatus =
+export type AssignmentStatus =
   | "New"
   | "In Progress"
   | "Blocked"
   | "On Hold"
   | "Completed";
-type QuoteStatus =
+export type QuoteStatus =
   | "Not Started"
   | "Drafting"
   | "Sent"
   | "Accepted"
   | "Rejected";
-type ProgressStatus =
+export type ProgressStatus =
   | "Not Started"
   | "In Progress"
   | "Complete"
   | "Not Required";
-type ReportStatus = "Not Started" | "Drafting" | "Review" | "Issued";
-type InvoiceStatus = "Not Started" | "Prepared" | "Sent" | "Paid";
-type ProjectLabel =
+export type ReportStatus = "Not Started" | "Drafting" | "Review" | "Issued";
+export type InvoiceStatus = "Not Started" | "Prepared" | "Sent" | "Paid";
+export type ProjectLabel =
   | "High Priority"
   | "Medium Priority"
   | "Low Priority"
   | "Waiting on Broker";
-type DamSubmissionStatus =
+export type DamSubmissionStatus =
   | "Not Required"
   | "Not Started"
   | "Submitted"
   | "Accepted";
 
-type StatusHistoryItem = {
+export type StatusHistoryItem = {
   id: string;
   changedAt: string;
   changedBy: string;
@@ -57,14 +57,14 @@ type StatusHistoryItem = {
   note: string;
 };
 
-type ProjectComment = {
+export type ProjectComment = {
   id: string;
   createdAt: string;
   author: string;
   body: string;
 };
 
-type AuditProject = {
+export type AuditProject = {
   id: string;
   assignmentNumber: string;
   assignmentSource: AssignmentSource;
@@ -86,6 +86,9 @@ type AuditProject = {
   premiumBdxReceived: boolean;
   preAuditQuestionnaireStatus: ProgressStatus;
   documentRequestStatus: ProgressStatus;
+  documentRequestDate: string;
+  brokerLastChasedDate: string;
+  brokerExpectedResponseDate: string;
   fileSelectionCompleted: boolean;
   testingSheetCompleted: boolean;
   findingsSentDate: string;
@@ -122,7 +125,7 @@ type SavedView =
   | "awaitingDocuments";
 type ViewMode = "kanban" | "table";
 
-const stages: Stage[] = [
+export const stages: Stage[] = [
   "Intake",
   "Registration",
   "Quote",
@@ -168,7 +171,7 @@ const defaultAuditorOptions = [
   "Lindsie Guillermo",
 ];
 
-const sampleProjects: AuditProject[] = [
+export const sampleProjects: AuditProject[] = [
   {
     id: "audit-001",
     assignmentNumber: "AA-2026-0142",
@@ -191,6 +194,9 @@ const sampleProjects: AuditProject[] = [
     premiumBdxReceived: false,
     preAuditQuestionnaireStatus: "Not Started",
     documentRequestStatus: "In Progress",
+    documentRequestDate: "2026-04-28",
+    brokerLastChasedDate: "2026-05-01",
+    brokerExpectedResponseDate: "2026-05-08",
     fileSelectionCompleted: false,
     testingSheetCompleted: false,
     findingsSentDate: "",
@@ -254,6 +260,9 @@ const sampleProjects: AuditProject[] = [
     premiumBdxReceived: false,
     preAuditQuestionnaireStatus: "Complete",
     documentRequestStatus: "In Progress",
+    documentRequestDate: "2026-04-25",
+    brokerLastChasedDate: "2026-05-04",
+    brokerExpectedResponseDate: "2026-05-07",
     fileSelectionCompleted: false,
     testingSheetCompleted: false,
     findingsSentDate: "",
@@ -318,6 +327,9 @@ const sampleProjects: AuditProject[] = [
     premiumBdxReceived: true,
     preAuditQuestionnaireStatus: "Complete",
     documentRequestStatus: "Complete",
+    documentRequestDate: "2026-04-08",
+    brokerLastChasedDate: "2026-04-18",
+    brokerExpectedResponseDate: "2026-04-22",
     fileSelectionCompleted: true,
     testingSheetCompleted: true,
     findingsSentDate: "2026-04-30",
@@ -381,6 +393,9 @@ const sampleProjects: AuditProject[] = [
     premiumBdxReceived: true,
     preAuditQuestionnaireStatus: "Complete",
     documentRequestStatus: "Complete",
+    documentRequestDate: "2026-04-01",
+    brokerLastChasedDate: "2026-04-08",
+    brokerExpectedResponseDate: "2026-04-12",
     fileSelectionCompleted: true,
     testingSheetCompleted: true,
     findingsSentDate: "2026-04-16",
@@ -439,6 +454,9 @@ const blankProject = (): AuditProject => ({
   premiumBdxReceived: false,
   preAuditQuestionnaireStatus: "Not Started",
   documentRequestStatus: "Not Started",
+  documentRequestDate: "",
+  brokerLastChasedDate: "",
+  brokerExpectedResponseDate: "",
   fileSelectionCompleted: false,
   testingSheetCompleted: false,
   findingsSentDate: "",
@@ -457,7 +475,7 @@ const blankProject = (): AuditProject => ({
   comments: [],
 });
 
-const requiredDocuments = [
+export const requiredDocuments = [
   { key: "baaReceived", label: "BAA received" },
   { key: "endorsementsReceived", label: "Endorsements received" },
   { key: "premiumBdxReceived", label: "Premium BDX received" },
@@ -527,7 +545,7 @@ const checklistByStage: Record<Stage, string[]> = {
   ],
 };
 
-function withProjectDefaults(project: AuditProject): AuditProject {
+export function withProjectDefaults(project: AuditProject): AuditProject {
   return {
     ...project,
     assignmentType: project.assignmentType ?? "CH",
@@ -535,6 +553,9 @@ function withProjectDefaults(project: AuditProject): AuditProject {
     paymentReceived:
       project.paymentReceived ?? project.invoiceStatus === "Paid",
     labels: project.labels ?? [],
+    documentRequestDate: project.documentRequestDate ?? "",
+    brokerLastChasedDate: project.brokerLastChasedDate ?? "",
+    brokerExpectedResponseDate: project.brokerExpectedResponseDate ?? "",
     checklistCompletions: project.checklistCompletions ?? {},
     comments: project.comments ?? [],
   };
@@ -593,13 +614,13 @@ function checklistKey(stage: Stage, item: string) {
   return `${stage}:${item}`;
 }
 
-function getMissingDocuments(project: AuditProject) {
+export function getMissingDocuments(project: AuditProject) {
   return requiredDocuments
     .filter((doc) => !project[doc.key])
     .map((doc) => doc.label);
 }
 
-function computedBlockers(project: AuditProject) {
+export function computedBlockers(project: AuditProject) {
   const blockers: string[] = [...getMissingDocuments(project)];
   if (
     stages.indexOf(project.currentStage) >= stages.indexOf("Quote") &&
@@ -625,7 +646,7 @@ function computedBlockers(project: AuditProject) {
   return blockers;
 }
 
-function canMoveToStage(project: AuditProject, targetStage: Stage) {
+export function canMoveToStage(project: AuditProject, targetStage: Stage) {
   const targetIndex = stages.indexOf(targetStage);
   if (
     targetIndex >= stages.indexOf("Scheduling") &&
@@ -648,13 +669,13 @@ function canMoveToStage(project: AuditProject, targetStage: Stage) {
   return "";
 }
 
-function daysUntil(dateValue: string) {
+export function daysUntil(dateValue: string) {
   if (!dateValue) return Number.POSITIVE_INFINITY;
   const due = new Date(`${dateValue}T12:00:00Z`);
   return Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-function dueLabel(project: AuditProject) {
+export function dueLabel(project: AuditProject) {
   const days = daysUntil(project.dueDate);
   if (!Number.isFinite(days))
     return { text: "No due date", className: "muted" };
@@ -663,6 +684,147 @@ function dueLabel(project: AuditProject) {
   if (days <= 3) return { text: `Due in ${days}d`, className: "warning" };
   return { text: `Due ${project.dueDate}`, className: "ok" };
 }
+
+export type DocumentWorkflowAction =
+  | "markWaitingOnBroker"
+  | "recordBrokerChase"
+  | "markDocumentsComplete";
+
+export type ActivityItem = {
+  id: string;
+  timestamp: string;
+  type: "stage" | "comment" | "checklist" | "document";
+  title: string;
+  detail: string;
+  tone?: "ok" | "warning" | "danger" | "muted";
+};
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function addUniqueLabel(labels: ProjectLabel[], label: ProjectLabel) {
+  return labels.includes(label) ? labels : [...labels, label];
+}
+
+export function documentReadiness(project: AuditProject) {
+  const requiredComplete = requiredDocuments.filter((doc) => project[doc.key]).length;
+  const workflowComplete = [
+    project.preAuditQuestionnaireStatus === "Complete",
+    project.documentRequestStatus === "Complete",
+  ].filter(Boolean).length;
+  const completeCount = requiredComplete + workflowComplete;
+  const totalCount = requiredDocuments.length + 2;
+  return {
+    completeCount,
+    totalCount,
+    percent: Math.round((completeCount / totalCount) * 100),
+    missingDocuments: getMissingDocuments(project),
+    waitingOnBroker: project.labels.includes("Waiting on Broker"),
+  };
+}
+
+export function applyDocumentWorkflowAction(
+  project: AuditProject,
+  action: DocumentWorkflowAction,
+  date = todayIso(),
+): AuditProject {
+  if (action === "markWaitingOnBroker") {
+    return withProjectDefaults({
+      ...project,
+      labels: addUniqueLabel(project.labels, "Waiting on Broker"),
+      assignmentStatus: project.currentStage === "Closed" ? project.assignmentStatus : "On Hold",
+      documentRequestStatus:
+        project.documentRequestStatus === "Not Required" ? "In Progress" : project.documentRequestStatus,
+      documentRequestDate: project.documentRequestDate || date,
+      brokerLastChasedDate: project.brokerLastChasedDate || date,
+      nextAction:
+        project.nextAction || "Follow up with broker on outstanding documents.",
+      lastUpdatedDate: date,
+    });
+  }
+  if (action === "recordBrokerChase") {
+    return withProjectDefaults({
+      ...project,
+      labels: addUniqueLabel(project.labels, "Waiting on Broker"),
+      assignmentStatus: project.currentStage === "Closed" ? project.assignmentStatus : "On Hold",
+      documentRequestStatus:
+        project.documentRequestStatus === "Not Required" ? "In Progress" : project.documentRequestStatus,
+      documentRequestDate: project.documentRequestDate || date,
+      brokerLastChasedDate: date,
+      nextAction: `Broker chased on ${date}; await outstanding documents.`,
+      lastUpdatedDate: date,
+    });
+  }
+  return withProjectDefaults({
+    ...project,
+    baaReceived: true,
+    endorsementsReceived: true,
+    premiumBdxReceived: true,
+    preAuditQuestionnaireStatus: "Complete",
+    documentRequestStatus: "Complete",
+    labels: project.labels.filter((label) => label !== "Waiting on Broker"),
+    assignmentStatus: project.currentStage === "Closed" ? project.assignmentStatus : "In Progress",
+    nextAction: "Documents complete; proceed with file selection/readiness review.",
+    lastUpdatedDate: date,
+  });
+}
+
+export function activityTimeline(project: AuditProject): ActivityItem[] {
+  const stageItems: ActivityItem[] = project.statusHistory.map((item) => ({
+    id: `stage-${item.id}`,
+    timestamp: item.changedAt,
+    type: "stage",
+    title: `${item.fromStage} → ${item.toStage}`,
+    detail: `${item.note} · ${item.changedBy}`,
+    tone: "ok",
+  }));
+  const commentItems: ActivityItem[] = project.comments.map((comment) => ({
+    id: `comment-${comment.id}`,
+    timestamp: comment.createdAt,
+    type: "comment",
+    title: `Comment from ${comment.author}`,
+    detail: comment.body,
+    tone: "muted",
+  }));
+  const checklistItems: ActivityItem[] = Object.entries(project.checklistCompletions)
+    .filter(([, complete]) => complete)
+    .map(([key]) => ({
+      id: `checklist-${key}`,
+      timestamp: project.lastUpdatedDate,
+      type: "checklist",
+      title: "Checklist completed",
+      detail: key.split(":").slice(1).join(":") || key,
+      tone: "ok",
+    }));
+  const documentItems: ActivityItem[] = [];
+  if (project.documentRequestDate) {
+    documentItems.push({
+      id: "document-requested",
+      timestamp: project.documentRequestDate,
+      type: "document",
+      title: "Document request sent",
+      detail: `Request status: ${project.documentRequestStatus}`,
+      tone: "warning",
+    });
+  }
+  if (project.brokerLastChasedDate) {
+    documentItems.push({
+      id: "broker-chased",
+      timestamp: project.brokerLastChasedDate,
+      type: "document",
+      title: "Broker follow-up recorded",
+      detail: project.brokerExpectedResponseDate
+        ? `Expected response: ${project.brokerExpectedResponseDate}`
+        : "No expected response date set",
+      tone: "warning",
+    });
+  }
+  return [...stageItems, ...commentItems, ...checklistItems, ...documentItems].sort(
+    (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
+  );
+}
+
 
 function sourceTasks(project: AuditProject) {
   return project.assignmentSource === "DAM"
@@ -678,7 +840,7 @@ function sourceTasks(project: AuditProject) {
       ];
 }
 
-function escapeCsv(value: string | number | boolean) {
+export function escapeCsv(value: string | number | boolean) {
   const text = String(value ?? "");
   return `"${text.replace(/"/g, '""')}"`;
 }
@@ -747,6 +909,7 @@ function App() {
   const [hiddenWorkloadAuditors, setHiddenWorkloadAuditors] = useState<
     string[]
   >([]);
+  const [shownZeroLoadAuditors, setShownZeroLoadAuditors] = useState<string[]>([]);
 
   const auditors = [
     ...auditorOptions,
@@ -754,6 +917,22 @@ function App() {
       .map((project) => project.assignedAuditor)
       .filter((auditor) => auditor && !auditorOptions.includes(auditor)),
   ];
+  const zeroLoadAuditors = auditors.filter(
+    (auditor) =>
+      !projects.some(
+        (project) =>
+          project.assignedAuditor === auditor && project.currentStage !== "Closed",
+      ),
+  );
+  const effectiveHiddenWorkloadAuditors = Array.from(
+    new Set([
+      ...hiddenWorkloadAuditors,
+      ...zeroLoadAuditors.filter(
+        (auditor) => !shownZeroLoadAuditors.includes(auditor),
+      ),
+    ]),
+  );
+
   const filteredProjects = useMemo(
     () =>
       projects.filter((project) => {
@@ -916,6 +1095,24 @@ function App() {
     setSelectedId(project.id);
   };
 
+  const updateProjectDocumentWorkflow = (
+    project: AuditProject,
+    action: DocumentWorkflowAction,
+  ) => {
+    const updatedProject = applyDocumentWorkflowAction(project, action);
+    persist(
+      projects.map((item) => (item.id === project.id ? updatedProject : item)),
+    );
+    setSelectedId(project.id);
+    const actionMessage =
+      action === "markDocumentsComplete"
+        ? "Document readiness marked complete."
+        : action === "recordBrokerChase"
+          ? "Broker follow-up recorded."
+          : "Waiting on Broker applied.";
+    setMessage(`${actionMessage} ${project.assignmentNumber} updated.`);
+  };
+
   return (
     <main>
       <header className="hero">
@@ -958,15 +1155,33 @@ function App() {
       <WorkloadCounts
         projects={projects}
         auditors={auditors}
-        hiddenAuditors={hiddenWorkloadAuditors}
-        toggleAuditorHidden={(auditor) =>
+        hiddenAuditors={effectiveHiddenWorkloadAuditors}
+        toggleAuditorHidden={(auditor) => {
+          const isZeroLoad = zeroLoadAuditors.includes(auditor);
+          if (effectiveHiddenWorkloadAuditors.includes(auditor)) {
+            setHiddenWorkloadAuditors((current) =>
+              current.filter((item) => item !== auditor),
+            );
+            if (isZeroLoad) {
+              setShownZeroLoadAuditors((current) =>
+                current.includes(auditor) ? current : [...current, auditor],
+              );
+            }
+            return;
+          }
           setHiddenWorkloadAuditors((current) =>
-            current.includes(auditor)
-              ? current.filter((item) => item !== auditor)
-              : [...current, auditor],
-          )
-        }
-        showAllAuditors={() => setHiddenWorkloadAuditors([])}
+            current.includes(auditor) ? current : [...current, auditor],
+          );
+          if (isZeroLoad) {
+            setShownZeroLoadAuditors((current) =>
+              current.filter((item) => item !== auditor),
+            );
+          }
+        }}
+        showAllAuditors={() => {
+          setHiddenWorkloadAuditors([]);
+          setShownZeroLoadAuditors(zeroLoadAuditors);
+        }}
       />
       <PeopleAdmin
         auditorOptions={auditorOptions}
@@ -1015,6 +1230,7 @@ function App() {
           onMove={moveProject}
           onAddComment={addProjectComment}
           onToggleChecklist={toggleChecklistItem}
+          onDocumentWorkflowAction={updateProjectDocumentWorkflow}
         />
       )}
       {editing && (
@@ -1152,10 +1368,7 @@ function WorkloadCounts({
   toggleAuditorHidden: (auditor: string) => void;
   showAllAuditors: () => void;
 }) {
-  const visibleAuditors = auditors.filter(
-    (auditor) => !hiddenAuditors.includes(auditor),
-  );
-  const workloadRows = visibleAuditors.map((auditor) => {
+  const buildRow = (auditor: string) => {
     const openProjects = projects.filter(
       (project) =>
         project.assignedAuditor === auditor &&
@@ -1174,19 +1387,30 @@ function WorkloadCounts({
         : openProjects.length >= 2
           ? "medium"
           : "low";
+    const status =
+      openProjects.length === 0
+        ? "Available"
+        : openProjects.length >= 4
+          ? "At capacity"
+          : openProjects.length >= 2
+            ? "Moderate load"
+            : "Light load";
     return {
       auditor,
       openCount: openProjects.length,
       blockedCount,
       dueSoonCount,
+      status,
       tone,
     };
-  });
-  const totalVisibleOpen = workloadRows.reduce(
-    (sum, row) => sum + row.openCount,
-    0,
+  };
+  const visibleAuditors = auditors.filter(
+    (auditor) => !hiddenAuditors.includes(auditor),
   );
-  const busiestCount = Math.max(...workloadRows.map((row) => row.openCount), 1);
+  const workloadRows = visibleAuditors.map(buildRow);
+  const totalOpen = auditors
+    .map(buildRow)
+    .reduce((sum, row) => sum + row.openCount, 0);
 
   return (
     <section className="panel workload-dashboard">
@@ -1196,10 +1420,10 @@ function WorkloadCounts({
           <h2>Auditor workload</h2>
         </div>
         <div className="workload-summary">
-          <strong>{totalVisibleOpen}</strong>
+          <strong>{totalOpen}</strong>
           <span>open assignments</span>
           <small>
-            {visibleAuditors.length} visible · {hiddenAuditors.length} minimized
+            {visibleAuditors.length} active · {hiddenAuditors.length} minimized
           </small>
         </div>
       </div>
@@ -1222,8 +1446,8 @@ function WorkloadCounts({
         </div>
       )}
       <p className="workload-meter-note">
-        Blue bars compare each auditor’s open assignments with the busiest visible
-        auditor. Longer bars mean more open work relative to that peak.
+        Auditors with no open assignments are minimized by default. Active rows
+        show plain workload counts instead of relative bars.
       </p>
       <div className="workload-list">
         {workloadRows.map((row) => (
@@ -1244,30 +1468,20 @@ function WorkloadCounts({
                 </small>
               </div>
             </div>
-            <div
-              className="workload-meter-group"
-              aria-label={`${row.auditor} workload: ${row.openCount} open assignments, ${Math.round(
-                (row.openCount / busiestCount) * 100,
-              )}% of the busiest visible auditor`}
-            >
-              <div className="workload-meter-label">
-                <span>Relative open load</span>
-                <strong>
-                  {row.openCount} / {busiestCount}
-                </strong>
-              </div>
-              <div
-                className="workload-meter"
-                role="progressbar"
-                aria-label="Open assignments compared with the busiest visible auditor"
-                aria-valuemin={0}
-                aria-valuemax={busiestCount}
-                aria-valuenow={row.openCount}
-              >
-                <span
-                  style={{ width: `${(row.openCount / busiestCount) * 100}%` }}
-                />
-              </div>
+            <div className="workload-stats" aria-label={`${row.auditor} workload summary`}>
+              <span className="workload-stat primary">
+                <strong>{row.openCount}</strong>
+                Open
+              </span>
+              <span className={row.blockedCount ? "workload-stat danger" : "workload-stat"}>
+                <strong>{row.blockedCount}</strong>
+                Blocked
+              </span>
+              <span className={row.dueSoonCount ? "workload-stat warning" : "workload-stat"}>
+                <strong>{row.dueSoonCount}</strong>
+                Due soon
+              </span>
+              <span className={`workload-status ${row.tone}`}>{row.status}</span>
             </div>
             <button
               type="button"
@@ -1692,12 +1906,14 @@ function ProjectDetail({
   onMove,
   onAddComment,
   onToggleChecklist,
+  onDocumentWorkflowAction,
 }: {
   project: AuditProject;
   onEdit: () => void;
   onMove: (project: AuditProject, stage: Stage) => void;
   onAddComment: (project: AuditProject, comment: ProjectComment) => void;
   onToggleChecklist: (project: AuditProject, key: string) => void;
+  onDocumentWorkflowAction: (project: AuditProject, action: DocumentWorkflowAction) => void;
 }) {
   const blockers = computedBlockers(project);
   return (
@@ -1772,9 +1988,13 @@ function ProjectDetail({
           </label>
         </div>
       </article>
+      <DocumentReadiness
+        project={project}
+        onDocumentWorkflowAction={onDocumentWorkflowAction}
+      />
       <Checklist project={project} onToggleChecklist={onToggleChecklist} />
       <Comments project={project} onAddComment={onAddComment} />
-      <History project={project} />
+      <ActivityTimeline project={project} />
     </section>
   );
 }
@@ -1785,6 +2005,129 @@ function Meta({ label, value }: { label: string; value: string }) {
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
+  );
+}
+
+function DocumentReadiness({
+  project,
+  onDocumentWorkflowAction,
+}: {
+  project: AuditProject;
+  onDocumentWorkflowAction: (project: AuditProject, action: DocumentWorkflowAction) => void;
+}) {
+  const readiness = documentReadiness(project);
+  return (
+    <article className="panel document-workflow">
+      <div className="section-title">
+        <div>
+          <h2>Document readiness</h2>
+          <span>
+            {readiness.completeCount}/{readiness.totalCount} readiness items complete
+          </span>
+        </div>
+        <span className={`readiness-score ${readiness.percent === 100 ? "ok" : "warning"}`}>
+          {readiness.percent}%
+        </span>
+      </div>
+      <div className="readiness-track" aria-hidden="true">
+        <span style={{ width: `${readiness.percent}%` }} />
+      </div>
+      <div className="document-status-grid">
+        {requiredDocuments.map((doc) => (
+          <span
+            key={doc.key}
+            className={`document-chip ${project[doc.key] ? "complete" : "missing"}`}
+          >
+            {project[doc.key] ? "✓" : "•"} {doc.label}
+          </span>
+        ))}
+        <span
+          className={`document-chip ${
+            project.preAuditQuestionnaireStatus === "Complete" ? "complete" : "missing"
+          }`}
+        >
+          Questionnaire: {project.preAuditQuestionnaireStatus}
+        </span>
+        <span
+          className={`document-chip ${
+            project.documentRequestStatus === "Complete" ? "complete" : "missing"
+          }`}
+        >
+          Request: {project.documentRequestStatus}
+        </span>
+      </div>
+      <div className="document-dates">
+        <Meta label="Requested" value={project.documentRequestDate || "Not sent"} />
+        <Meta label="Last chased" value={project.brokerLastChasedDate || "Not chased"} />
+        <Meta
+          label="Expected response"
+          value={project.brokerExpectedResponseDate || "Not set"}
+        />
+      </div>
+      {readiness.missingDocuments.length > 0 ? (
+        <p className="readiness-note">
+          Missing: {readiness.missingDocuments.join(", ")}
+        </p>
+      ) : (
+        <p className="readiness-note ok-text">All core documents are marked received.</p>
+      )}
+      <div className="document-actions">
+        <button
+          type="button"
+          className="secondary"
+          onClick={() =>
+            onDocumentWorkflowAction(project, "markWaitingOnBroker")
+          }
+        >
+          Mark waiting on broker
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => onDocumentWorkflowAction(project, "recordBrokerChase")}
+        >
+          Record broker chase
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            onDocumentWorkflowAction(project, "markDocumentsComplete")
+          }
+        >
+          Mark documents complete
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function ActivityTimeline({ project }: { project: AuditProject }) {
+  const items = activityTimeline(project);
+  return (
+    <article className="panel activity-panel">
+      <div className="section-title">
+        <div>
+          <h2>Activity timeline</h2>
+          <span>Comments, stage moves, checklist, and document follow-ups</span>
+        </div>
+      </div>
+      {items.length === 0 ? (
+        <p>No activity yet.</p>
+      ) : (
+        <div className="activity-list">
+          {items.map((item) => (
+            <div className={`activity-item ${item.type}`} key={item.id}>
+              <span className={`activity-type ${item.tone || "muted"}`}>
+                {item.type}
+              </span>
+              <strong>{item.title}</strong>
+              <small>{item.timestamp}</small>
+              <p>{item.detail}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </article>
   );
 }
 
@@ -2208,6 +2551,24 @@ function ProjectForm({
             update("documentRequestStatus", value as ProgressStatus)
           }
         />
+        <Input
+          label="Document request date"
+          type="date"
+          value={draft.documentRequestDate}
+          onChange={(value) => update("documentRequestDate", value)}
+        />
+        <Input
+          label="Broker last chased"
+          type="date"
+          value={draft.brokerLastChasedDate}
+          onChange={(value) => update("brokerLastChasedDate", value)}
+        />
+        <Input
+          label="Expected broker response"
+          type="date"
+          value={draft.brokerExpectedResponseDate}
+          onChange={(value) => update("brokerExpectedResponseDate", value)}
+        />
       </div>
       <label>
         Next action
@@ -2439,4 +2800,8 @@ function Check({
   );
 }
 
-createRoot(document.getElementById("root")!).render(<App />);
+const rootElement = typeof document !== "undefined" ? document.getElementById("root") : null;
+
+if (rootElement) {
+  createRoot(rootElement).render(<App />);
+}

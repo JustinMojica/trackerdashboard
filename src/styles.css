@@ -254,7 +254,7 @@ textarea {
 .detail-grid {
   display: grid;
   gap: 1rem;
-  grid-template-columns: 2fr 1fr 1fr;
+  grid-template-columns: 2fr 1.1fr 1fr 1fr;
   align-items: start;
 }
 .detail {
@@ -317,6 +317,114 @@ textarea {
   margin: 0.25rem 0 0;
 }
 
+.document-workflow {
+  display: grid;
+  gap: 0.85rem;
+}
+.readiness-score {
+  border-radius: 999px;
+  font-weight: 900;
+  padding: 0.35rem 0.65rem;
+}
+.readiness-track {
+  background: #edf2f8;
+  border-radius: 999px;
+  height: 12px;
+  overflow: hidden;
+}
+.readiness-track span {
+  background: linear-gradient(90deg, #14713a, #2aa866);
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+}
+.document-status-grid,
+.document-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.document-chip {
+  background: #fff1cc;
+  border-radius: 999px;
+  color: #905400;
+  font-size: 0.82rem;
+  font-weight: 900;
+  padding: 0.35rem 0.65rem;
+}
+.document-chip.complete {
+  background: #e7f7ed;
+  color: #14713a;
+}
+.document-dates {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.document-dates span {
+  color: #66748a;
+  display: block;
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.document-dates strong {
+  display: block;
+  font-size: 0.9rem;
+  margin-top: 0.15rem;
+}
+.readiness-note {
+  color: #53637a;
+  margin: 0;
+}
+.ok-text {
+  color: #14713a;
+  font-weight: 800;
+}
+.activity-panel {
+  grid-column: span 2;
+}
+.activity-list {
+  display: grid;
+  gap: 0.75rem;
+}
+.activity-item {
+  background: #f8fbff;
+  border: 1px solid #dfe7f2;
+  border-left: 4px solid #9fb7dc;
+  border-radius: 14px;
+  padding: 0.8rem;
+}
+.activity-item.stage {
+  border-left-color: #14713a;
+}
+.activity-item.comment {
+  border-left-color: #1358db;
+}
+.activity-item.document {
+  border-left-color: #b46b00;
+}
+.activity-type {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 0.7rem;
+  font-weight: 900;
+  margin-bottom: 0.35rem;
+  padding: 0.2rem 0.45rem;
+  text-transform: uppercase;
+}
+.activity-item strong,
+.activity-item small {
+  display: block;
+}
+.activity-item small {
+  color: #66748a;
+  margin-top: 0.15rem;
+}
+.activity-item p {
+  margin: 0.45rem 0 0;
+}
+
 .modal-backdrop {
   background: rgba(10, 18, 32, 0.55);
   inset: 0;
@@ -356,6 +464,9 @@ textarea {
   .detail-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  .activity-panel {
+    grid-column: auto;
+  }
   .filters,
   .form-grid,
   .meta-grid {
@@ -374,7 +485,8 @@ textarea {
   .detail-grid,
   .filters,
   .form-grid,
-  .meta-grid {
+  .meta-grid,
+  .document-dates {
     grid-template-columns: 1fr;
   }
   .modal-backdrop {
@@ -678,35 +790,63 @@ td span {
 .workload-person small {
   color: #66748a;
 }
-.workload-meter-group {
-  display: grid;
-  gap: 0.35rem;
-}
-.workload-meter-label {
+.workload-stats {
   align-items: center;
-  color: #53637a;
   display: flex;
-  font-size: 0.78rem;
-  font-weight: 800;
-  justify-content: space-between;
-  letter-spacing: 0.04em;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+.workload-stat,
+.workload-status {
+  background: #f5f7fb;
+  border: 1px solid #dfe7f2;
+  border-radius: 14px;
+  color: #53637a;
+  display: inline-grid;
+  font-size: 0.74rem;
+  font-weight: 900;
+  gap: 0.1rem;
+  min-width: 82px;
+  padding: 0.45rem 0.6rem;
   text-transform: uppercase;
 }
-.workload-meter-label strong {
-  color: #15386d;
-  font-size: 0.82rem;
+.workload-stat strong {
+  color: #172033;
+  font-size: 1.1rem;
+  line-height: 1;
 }
-.workload-meter {
-  background: #edf2f8;
-  border-radius: 999px;
-  height: 10px;
-  overflow: hidden;
+.workload-stat.primary {
+  background: #eaf1ff;
+  border-color: #c6d6f0;
 }
-.workload-meter span {
-  background: linear-gradient(90deg, #29a0b1, #1358db);
-  border-radius: inherit;
-  display: block;
-  height: 100%;
+.workload-stat.danger {
+  background: #ffe5e5;
+  border-color: #ffc9c9;
+  color: #a92020;
+}
+.workload-stat.warning {
+  background: #fff1cc;
+  border-color: #ffdf87;
+  color: #905400;
+}
+.workload-status {
+  align-items: center;
+  min-height: 54px;
+}
+.workload-status.high {
+  background: #ffe5e5;
+  border-color: #ffc9c9;
+  color: #a92020;
+}
+.workload-status.medium {
+  background: #fff1cc;
+  border-color: #ffdf87;
+  color: #905400;
+}
+.workload-status.low {
+  background: #e7f7ed;
+  border-color: #b8e8c8;
+  color: #14713a;
 }
 .intake-modal {
   max-width: 1040px;

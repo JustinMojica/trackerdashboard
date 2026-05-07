@@ -9,6 +9,13 @@ npm install
 npm run dev
 ```
 
+Run local checks and the lightweight workflow test suite with:
+
+```bash
+npm run check
+npm test
+```
+
 > The current environment may block npm registry access. The project is set up as a normal Vite + React app once dependencies can be installed.
 
 ## Lifecycle stages
@@ -59,6 +66,7 @@ A future SharePoint implementation should use an **Audit Assignments** list for 
 
 | Update size | Version | What changed                                                                                                                                            |
 | ----------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Major       | UX-2    | Add activity timeline, document readiness workflow actions, zero-load workload minimization, and a Node test suite for workflow logic.                  |
 | Major       | UX-1    | Redesign workload as a dashboard, add guided intake, Trello-style labels, Today’s Work, interactive checklists, and stronger Office 365 data readiness. |
 | Small       | Patch   | Copy changes, option-list tweaks, and small field additions that do not change the primary workflow.                                                    |
 
