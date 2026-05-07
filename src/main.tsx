@@ -94,6 +94,14 @@ type Filters = {
   missingDocuments: boolean;
 };
 
+type SavedView =
+  | "all"
+  | "myAudits"
+  | "blocked"
+  | "dueThisWeek"
+  | "awaitingDocuments";
+type ViewMode = "kanban" | "table";
+
 const stages: Stage[] = [
   "Intake",
   "Registration",
@@ -111,6 +119,20 @@ const stages: Stage[] = [
 
 const today = new Date("2026-05-05T12:00:00Z");
 const storageKey = "audit-assignment-tracker-projects-v1";
+const auditorStorageKey = "audit-assignment-tracker-auditors-v1";
+const myAuditorStorageKey = "audit-assignment-tracker-my-auditor-v1";
+
+const defaultAuditorOptions = [
+  "Lorraine Mojica",
+  "Walter Aviles",
+  "Leslie Domenech",
+  "Mark James",
+  "Justin Mojica",
+  "Sheilah Couture",
+  "Annabelle J. Crawford Mojica",
+  "Molly Aviles",
+  "Lindsie Guillermo",
+];
 
 const sampleProjects: AuditProject[] = [
   {
@@ -119,7 +141,7 @@ const sampleProjects: AuditProject[] = [
     assignmentSource: "DAM",
     clientCoverholderCode: "CH-1048",
     broker: "Northbridge Market Services",
-    assignedAuditor: "Maya Chen",
+    assignedAuditor: "Lorraine Mojica",
     reviewer: "Owen Price",
     currentStage: "Quote",
     assignmentStatus: "Blocked",
@@ -169,7 +191,7 @@ const sampleProjects: AuditProject[] = [
     assignmentSource: "Email",
     clientCoverholderCode: "CH-2217",
     broker: "Harbor Underwriting Group",
-    assignedAuditor: "Lena Ortiz",
+    assignedAuditor: "Walter Aviles",
     reviewer: "Priya Shah",
     currentStage: "Pre-Audit",
     assignmentStatus: "In Progress",
@@ -227,7 +249,7 @@ const sampleProjects: AuditProject[] = [
     assignmentSource: "DAM",
     clientCoverholderCode: "CH-3094",
     broker: "Summit Specialty Brokers",
-    assignedAuditor: "Maya Chen",
+    assignedAuditor: "Lorraine Mojica",
     reviewer: "Noah Reed",
     currentStage: "Findings",
     assignmentStatus: "Blocked",
@@ -277,7 +299,7 @@ const sampleProjects: AuditProject[] = [
     assignmentSource: "Email",
     clientCoverholderCode: "CH-4175",
     broker: "Cedar Risk Partners",
-    assignedAuditor: "Jon Bell",
+    assignedAuditor: "Justin Mojica",
     reviewer: "Priya Shah",
     currentStage: "Final Submission",
     assignmentStatus: "In Progress",
@@ -439,6 +461,27 @@ function saveProjects(projects: AuditProject[]) {
   localStorage.setItem(storageKey, JSON.stringify(projects));
 }
 
+function loadAuditors(): string[] {
+  const raw = localStorage.getItem(auditorStorageKey);
+  if (!raw) {
+    localStorage.setItem(
+      auditorStorageKey,
+      JSON.stringify(defaultAuditorOptions),
+    );
+    return defaultAuditorOptions;
+  }
+  try {
+    const parsed = JSON.parse(raw) as string[];
+    return parsed.length ? parsed : defaultAuditorOptions;
+  } catch {
+    return defaultAuditorOptions;
+  }
+}
+
+function saveAuditors(auditors: string[]) {
+  localStorage.setItem(auditorStorageKey, JSON.stringify(auditors));
+}
+
 function getMissingDocuments(project: AuditProject) {
   return requiredDocuments
     .filter((doc) => !project[doc.key])
@@ -524,6 +567,45 @@ function sourceTasks(project: AuditProject) {
       ];
 }
 
+function escapeCsv(value: string | number | boolean) {
+  const text = String(value ?? "");
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function exportProjectsToCsv(projects: AuditProject[]) {
+  const columns: [
+    string,
+    (project: AuditProject) => string | number | boolean,
+  ][] = [
+    ["Assignment Number", (project) => project.assignmentNumber],
+    ["Source", (project) => project.assignmentSource],
+    ["Client / Coverholder Code", (project) => project.clientCoverholderCode],
+    ["Broker", (project) => project.broker],
+    ["Assigned Auditor", (project) => project.assignedAuditor],
+    ["Reviewer", (project) => project.reviewer],
+    ["Current Stage", (project) => project.currentStage],
+    ["Assignment Status", (project) => project.assignmentStatus],
+    ["Quote Status", (project) => project.quoteStatus],
+    ["Quote Amount", (project) => project.quoteAmount],
+    ["Due Date", (project) => project.dueDate],
+    ["Next Action", (project) => project.nextAction],
+    ["Blockers", (project) => computedBlockers(project).join("; ")],
+  ];
+  const csv = [
+    columns.map(([label]) => escapeCsv(label)).join(","),
+    ...projects.map((project) =>
+      columns.map(([, getter]) => escapeCsv(getter(project))).join(","),
+    ),
+  ].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `audit-assignments-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function App() {
   const [projects, setProjects] = useState<AuditProject[]>(() =>
     loadProjects(),
@@ -539,12 +621,21 @@ function App() {
     missingDocuments: false,
   });
   const [message, setMessage] = useState("");
+  const [auditorOptions, setAuditorOptions] = useState<string[]>(() =>
+    loadAuditors(),
+  );
+  const [myAuditor, setMyAuditorState] = useState(
+    () => localStorage.getItem(myAuditorStorageKey) || auditorOptions[0] || "",
+  );
+  const [savedView, setSavedView] = useState<SavedView>("all");
+  const [viewMode, setViewMode] = useState<ViewMode>("kanban");
 
   const auditors = [
-    ...new Set(
-      projects.map((project) => project.assignedAuditor).filter(Boolean),
-    ),
-  ] as string[];
+    ...auditorOptions,
+    ...projects
+      .map((project) => project.assignedAuditor)
+      .filter((auditor) => auditor && !auditorOptions.includes(auditor)),
+  ];
   const filteredProjects = useMemo(
     () =>
       projects.filter((project) => {
@@ -568,9 +659,27 @@ function App() {
           getMissingDocuments(project).length === 0
         )
           return false;
+        if (savedView === "myAudits" && project.assignedAuditor !== myAuditor)
+          return false;
+        if (
+          savedView === "blocked" &&
+          computedBlockers(project).length === 0 &&
+          project.assignmentStatus !== "Blocked"
+        )
+          return false;
+        if (
+          savedView === "dueThisWeek" &&
+          !(daysUntil(project.dueDate) >= 0 && daysUntil(project.dueDate) <= 7)
+        )
+          return false;
+        if (
+          savedView === "awaitingDocuments" &&
+          getMissingDocuments(project).length === 0
+        )
+          return false;
         return true;
       }),
-    [projects, filters],
+    [projects, filters, savedView, myAuditor],
   );
   const selectedProject =
     projects.find((project) => project.id === selectedId) ?? projects[0];
@@ -578,6 +687,20 @@ function App() {
   const persist = (nextProjects: AuditProject[]) => {
     setProjects(nextProjects);
     saveProjects(nextProjects);
+  };
+
+  const updateAuditors = (nextAuditors: string[]) => {
+    setAuditorOptions(nextAuditors);
+    saveAuditors(nextAuditors);
+    if (nextAuditors.length && !nextAuditors.includes(myAuditor)) {
+      setMyAuditorState(nextAuditors[0]);
+      localStorage.setItem(myAuditorStorageKey, nextAuditors[0]);
+    }
+  };
+
+  const updateMyAuditor = (auditor: string) => {
+    setMyAuditorState(auditor);
+    localStorage.setItem(myAuditorStorageKey, auditor);
   };
 
   const upsertProject = (project: AuditProject) => {
@@ -669,17 +792,52 @@ function App() {
       )}
 
       <Dashboard projects={projects} />
+      <SavedViews
+        savedView={savedView}
+        setSavedView={setSavedView}
+        myAuditor={myAuditor}
+      />
+      <WorkloadCounts projects={projects} auditors={auditors} />
+      <PeopleAdmin
+        auditorOptions={auditorOptions}
+        setAuditorOptions={updateAuditors}
+        myAuditor={myAuditor}
+        setMyAuditor={updateMyAuditor}
+      />
       <FiltersPanel
         filters={filters}
         setFilters={setFilters}
         auditors={auditors}
       />
-      <Kanban
-        projects={filteredProjects}
-        selectedId={selectedProject?.id}
-        onSelect={setSelectedId}
-        onMove={moveProject}
-      />
+      <div className="view-toolbar panel">
+        <div className="segmented">
+          <button
+            className={viewMode === "kanban" ? "active" : "secondary"}
+            onClick={() => setViewMode("kanban")}
+          >
+            Kanban view
+          </button>
+          <button
+            className={viewMode === "table" ? "active" : "secondary"}
+            onClick={() => setViewMode("table")}
+          >
+            Table view
+          </button>
+        </div>
+        <button onClick={() => exportProjectsToCsv(filteredProjects)}>
+          Export filtered CSV
+        </button>
+      </div>
+      {viewMode === "kanban" ? (
+        <Kanban
+          projects={filteredProjects}
+          selectedId={selectedProject?.id}
+          onSelect={setSelectedId}
+          onMove={moveProject}
+        />
+      ) : (
+        <ProjectTable projects={filteredProjects} onSelect={setSelectedId} />
+      )}
       {selectedProject && (
         <ProjectDetail
           project={selectedProject}
@@ -692,6 +850,7 @@ function App() {
           project={editing}
           onCancel={() => setEditing(null)}
           onSave={upsertProject}
+          auditorOptions={auditorOptions}
         />
       )}
     </main>
@@ -752,6 +911,214 @@ function SummaryCard({
       <span>{label}</span>
       <strong>{value}</strong>
     </article>
+  );
+}
+
+function SavedViews({
+  savedView,
+  setSavedView,
+  myAuditor,
+}: {
+  savedView: SavedView;
+  setSavedView: (view: SavedView) => void;
+  myAuditor: string;
+}) {
+  const views: { id: SavedView; label: string; helper: string }[] = [
+    { id: "all", label: "All audits", helper: "Everything visible" },
+    {
+      id: "myAudits",
+      label: "My audits",
+      helper: myAuditor || "Choose me in Admin",
+    },
+    { id: "blocked", label: "Blocked audits", helper: "Needs attention" },
+    { id: "dueThisWeek", label: "Due this week", helper: "Next 7 days" },
+    {
+      id: "awaitingDocuments",
+      label: "Awaiting documents",
+      helper: "Missing required docs",
+    },
+  ];
+  return (
+    <section className="panel saved-views">
+      <div className="section-title">
+        <h2>Saved views</h2>
+        <span>One-click work queues</span>
+      </div>
+      <div className="saved-view-grid">
+        {views.map((view) => (
+          <button
+            key={view.id}
+            className={
+              savedView === view.id ? "saved-view active" : "saved-view"
+            }
+            onClick={() => setSavedView(view.id)}
+          >
+            <strong>{view.label}</strong>
+            <span>{view.helper}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function WorkloadCounts({
+  projects,
+  auditors,
+}: {
+  projects: AuditProject[];
+  auditors: string[];
+}) {
+  return (
+    <section className="panel">
+      <div className="section-title">
+        <h2>Auditor workload</h2>
+        <span>Open assignments by auditor</span>
+      </div>
+      <div className="workload-grid">
+        {auditors.map((auditor) => {
+          const openCount = projects.filter(
+            (project) =>
+              project.assignedAuditor === auditor &&
+              project.currentStage !== "Closed",
+          ).length;
+          const tone =
+            openCount >= 4 ? "high" : openCount >= 2 ? "medium" : "low";
+          return (
+            <article className={`workload-card ${tone}`} key={auditor}>
+              <span>{auditor}</span>
+              <strong>{openCount}</strong>
+              <small>{openCount === 1 ? "open audit" : "open audits"}</small>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function PeopleAdmin({
+  auditorOptions,
+  setAuditorOptions,
+  myAuditor,
+  setMyAuditor,
+}: {
+  auditorOptions: string[];
+  setAuditorOptions: (auditors: string[]) => void;
+  myAuditor: string;
+  setMyAuditor: (auditor: string) => void;
+}) {
+  const [newAuditor, setNewAuditor] = useState("");
+  const addAuditor = (event: FormEvent) => {
+    event.preventDefault();
+    const cleanName = newAuditor.trim();
+    if (!cleanName || auditorOptions.includes(cleanName)) return;
+    setAuditorOptions([...auditorOptions, cleanName]);
+    setNewAuditor("");
+  };
+  const removeAuditor = (auditor: string) => {
+    const nextAuditors = auditorOptions.filter((item) => item !== auditor);
+    setAuditorOptions(nextAuditors);
+  };
+  return (
+    <section className="panel people-admin">
+      <div className="section-title">
+        <h2>People / admin settings</h2>
+        <span>Manage auditor dropdown names locally</span>
+      </div>
+      <div className="admin-grid">
+        <form onSubmit={addAuditor} className="add-person-form">
+          <label>
+            Add auditor
+            <input
+              value={newAuditor}
+              placeholder="Type auditor name"
+              onChange={(event) => setNewAuditor(event.target.value)}
+            />
+          </label>
+          <button type="submit">Add</button>
+        </form>
+        <label>
+          My auditor for saved view
+          <select
+            value={myAuditor}
+            onChange={(event) => setMyAuditor(event.target.value)}
+          >
+            {auditorOptions.map((auditor) => (
+              <option key={auditor} value={auditor}>
+                {auditor}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="person-chips">
+        {auditorOptions.map((auditor) => (
+          <span className="person-chip" key={auditor}>
+            {auditor}
+            <button type="button" onClick={() => removeAuditor(auditor)}>
+              ×
+            </button>
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ProjectTable({
+  projects,
+  onSelect,
+}: {
+  projects: AuditProject[];
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <section className="panel">
+      <div className="section-title">
+        <h2>Table view</h2>
+        <span>{projects.length} rows</span>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Assignment</th>
+              <th>Auditor</th>
+              <th>Stage</th>
+              <th>Source</th>
+              <th>Quote</th>
+              <th>Due</th>
+              <th>Next action</th>
+              <th>Blockers</th>
+            </tr>
+          </thead>
+          <tbody>
+            {projects.map((project) => {
+              const due = dueLabel(project);
+              const blockers = computedBlockers(project);
+              return (
+                <tr key={project.id} onClick={() => onSelect(project.id)}>
+                  <td>
+                    <strong>{project.assignmentNumber}</strong>
+                    <span>{project.clientCoverholderCode}</span>
+                  </td>
+                  <td>{project.assignedAuditor}</td>
+                  <td>{project.currentStage}</td>
+                  <td>{project.assignmentSource}</td>
+                  <td>{project.quoteStatus}</td>
+                  <td>
+                    <span className={`pill ${due.className}`}>{due.text}</span>
+                  </td>
+                  <td>{project.nextAction}</td>
+                  <td>{blockers.length ? blockers.join("; ") : "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -1084,10 +1451,12 @@ function ProjectForm({
   project,
   onSave,
   onCancel,
+  auditorOptions,
 }: {
   project: AuditProject;
   onSave: (project: AuditProject) => void;
   onCancel: () => void;
+  auditorOptions: string[];
 }) {
   const [draft, setDraft] = useState(project);
   const update = <K extends keyof AuditProject>(
@@ -1133,9 +1502,10 @@ function ProjectForm({
             value={draft.broker}
             onChange={(value) => update("broker", value)}
           />
-          <Input
+          <Select
             label="Assigned auditor"
             value={draft.assignedAuditor}
+            options={auditorOptions}
             onChange={(value) => update("assignedAuditor", value)}
           />
           <Input
