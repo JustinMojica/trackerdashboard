@@ -652,14 +652,6 @@ function auditTeamRole(project: AuditProject, auditor: string) {
   return normalizeAuditTeam(project).find((member) => member.person === auditor)?.role;
 }
 
-function workloadUnits(project: AuditProject, auditor: string) {
-  const role = auditTeamRole(project, auditor);
-  if (!role) return 0;
-  const base = role === "Lead Auditor" ? 1 : 0.5;
-  const priorityBoost = project.labels.includes("High Priority") ? 0.25 : 0;
-  const dueBoost = daysUntil(project.dueDate) <= 7 ? 0.25 : 0;
-  return base + priorityBoost + dueBoost;
-}
 
 function createActivityEvent(
   type: AuditActivityEvent["type"],
@@ -841,10 +833,10 @@ export function canMoveToStage(project: AuditProject, targetStage: Stage) {
   return "";
 }
 
-export function daysUntil(dateValue: string) {
+export function daysUntil(dateValue: string | undefined, todayDate = today) {
   if (!dateValue) return Number.POSITIVE_INFINITY;
   const due = new Date(`${dateValue}T12:00:00Z`);
-  return Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  return Math.ceil((due.getTime() - todayDate.getTime()) / 86400000);
 }
 
 export function dueLabel(project: AuditProject) {
@@ -857,6 +849,84 @@ export function dueLabel(project: AuditProject) {
   return { text: `Due ${project.dueDate}`, className: "ok" };
 }
 
+function pushUnique(items: string[], item: string) {
+  if (!items.includes(item)) items.push(item);
+}
+
+function recommendedNextSteps(
+  project: AuditProject,
+  today = new Date("2026-05-05T12:00:00Z"),
+) {
+  const steps: string[] = [];
+  const missingDocuments = getMissingDocuments(project);
+  const dueInDays = daysUntil(project.dueDate, today);
+
+  if (missingDocuments.length > 0) {
+    pushUnique(
+      steps,
+      `Chase missing documents: ${missingDocuments.join(", ")}.`,
+    );
+  }
+  if (project.quoteStatus !== "Accepted") {
+    pushUnique(steps, "Confirm quote status and capture the client decision.");
+  }
+  if (!project.assignedAuditor && normalizeAuditTeam(project).length === 0) {
+    pushUnique(steps, "Assign a lead auditor before advancing the audit.");
+  }
+  if (dueInDays < 0) {
+    pushUnique(steps, "Escalate the overdue assignment and reset the due date.");
+  } else if (dueInDays <= 3) {
+    pushUnique(
+      steps,
+      "Prioritize this audit because it is due within three days.",
+    );
+  }
+  if (
+    stages.indexOf(project.currentStage) >= stages.indexOf("Findings") &&
+    !project.coverholderResponseReceivedDate
+  ) {
+    pushUnique(
+      steps,
+      "Request the coverholder response so wrap-up can continue.",
+    );
+  }
+  if (project.nextAction.trim()) {
+    pushUnique(
+      steps,
+      `Complete the recorded next action: ${project.nextAction.trim()}`,
+    );
+  }
+
+  const stageAction: Record<Stage, string> = {
+    Intake: "Validate intake fields and move the audit into registration.",
+    Registration: "Confirm reviewer assignment and prepare the quote record.",
+    Quote: "Move to scheduling once the quote is accepted.",
+    Scheduling:
+      "Confirm the audit date, audit week, and remote or onsite format.",
+    "Pre-Audit": "Complete document readiness before file selection.",
+    "File Selection": "Finish sample selection and notify the audit team.",
+    "Audit Fieldwork": "Complete testing, log exceptions, and prepare findings.",
+    Findings:
+      "Send findings follow-up and record the coverholder response date.",
+    "Report Drafting": "Route the draft report to reviewer quality check.",
+    "Final Submission":
+      "Send the final report package through the correct channel.",
+    Invoice: "Issue the invoice and track payment through receipt.",
+    Closed: "Archive the record and capture lessons learned.",
+  };
+  pushUnique(steps, stageAction[project.currentStage]);
+  pushUnique(
+    steps,
+    "Update comments or the audit trail with the latest owner-facing note.",
+  );
+  pushUnique(
+    steps,
+    "Review blockers and clear any stale labels before the next stage move.",
+  );
+
+  return steps.slice(0, 5);
+}
+
 export type DocumentWorkflowAction =
   | "markWaitingOnBroker"
   | "recordBrokerChase"
@@ -865,7 +935,7 @@ export type DocumentWorkflowAction =
 export type ActivityItem = {
   id: string;
   timestamp: string;
-  type: "stage" | "comment" | "checklist" | "document";
+  type: "stage" | "comment" | "checklist" | "document" | "team";
   title: string;
   detail: string;
   tone?: "ok" | "warning" | "danger" | "muted";
@@ -972,10 +1042,15 @@ export function activityTimeline(project: AuditProject): ActivityItem[] {
   const eventItems: ActivityItem[] = (project.activityEvents ?? []).map((event) => ({
     id: `event-${event.id}`,
     timestamp: event.createdAt,
-    type: event.type === "team" || event.type === "field" ? "stage" : event.type,
+    type: event.type === "field" ? "stage" : event.type,
     title: event.title,
     detail: `${event.detail} · ${event.actor}`,
-    tone: event.type === "document" ? "warning" : "muted",
+    tone:
+      event.type === "document"
+        ? "warning"
+        : event.type === "team" || event.type === "checklist"
+          ? "ok"
+          : "muted",
   }));
   const documentItems: ActivityItem[] = [];
   if (project.documentRequestDate) {
@@ -1456,7 +1531,7 @@ function App() {
             className={viewMode === "table" ? "active" : "secondary"}
             onClick={() => setViewMode("table")}
           >
-            Table view
+            Audit table
           </button>
         </div>
         <button onClick={() => exportProjectsToCsv(filteredProjects)}>
@@ -1515,7 +1590,7 @@ function Dashboard({ projects }: { projects: AuditProject[] }) {
     0,
   );
   return (
-    <section className="summary-grid" aria-label="Dashboard summary">
+    <section className="summary-grid" aria-label="Audit dashboard summary">
       <SummaryCard
         label="Open projects"
         value={
@@ -1524,9 +1599,9 @@ function Dashboard({ projects }: { projects: AuditProject[] }) {
       />
       <SummaryCard label="Blocked" value={blocked} tone="danger" />
       <SummaryCard label="Overdue" value={overdue} tone="danger" />
-      <SummaryCard label="Due soon" value={dueSoon} tone="warning" />
+      <SummaryCard label="Due in 3 days" value={dueSoon} tone="warning" />
       <SummaryCard
-        label="Quoted value"
+        label="Pipeline value"
         value={quoteValue.toLocaleString("en-US", {
           style: "currency",
           currency: "USD",
@@ -1554,8 +1629,8 @@ function CycleTimeDashboard({
       <div className="section-title">
         <div>
           <p className="eyebrow dark">Cycle time</p>
-          <h2>Average stage duration</h2>
-          <span>How long lifecycle steps take for {rangeLabel}</span>
+          <h2>Average time in stage</h2>
+          <span>Lifecycle movement timing for {rangeLabel}</span>
         </div>
         <div className="segmented">
           <button
@@ -1598,6 +1673,15 @@ function CycleTimeDashboard({
   );
 }
 
+function HoverLink({ label, helper }: { label: string; helper: string }) {
+  return (
+    <span className="hover-link" tabIndex={0}>
+      {label}
+      <span role="tooltip">{helper}</span>
+    </span>
+  );
+}
+
 function SummaryCard({
   label,
   value,
@@ -1625,30 +1709,47 @@ function SavedViews({
   myAuditor: string;
 }) {
   const views: { id: SavedView; label: string; helper: string }[] = [
-    { id: "all", label: "All audits", helper: "Everything visible" },
+    {
+      id: "all",
+      label: "All audits",
+      helper: "All assignments matching the active filters.",
+    },
     {
       id: "todaysWork",
-      label: "Today’s Work",
-      helper: "Due, blocked, or next",
+      label: "Today’s work",
+      helper: "Audits that are due, blocked, or need the next action.",
     },
     {
       id: "myAudits",
       label: "My audits",
-      helper: myAuditor || "Choose me in Admin",
+      helper: myAuditor
+        ? `Assigned to ${myAuditor}.`
+        : "Choose your auditor in Admin.",
     },
-    { id: "blocked", label: "Blocked audits", helper: "Needs attention" },
-    { id: "dueThisWeek", label: "Due this week", helper: "Next 7 days" },
+    {
+      id: "blocked",
+      label: "Blocked audits",
+      helper: "Assignments with blockers or a blocked status.",
+    },
+    {
+      id: "dueThisWeek",
+      label: "Due this week",
+      helper: "Assignments due in the next seven days.",
+    },
     {
       id: "awaitingDocuments",
       label: "Awaiting documents",
-      helper: "Missing required docs",
+      helper: "Assignments missing BAA, endorsements, or Premium BDX.",
     },
   ];
   return (
     <section className="panel saved-views">
       <div className="section-title">
-        <h2>Saved views</h2>
-        <span>One-click work queues</span>
+        <h2>Saved work queues</h2>
+        <HoverLink
+          label="What is this?"
+          helper="One-click queues for common audit follow-up views."
+        />
       </div>
       <div className="saved-view-grid">
         {views.map((view) => (
@@ -1660,7 +1761,7 @@ function SavedViews({
             onClick={() => setSavedView(view.id)}
           >
             <strong>{view.label}</strong>
-            <span>{view.helper}</span>
+            <HoverLink label="Helper" helper={view.helper} />
           </button>
         ))}
       </div>
@@ -1700,19 +1801,18 @@ function WorkloadCounts({
     const supportCount = openProjects.filter(
       (project) => auditTeamRole(project, auditor) === "Supporting Auditor",
     ).length;
-    const units = openProjects.reduce(
-      (sum, project) => sum + workloadUnits(project, auditor),
-      0,
-    );
-    const capacity = 4;
-    const utilization = Math.round((units / capacity) * 100);
-    const tone = units >= capacity ? "high" : units >= capacity * 0.6 ? "medium" : "low";
+    const tone =
+      openProjects.length >= 4
+        ? "high"
+        : openProjects.length >= 2
+          ? "medium"
+          : "low";
     const status =
       openProjects.length === 0
         ? "Available"
-        : units >= capacity
-          ? "At capacity"
-          : units >= capacity * 0.6
+        : openProjects.length >= 4
+          ? "High load"
+          : openProjects.length >= 2
             ? "Moderate load"
             : "Light load";
     return {
@@ -1722,8 +1822,6 @@ function WorkloadCounts({
       dueSoonCount,
       leadCount,
       supportCount,
-      units,
-      utilization,
       status,
       tone,
     };
@@ -1732,20 +1830,20 @@ function WorkloadCounts({
     (auditor) => !hiddenAuditors.includes(auditor),
   );
   const workloadRows = visibleAuditors.map(buildRow);
-  const allRows = auditors.map(buildRow);
-  const totalOpen = allRows.reduce((sum, row) => sum + row.openCount, 0);
-  const totalUnits = allRows.reduce((sum, row) => sum + row.units, 0);
+  const totalOpen = auditors
+    .map(buildRow)
+    .reduce((sum, row) => sum + row.openCount, 0);
 
   return (
     <section className="panel workload-dashboard">
       <div className="section-title workload-header">
         <div>
-          <p className="eyebrow dark">Workload dashboard</p>
-          <h2>Auditor workload</h2>
+          <p className="eyebrow dark">Team workload</p>
+          <h2>Open assignments by auditor</h2>
         </div>
         <div className="workload-summary">
-          <strong>{totalUnits.toFixed(1)}</strong>
-          <span>weighted workload units</span>
+          <strong>{totalOpen}</strong>
+          <span>open auditor assignments</span>
           <small>
             {visibleAuditors.length} active · {hiddenAuditors.length} minimized
           </small>
@@ -1770,8 +1868,8 @@ function WorkloadCounts({
         </div>
       )}
       <p className="workload-meter-note">
-        Auditors with no open assignments are minimized by default. Lead work is
-        weighted heavier than support work, with due-soon and high-priority boosts.
+        Auditors with no open assignments are minimized by default. Active rows
+        show open audits, lead/support roles, blockers, and due-soon items.
       </p>
       <div className="workload-list">
         {workloadRows.map((row) => (
@@ -1803,15 +1901,17 @@ function WorkloadCounts({
               </span>
               <span className={row.dueSoonCount ? "workload-stat warning" : "workload-stat"}>
                 <strong>{row.dueSoonCount}</strong>
-                Due soon
+                Due in 3 days
               </span>
-              <span className={`workload-stat ${row.tone === "high" ? "danger" : row.tone === "medium" ? "warning" : ""}`}>
-                <strong>{row.units.toFixed(1)}</strong>
-                Units
+              <span className="workload-stat">
+                <strong>{row.leadCount}</strong>
+                Lead
               </span>
-              <span className={`workload-status ${row.tone}`}>
-                {row.status} · {row.utilization}%
+              <span className="workload-stat">
+                <strong>{row.supportCount}</strong>
+                Support
               </span>
+              <span className={`workload-status ${row.tone}`}>{row.status}</span>
             </div>
             <button
               type="button"
@@ -1972,7 +2072,7 @@ function ProjectTable({
   return (
     <section className="panel">
       <div className="section-title">
-        <h2>Table view</h2>
+        <h2>Audit table</h2>
         <span>{projects.length} rows</span>
       </div>
       <div className="table-wrap">
@@ -2083,7 +2183,7 @@ function FiltersPanel({
           value={filters.dueDate}
           options={[
             ["overdue", "Overdue"],
-            ["dueSoon", "Due soon"],
+            ["dueSoon", "Due in 3 days"],
           ]}
           onChange={(value) => setFilters({ ...filters, dueDate: value })}
         />
@@ -2153,7 +2253,7 @@ function Kanban({
   return (
     <section className="panel">
       <div className="section-title">
-        <h2>Kanban by lifecycle stage</h2>
+        <h2>Lifecycle board</h2>
         <span>{projects.length} visible · drag cards between stages</span>
       </div>
       <div className="kanban">
@@ -2245,11 +2345,15 @@ function ProjectDetail({
   onMove: (project: AuditProject, stage: Stage) => void;
   onAddComment: (project: AuditProject, comment: ProjectComment) => void;
   onToggleChecklist: (project: AuditProject, key: string) => void;
-  onDocumentWorkflowAction: (project: AuditProject, action: DocumentWorkflowAction) => void;
+  onDocumentWorkflowAction: (
+    project: AuditProject,
+    action: DocumentWorkflowAction,
+  ) => void;
   auditors: string[];
   onAddSupportingAuditor: (project: AuditProject, auditor: string) => void;
 }) {
   const blockers = computedBlockers(project);
+  const nextSteps = recommendedNextSteps(project);
   return (
     <section className="detail-grid">
       <article className="panel detail">
@@ -2296,8 +2400,22 @@ function ProjectDetail({
           />
           <Meta label="Last updated" value={project.lastUpdatedDate} />
         </div>
-        <h3>Next action</h3>
+        <div className="next-action-heading">
+          <h3>Next action</h3>
+          <HoverLink
+            label="Why these steps?"
+            helper="Recommended next steps combine blockers, due date, document readiness, stage, and the recorded next action."
+          />
+        </div>
         <p>{project.nextAction || "No next action recorded."}</p>
+        <div className="recommended-next">
+          <strong>Recommended next steps</strong>
+          <ul>
+            {nextSteps.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ul>
+        </div>
         <h3>Blockers</h3>
         {blockers.length ? (
           <ul className="blockers">
@@ -2420,7 +2538,10 @@ function DocumentReadiness({
   onDocumentWorkflowAction,
 }: {
   project: AuditProject;
-  onDocumentWorkflowAction: (project: AuditProject, action: DocumentWorkflowAction) => void;
+  onDocumentWorkflowAction: (
+    project: AuditProject,
+    action: DocumentWorkflowAction,
+  ) => void;
 }) {
   const readiness = documentReadiness(project);
   return (
@@ -2518,25 +2639,41 @@ function ActivityTimeline({ project }: { project: AuditProject }) {
     <article className="panel activity-panel">
       <div className="section-title">
         <div>
-          <h2>Activity timeline</h2>
-          <span>Comments, stage moves, checklist, and document follow-ups</span>
+          <h2>Audit trail</h2>
+          <span>
+            Filterable history of comments, stage moves, checklist changes, and
+            document follow-ups
+          </span>
         </div>
       </div>
       {items.length === 0 ? (
         <p>No activity yet.</p>
       ) : (
-        <div className="activity-list">
-          {items.map((item) => (
-            <div className={`activity-item ${item.type}`} key={item.id}>
-              <span className={`activity-type ${item.tone || "muted"}`}>
-                {item.type}
-              </span>
-              <strong>{item.title}</strong>
-              <small>{item.timestamp}</small>
-              <p>{item.detail}</p>
-            </div>
-          ))}
-        </div>
+        <>
+          <div className="activity-summary">
+            <span>{items.length} events</span>
+            <span>{items.filter((item) => item.type === "document").length} document</span>
+            <span>{items.filter((item) => item.type === "team").length} team</span>
+            <span>{items.filter((item) => item.type === "stage").length} stage</span>
+          </div>
+          <div className="activity-list">
+            {items.map((item) => (
+              <div className={`activity-item ${item.type}`} key={item.id}>
+                <div className="activity-marker" aria-hidden="true" />
+                <div>
+                  <div className="activity-heading">
+                    <span className={`activity-type ${item.tone || "muted"}`}>
+                      {item.type}
+                    </span>
+                    <small>{item.timestamp}</small>
+                  </div>
+                  <strong>{item.title}</strong>
+                  <p>{item.detail}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </article>
   );

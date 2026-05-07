@@ -142,27 +142,6 @@ export function projectHasAuditor(project: LogicProject, auditor: string) {
   return assignedAuditorNames(project).includes(auditor);
 }
 
-export function workloadUnits(
-  project: LogicProject,
-  auditor: string,
-  today = new Date("2026-05-05T12:00:00Z"),
-) {
-  const role = normalizeAuditTeam(project).find(
-    (member) => member.person === auditor,
-  )?.role;
-  if (!role) return 0;
-  const base = role === "Lead Auditor" ? 1 : 0.5;
-  const priorityBoost = project.labels.includes("High Priority") ? 0.25 : 0;
-  const dueBoost = project.dueDate
-    ? Math.ceil(
-        (new Date(`${project.dueDate}T12:00:00Z`).getTime() - today.getTime()) /
-          86400000,
-      ) <= 7
-      ? 0.25
-      : 0
-    : 0;
-  return base + priorityBoost + dueBoost;
-}
 
 function rangeStart(range: DurationRange, today: Date) {
   const start = new Date(today);
@@ -265,6 +244,93 @@ export function canMoveToStage(project: LogicProject, targetStage: Stage) {
     return "Coverholder response must be received before recommendations / wrap-up and report drafting.";
   }
   return "";
+}
+
+export function daysUntil(
+  dateValue: string | undefined,
+  today = new Date("2026-05-05T12:00:00Z"),
+) {
+  if (!dateValue) return Number.POSITIVE_INFINITY;
+  const due = new Date(`${dateValue}T12:00:00Z`);
+  return Math.ceil((due.getTime() - today.getTime()) / 86400000);
+}
+
+function pushUnique(items: string[], item: string) {
+  if (!items.includes(item)) items.push(item);
+}
+
+export function recommendedNextSteps(
+  project: LogicProject,
+  today = new Date("2026-05-05T12:00:00Z"),
+) {
+  const steps: string[] = [];
+  const missingDocuments = getMissingDocuments(project);
+  const dueInDays = daysUntil(project.dueDate, today);
+
+  if (missingDocuments.length > 0) {
+    pushUnique(
+      steps,
+      `Chase missing documents: ${missingDocuments.join(", ")}.`,
+    );
+  }
+  if (project.quoteStatus !== "Accepted") {
+    pushUnique(steps, "Confirm quote status and capture the client decision.");
+  }
+  if (!project.assignedAuditor && normalizeAuditTeam(project).length === 0) {
+    pushUnique(steps, "Assign a lead auditor before advancing the audit.");
+  }
+  if (dueInDays < 0) {
+    pushUnique(steps, "Escalate the overdue assignment and reset the due date.");
+  } else if (dueInDays <= 3) {
+    pushUnique(
+      steps,
+      "Prioritize this audit because it is due within three days.",
+    );
+  }
+  if (
+    stages.indexOf(project.currentStage) >= stages.indexOf("Findings") &&
+    !project.coverholderResponseReceivedDate
+  ) {
+    pushUnique(
+      steps,
+      "Request the coverholder response so wrap-up can continue.",
+    );
+  }
+  if (project.nextAction.trim()) {
+    pushUnique(
+      steps,
+      `Complete the recorded next action: ${project.nextAction.trim()}`,
+    );
+  }
+
+  const stageAction: Record<Stage, string> = {
+    Intake: "Validate intake fields and move the audit into registration.",
+    Registration: "Confirm reviewer assignment and prepare the quote record.",
+    Quote: "Move to scheduling once the quote is accepted.",
+    Scheduling:
+      "Confirm the audit date, audit week, and remote or onsite format.",
+    "Pre-Audit": "Complete document readiness before file selection.",
+    "File Selection": "Finish sample selection and notify the audit team.",
+    "Audit Fieldwork": "Complete testing, log exceptions, and prepare findings.",
+    Findings:
+      "Send findings follow-up and record the coverholder response date.",
+    "Report Drafting": "Route the draft report to reviewer quality check.",
+    "Final Submission":
+      "Send the final report package through the correct channel.",
+    Invoice: "Issue the invoice and track payment through receipt.",
+    Closed: "Archive the record and capture lessons learned.",
+  };
+  pushUnique(steps, stageAction[project.currentStage]);
+  pushUnique(
+    steps,
+    "Update comments or the audit trail with the latest owner-facing note.",
+  );
+  pushUnique(
+    steps,
+    "Review blockers and clear any stale labels before the next stage move.",
+  );
+
+  return steps.slice(0, 5);
 }
 
 export function documentReadiness(project: LogicProject) {

@@ -6,8 +6,8 @@ import {
   canMoveToStage,
   computedBlockers,
   documentReadiness,
+  recommendedNextSteps,
   stageDurationMetrics,
-  workloadUnits,
   type LogicProject,
 } from "../src/auditLogic.js";
 
@@ -85,7 +85,6 @@ test("document readiness workflow completes documents and clears waiting label",
   assert.equal(complete.labels.includes("Waiting on Broker"), false);
 });
 
-
 test("role-based audit team exposes every assigned auditor", () => {
   assert.deepEqual(assignedAuditorNames(baseProject), [
     "Lorraine Mojica",
@@ -93,13 +92,21 @@ test("role-based audit team exposes every assigned auditor", () => {
   ]);
 });
 
-
-test("weighted workload differentiates lead and support roles", () => {
-  assert.equal(workloadUnits(baseProject, "Lorraine Mojica"), 1.25);
-  assert.equal(workloadUnits(baseProject, "Walter Aviles"), 0.75);
-});
-
 test("stage duration metrics support selectable ranges", () => {
   const metrics = stageDurationMetrics([baseProject], "ytd");
   assert.equal(metrics.some((metric) => metric.stage === "Registration"), true);
+});
+
+test("recommended next steps returns five prioritized actions", () => {
+  const steps = recommendedNextSteps(baseProject);
+
+  assert.equal(steps.length, 5);
+  assert.equal(
+    steps[0],
+    "Chase missing documents: Endorsements received, Premium BDX received.",
+  );
+  assert.equal(
+    steps[1],
+    "Confirm quote status and capture the client decision.",
+  );
 });

@@ -67,9 +67,10 @@ A future SharePoint implementation should use an **Audit Assignments** list for 
 
 | Update size | Version | What changed                                                                                                                                            |
 | ----------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Major       | UX-4    | Add weighted workload capacity, full activity event tracking, post-intake support additions, and cycle-time reporting ranges.                           |
+| Major       | UX-5    | Add five prioritized recommended next steps, clean dashboard labels, and hover-link helper text for work queues and next-action guidance.              |
+| Major       | UX-4    | Add activity event tracking, post-intake support additions, cycle-time reporting ranges, and simplified role-based workload counts.                    |
 | Major       | UX-3    | Add lead/supporting audit teams, count shared assignments in workload, and clarify document readiness status colors.                                    |
-| Major       | UX-2    | Add activity timeline, document readiness workflow actions, zero-load workload minimization, and a Node test suite for workflow logic.                  |
+| Major       | UX-2    | Add audit trail, document readiness workflow actions, zero-load workload minimization, and a Node test suite for workflow logic.                  |
 | Major       | UX-1    | Redesign workload as a dashboard, add guided intake, Trello-style labels, Today’s Work, interactive checklists, and stronger Office 365 data readiness. |
 | Small       | Patch   | Copy changes, option-list tweaks, and small field additions that do not change the primary workflow.                                                    |
 
@@ -81,7 +82,7 @@ Move to Office 365 after the team validates this major UX iteration with realist
 - **Audit Assignment Comments** for Trello-style card comments.
 - **Audit Assignment Checklist Items** for per-stage checklist completion.
 - **Audit Assignment Status History** for timestamped stage and status changes and stage-duration reporting.
-- **Auditors / Reviewers** for active users, lead/supporting audit team roles, weighted capacity, and workload reporting.
+- **Auditors / Reviewers** for active users, lead/supporting audit team roles, role-based workload reporting.
 - **Documents Requested / Received** for BAA, endorsements, Premium BDX, and audit support tracking.
 
 This split keeps the main assignment row Power BI friendly while letting Power Apps and Power Automate handle related activity, comments, reminders, and approvals.
