@@ -38,6 +38,13 @@ button {
 button:hover {
   background: #0d45af;
 }
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+button:disabled:hover {
+  background: #1358db;
+}
 button.secondary {
   background: #dce6f8;
   color: #15386d;

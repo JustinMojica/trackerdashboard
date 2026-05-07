@@ -67,6 +67,7 @@ A future SharePoint implementation should use an **Audit Assignments** list for 
 
 | Update size | Version | What changed                                                                                                                                            |
 | ----------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Minor       | UX-8    | Prevent duplicate audit trail comment entries and make document-complete workflow idempotent.                                                           |
 | Minor       | UX-7    | Temporarily archive the auditor directory UI while keeping default auditor data available for filters, workload, and assignment forms.                  |
 | Minor       | UX-6    | Remove saved work queues, clarify sample auditor pairings, and tighten the project detail layout to avoid empty spacing.                              |
 | Minor       | UX-5    | Add five prioritized recommended next steps, clean dashboard labels, and next-action hover guidance.                                                    |

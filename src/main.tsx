@@ -1027,19 +1027,28 @@ export function activityTimeline(project: AuditProject): ActivityItem[] {
       detail: key.split(":").slice(1).join(":") || key,
       tone: "ok",
     }));
-  const eventItems: ActivityItem[] = (project.activityEvents ?? []).map((event) => ({
-    id: `event-${event.id}`,
-    timestamp: event.createdAt,
-    type: event.type === "field" ? "stage" : event.type,
-    title: event.title,
-    detail: `${event.detail} · ${event.actor}`,
-    tone:
-      event.type === "document"
-        ? "warning"
-        : event.type === "team" || event.type === "checklist"
-          ? "ok"
-          : "muted",
-  }));
+  const eventItems: ActivityItem[] = (project.activityEvents ?? [])
+    .filter((event, index, events) => {
+      if (event.title === "Comment added") return false;
+      if (event.title !== "Documents marked complete") return true;
+      return (
+        index ===
+        events.findIndex((item) => item.title === "Documents marked complete")
+      );
+    })
+    .map((event) => ({
+      id: `event-${event.id}`,
+      timestamp: event.createdAt,
+      type: event.type === "field" ? "stage" : event.type,
+      title: event.title,
+      detail: `${event.detail} · ${event.actor}`,
+      tone:
+        event.type === "document"
+          ? "warning"
+          : event.type === "team" || event.type === "checklist"
+            ? "ok"
+            : "muted",
+    }));
   const documentItems: ActivityItem[] = [];
   if (project.documentRequestDate) {
     documentItems.push({
@@ -1287,10 +1296,6 @@ function App() {
     const updatedProject = {
       ...project,
       comments: [...project.comments, comment],
-      activityEvents: [
-        ...(project.activityEvents ?? []),
-        createActivityEvent("field", "Comment added", comment.body),
-      ],
       lastUpdatedDate: new Date().toISOString().slice(0, 10),
     };
     persist(
@@ -1354,6 +1359,11 @@ function App() {
     project: AuditProject,
     action: DocumentWorkflowAction,
   ) => {
+    const readiness = documentReadiness(project);
+    if (action === "markDocumentsComplete" && readiness.percent === 100) {
+      setMessage(`${project.assignmentNumber} documents are already complete.`);
+      return;
+    }
     const eventTitle =
       action === "markDocumentsComplete"
         ? "Documents marked complete"
@@ -2269,6 +2279,7 @@ function DocumentReadiness({
   ) => void;
 }) {
   const readiness = documentReadiness(project);
+  const documentsComplete = readiness.percent === 100;
   return (
     <article className="panel document-workflow">
       <div className="section-title">
@@ -2347,11 +2358,12 @@ function DocumentReadiness({
         </button>
         <button
           type="button"
+          disabled={documentsComplete}
           onClick={() =>
             onDocumentWorkflowAction(project, "markDocumentsComplete")
           }
         >
-          Mark documents complete
+          {documentsComplete ? "Documents complete" : "Mark documents complete"}
         </button>
       </div>
     </article>
