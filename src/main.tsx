@@ -1310,6 +1310,24 @@ function App() {
     setMessage(`${project.assignmentNumber} moved to ${targetStage}.`);
   };
 
+  const removeProjectLabel = (project: AuditProject, label: ProjectLabel) => {
+    if (!project.labels.includes(label)) return;
+    const updatedProject = withProjectDefaults({
+      ...project,
+      labels: project.labels.filter((item) => item !== label),
+      assignmentStatus:
+        label === "Waiting on Broker" && project.assignmentStatus === "On Hold"
+          ? "In Progress"
+          : project.assignmentStatus,
+      lastUpdatedDate: new Date().toISOString().slice(0, 10),
+    });
+    persist(
+      projects.map((item) => (item.id === project.id ? updatedProject : item)),
+    );
+    setSelectedId(project.id);
+    setMessage(`${label} removed from ${project.assignmentNumber}.`);
+  };
+
   const addProjectComment = (
     project: AuditProject,
     comment: ProjectComment,
@@ -1522,6 +1540,7 @@ function App() {
           selectedId={selectedProject?.id}
           onSelect={setSelectedId}
           onMove={moveProject}
+          onRemoveLabel={removeProjectLabel}
         />
       ) : (
         <ProjectTable projects={filteredProjects} onSelect={setSelectedId} />
@@ -1531,6 +1550,7 @@ function App() {
           project={selectedProject}
           onEdit={() => setEditing(selectedProject)}
           onMove={moveProject}
+          onRemoveLabel={removeProjectLabel}
           onAddComment={addProjectComment}
           onToggleChecklist={toggleChecklistItem}
           onDocumentWorkflowAction={updateProjectDocumentWorkflow}
@@ -2012,11 +2032,13 @@ function Kanban({
   selectedId,
   onSelect,
   onMove,
+  onRemoveLabel,
 }: {
   projects: AuditProject[];
   selectedId?: string;
   onSelect: (id: string) => void;
   onMove: (project: AuditProject, stage: Stage) => void;
+  onRemoveLabel: (project: AuditProject, label: ProjectLabel) => void;
 }) {
   const handleDrop = (projectId: string, targetStage: Stage) => {
     const project = projects.find((item) => item.id === projectId);
@@ -2063,12 +2085,15 @@ function Kanban({
                     </span>
                     <span className="pill muted">{project.assignmentType}</span>
                     {project.labels.map((label) => (
-                      <span
-                        className={`project-label mini ${label.toLowerCase().replace(/ /g, "-")}`}
+                      <LabelChip
+                        label={label}
                         key={label}
-                      >
-                        {label}
-                      </span>
+                        compact
+                        onRemove={(event) => {
+                          event.stopPropagation();
+                          onRemoveLabel(project, label);
+                        }}
+                      />
                     ))}
                     {project.comments.length > 0 && (
                       <span className="pill muted">
@@ -2103,10 +2128,45 @@ function Kanban({
   );
 }
 
+function labelClassName(label: ProjectLabel) {
+  return label.toLowerCase().replace(/ /g, "-");
+}
+
+function LabelChip({
+  label,
+  compact = false,
+  onRemove,
+}: {
+  label: ProjectLabel;
+  compact?: boolean;
+  onRemove?: (event: React.MouseEvent<HTMLButtonElement>) => void;
+}) {
+  return (
+    <span
+      className={`project-label removable ${compact ? "mini" : ""} ${labelClassName(
+        label,
+      )}`}
+    >
+      {label}
+      {onRemove && (
+        <button
+          type="button"
+          aria-label={`Remove ${label}`}
+          onClick={onRemove}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          ×
+        </button>
+      )}
+    </span>
+  );
+}
+
 function ProjectDetail({
   project,
   onEdit,
   onMove,
+  onRemoveLabel,
   onAddComment,
   onToggleChecklist,
   onDocumentWorkflowAction,
@@ -2116,6 +2176,7 @@ function ProjectDetail({
   project: AuditProject;
   onEdit: () => void;
   onMove: (project: AuditProject, stage: Stage) => void;
+  onRemoveLabel: (project: AuditProject, label: ProjectLabel) => void;
   onAddComment: (project: AuditProject, comment: ProjectComment) => void;
   onToggleChecklist: (project: AuditProject, key: string) => void;
   onDocumentWorkflowAction: (
@@ -2137,12 +2198,11 @@ function ProjectDetail({
         {project.labels.length > 0 && (
           <div className="label-strip">
             {project.labels.map((label) => (
-              <span
-                className={`project-label ${label.toLowerCase().replace(/ /g, "-")}`}
+              <LabelChip
+                label={label}
                 key={label}
-              >
-                {label}
-              </span>
+                onRemove={() => onRemoveLabel(project, label)}
+              />
             ))}
           </div>
         )}

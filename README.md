@@ -67,6 +67,7 @@ A future SharePoint implementation should use an **Audit Assignments** list for 
 
 | Update size | Version | What changed                                                                                                                                            |
 | ----------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Minor       | UX-11   | Add removable label chips so labels can be cleared directly from lifecycle cards and detail headers.                                                    |
 | Minor       | UX-10   | Make waiting-on-broker and broker-chase workflow events idempotent and collapse legacy same-day duplicates in the audit trail.                         |
 | Minor       | UX-9    | Add a clear waiting-on-broker workflow action for broker-completed follow-up that removes the label without forcing documents complete.                 |
 | Minor       | UX-8    | Prevent duplicate audit trail comment entries and make document-complete workflow idempotent.                                                           |
