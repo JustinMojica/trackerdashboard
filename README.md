@@ -111,3 +111,24 @@ This split keeps the main assignment row Power BI friendly while letting Power A
 - **On findings sent:** start a coverholder-response reminder clock.
 - **On final report issued:** create invoice tasks and, if needed, DAM submission follow-up.
 - **On invoice paid:** move eligible records toward close-out after final submission and archive checks are complete.
+
+### Teams and Microsoft 365 automation blueprint
+
+Use SharePoint/Microsoft Lists as the system of record and Teams as the notification/action surface. A practical first release could use these automations:
+
+| Trigger | Power Automate action | Teams / 365 outcome |
+| ------- | -------------------- | ------------------- |
+| Assignment item created or modified | SharePoint list trigger evaluates source, due date, assigned team, blockers, and current stage | Post a Teams message to the audit operations channel with assignment number, owner, due date, and next action |
+| Stage changed | Compare previous/current stage, append a status-history row, and run the same gate checks as `canMoveToStage` | Notify the next owner in Teams and include blockers if the stage move needs attention |
+| Document request sent or broker chase date updated | Schedule reminder flow until documents are received or Waiting on Broker is cleared | Send Teams reminders to the lead auditor and optional broker-facing owner |
+| Quote accepted | Create scheduling/checklist tasks and update status history | Post a Teams update tagging the audit team to confirm audit week/date |
+| Findings sent | Start a response-deadline timer | Send Teams reminders until coverholder response date is populated |
+| Report ready for review | Start an approval | Route reviewer approval in Teams / Power Automate before final submission |
+| Invoice sent or paid | Update invoice status and close-out readiness | Notify finance/audit operations in Teams and move eligible records toward Closed |
+
+Recommended implementation order:
+
+1. **Lists first:** create the SharePoint lists and required columns before building flows.
+2. **Notifications second:** start with Teams posts for created/modified assignments and broker/document reminders.
+3. **Approvals third:** add reviewer approvals after stage and document data is reliable.
+4. **Governance fourth:** add service accounts/owners, retry rules, naming conventions, and environment ownership before production.
