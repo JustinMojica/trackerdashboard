@@ -57,7 +57,8 @@ The `AuditProject` shape in `src/main.tsx` is intentionally flat and list-friend
 | Date fields                                                                               | Date and time                                   | Supports due, overdue, and SLA reporting                                                                |
 | Document receipt and completion fields                                                    | Yes/No                                          | Supports missing document blockers and checklist automation                                             |
 | `nextAction`, `blockers`                                                                  | Multiple lines of text                          | Manual action notes and exception management                                                            |
-| `statusHistory`                                                                           | Child list                                      | Recommended as a separate Assignment Status History list related by assignment ID with date/time stamps |
+| `statusHistory`                                                                           | Child list                                      | Recommended as a separate Assignment Status History list related by assignment ID with date/time stamps and cycle-time reporting |
+| `activityEvents`                                                                          | Child list                                      | Captures field, team, document, checklist, and stage events for a full audit activity trail             |
 | `comments`                                                                                | Child list                                      | Recommended as a related comments/activity list for card notes and collaboration                        |
 
 A future SharePoint implementation should use an **Audit Assignments** list for the main project record and an **Audit Assignment Status History** child list for the stage movement audit trail. Power Automate flows can enforce the same gate rules used in this prototype before advancing stages. The newer card comments and status history timestamps should map to child lists so users can keep a Trello-style activity trail without bloating the main assignment row.
@@ -66,6 +67,7 @@ A future SharePoint implementation should use an **Audit Assignments** list for 
 
 | Update size | Version | What changed                                                                                                                                            |
 | ----------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Major       | UX-4    | Add weighted workload capacity, full activity event tracking, post-intake support additions, and cycle-time reporting ranges.                           |
 | Major       | UX-3    | Add lead/supporting audit teams, count shared assignments in workload, and clarify document readiness status colors.                                    |
 | Major       | UX-2    | Add activity timeline, document readiness workflow actions, zero-load workload minimization, and a Node test suite for workflow logic.                  |
 | Major       | UX-1    | Redesign workload as a dashboard, add guided intake, Trello-style labels, Today’s Work, interactive checklists, and stronger Office 365 data readiness. |
@@ -78,8 +80,8 @@ Move to Office 365 after the team validates this major UX iteration with realist
 - **Audit Assignments** for the main flat assignment record.
 - **Audit Assignment Comments** for Trello-style card comments.
 - **Audit Assignment Checklist Items** for per-stage checklist completion.
-- **Audit Assignment Status History** for timestamped stage and status changes.
-- **Auditors / Reviewers** for active users, lead/supporting audit team roles, capacity, and workload reporting.
+- **Audit Assignment Status History** for timestamped stage and status changes and stage-duration reporting.
+- **Auditors / Reviewers** for active users, lead/supporting audit team roles, weighted capacity, and workload reporting.
 - **Documents Requested / Received** for BAA, endorsements, Premium BDX, and audit support tracking.
 
 This split keeps the main assignment row Power BI friendly while letting Power Apps and Power Automate handle related activity, comments, reminders, and approvals.

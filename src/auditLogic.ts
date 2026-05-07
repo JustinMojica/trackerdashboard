@@ -43,6 +43,14 @@ export type AuditTeamMember = {
   role: AuditTeamRole;
 };
 
+export type StatusHistoryItem = {
+  changedAt: string;
+  fromStage: Stage;
+  toStage: Stage;
+};
+
+export type DurationRange = "ytd" | "90d" | "7d";
+
 export type LogicProject = {
   assignedAuditor: string;
   auditTeam: AuditTeamMember[];
@@ -62,6 +70,8 @@ export type LogicProject = {
   labels: ProjectLabel[];
   nextAction: string;
   lastUpdatedDate: string;
+  dueDate?: string;
+  statusHistory?: StatusHistoryItem[];
 };
 
 export const stages: Stage[] = [
@@ -130,6 +140,72 @@ export function assignedAuditorNames(project: LogicProject) {
 
 export function projectHasAuditor(project: LogicProject, auditor: string) {
   return assignedAuditorNames(project).includes(auditor);
+}
+
+export function workloadUnits(
+  project: LogicProject,
+  auditor: string,
+  today = new Date("2026-05-05T12:00:00Z"),
+) {
+  const role = normalizeAuditTeam(project).find(
+    (member) => member.person === auditor,
+  )?.role;
+  if (!role) return 0;
+  const base = role === "Lead Auditor" ? 1 : 0.5;
+  const priorityBoost = project.labels.includes("High Priority") ? 0.25 : 0;
+  const dueBoost = project.dueDate
+    ? Math.ceil(
+        (new Date(`${project.dueDate}T12:00:00Z`).getTime() - today.getTime()) /
+          86400000,
+      ) <= 7
+      ? 0.25
+      : 0
+    : 0;
+  return base + priorityBoost + dueBoost;
+}
+
+function rangeStart(range: DurationRange, today: Date) {
+  const start = new Date(today);
+  if (range === "ytd") return new Date(`${today.getUTCFullYear()}-01-01T00:00:00Z`);
+  start.setUTCDate(start.getUTCDate() - (range === "90d" ? 90 : 7));
+  return start;
+}
+
+export function stageDurationMetrics(
+  projects: LogicProject[],
+  range: DurationRange,
+  today = new Date("2026-05-05T12:00:00Z"),
+) {
+  const start = rangeStart(range, today);
+  const durations = new Map<Stage, number[]>();
+  stages.forEach((stage) => durations.set(stage, []));
+  projects.forEach((project) => {
+    const sorted = (project.statusHistory ?? [])
+      .slice()
+      .sort((a, b) => Date.parse(a.changedAt) - Date.parse(b.changedAt));
+    sorted.forEach((item, index) => {
+      const changedAt = new Date(item.changedAt);
+      if (Number.isNaN(changedAt.getTime()) || changedAt < start) return;
+      const prior = sorted[index - 1];
+      const enteredAt = prior
+        ? new Date(prior.changedAt)
+        : new Date(`${project.lastUpdatedDate}T12:00:00Z`);
+      const durationDays = Math.max(
+        0,
+        Math.round((changedAt.getTime() - enteredAt.getTime()) / 86400000),
+      );
+      durations.get(item.fromStage)?.push(durationDays);
+    });
+  });
+  return stages
+    .map((stage) => {
+      const values = durations.get(stage) ?? [];
+      const average = values.length
+        ? values.reduce((sum, value) => sum + value, 0) / values.length
+        : 0;
+      return { stage, average, count: values.length };
+    })
+    .filter((metric) => metric.count > 0);
 }
 
 function addUniqueLabel(labels: ProjectLabel[], label: ProjectLabel) {

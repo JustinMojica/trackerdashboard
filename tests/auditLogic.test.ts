@@ -6,6 +6,8 @@ import {
   canMoveToStage,
   computedBlockers,
   documentReadiness,
+  stageDurationMetrics,
+  workloadUnits,
   type LogicProject,
 } from "../src/auditLogic.js";
 
@@ -31,6 +33,11 @@ const baseProject: LogicProject = {
   labels: [],
   nextAction: "",
   lastUpdatedDate: "2026-05-01",
+  dueDate: "2026-05-07",
+  statusHistory: [
+    { changedAt: "2026-04-20", fromStage: "Intake", toStage: "Registration" },
+    { changedAt: "2026-04-25", fromStage: "Registration", toStage: "Quote" },
+  ],
 };
 
 test("computedBlockers includes document and quote blockers", () => {
@@ -84,4 +91,15 @@ test("role-based audit team exposes every assigned auditor", () => {
     "Lorraine Mojica",
     "Walter Aviles",
   ]);
+});
+
+
+test("weighted workload differentiates lead and support roles", () => {
+  assert.equal(workloadUnits(baseProject, "Lorraine Mojica"), 1.25);
+  assert.equal(workloadUnits(baseProject, "Walter Aviles"), 0.75);
+});
+
+test("stage duration metrics support selectable ranges", () => {
+  const metrics = stageDurationMetrics([baseProject], "ytd");
+  assert.equal(metrics.some((metric) => metric.stage === "Registration"), true);
 });

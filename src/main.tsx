@@ -64,6 +64,15 @@ export type ProjectComment = {
   body: string;
 };
 
+export type AuditActivityEvent = {
+  id: string;
+  createdAt: string;
+  actor: string;
+  type: "team" | "field" | "document" | "checklist" | "stage";
+  title: string;
+  detail: string;
+};
+
 export type AuditTeamRole = "Lead Auditor" | "Supporting Auditor";
 
 export type AuditTeamMember = {
@@ -113,6 +122,7 @@ export type AuditProject = {
   checklistCompletions: Record<string, boolean>;
   statusHistory: StatusHistoryItem[];
   comments: ProjectComment[];
+  activityEvents: AuditActivityEvent[];
 };
 
 type Filters = {
@@ -249,6 +259,7 @@ export const sampleProjects: AuditProject[] = [
         body: "Waiting on remaining intake support before moving forward.",
       },
     ],
+    activityEvents: [],
   },
   {
     id: "audit-002",
@@ -320,6 +331,7 @@ export const sampleProjects: AuditProject[] = [
       },
     ],
     comments: [],
+    activityEvents: [],
   },
   {
     id: "audit-003",
@@ -387,6 +399,7 @@ export const sampleProjects: AuditProject[] = [
         body: "Findings sent; response is the next gating item.",
       },
     ],
+    activityEvents: [],
   },
   {
     id: "audit-004",
@@ -447,6 +460,7 @@ export const sampleProjects: AuditProject[] = [
       },
     ],
     comments: [],
+    activityEvents: [],
   },
 ];
 
@@ -492,6 +506,7 @@ const blankProject = (): AuditProject => ({
   checklistCompletions: {},
   statusHistory: [],
   comments: [],
+  activityEvents: [],
 });
 
 export const requiredDocuments = [
@@ -633,6 +648,71 @@ function formatAuditTeam(project: AuditProject) {
     .join(", ");
 }
 
+function auditTeamRole(project: AuditProject, auditor: string) {
+  return normalizeAuditTeam(project).find((member) => member.person === auditor)?.role;
+}
+
+function workloadUnits(project: AuditProject, auditor: string) {
+  const role = auditTeamRole(project, auditor);
+  if (!role) return 0;
+  const base = role === "Lead Auditor" ? 1 : 0.5;
+  const priorityBoost = project.labels.includes("High Priority") ? 0.25 : 0;
+  const dueBoost = daysUntil(project.dueDate) <= 7 ? 0.25 : 0;
+  return base + priorityBoost + dueBoost;
+}
+
+function createActivityEvent(
+  type: AuditActivityEvent["type"],
+  title: string,
+  detail: string,
+): AuditActivityEvent {
+  return {
+    id: `event-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    createdAt: timestampNow(),
+    actor: "Prototype user",
+    type,
+    title,
+    detail,
+  };
+}
+
+type DurationRange = "ytd" | "90d" | "7d";
+
+function rangeStart(range: DurationRange) {
+  const start = new Date(today);
+  if (range === "ytd") return new Date(`${today.getUTCFullYear()}-01-01T00:00:00Z`);
+  start.setUTCDate(start.getUTCDate() - (range === "90d" ? 90 : 7));
+  return start;
+}
+
+function stageDurationMetrics(projects: AuditProject[], range: DurationRange) {
+  const start = rangeStart(range);
+  const durations = new Map<Stage, number[]>();
+  stages.forEach((stage) => durations.set(stage, []));
+  projects.forEach((project) => {
+    const sorted = project.statusHistory
+      .slice()
+      .sort((a, b) => Date.parse(a.changedAt) - Date.parse(b.changedAt));
+    sorted.forEach((item, index) => {
+      const changedAt = new Date(item.changedAt);
+      if (Number.isNaN(changedAt.getTime()) || changedAt < start) return;
+      const prior = sorted[index - 1];
+      const enteredAt = prior ? new Date(prior.changedAt) : new Date(`${project.lastUpdatedDate}T12:00:00Z`);
+      const durationDays = Math.max(0, Math.round((changedAt.getTime() - enteredAt.getTime()) / 86400000));
+      durations.get(item.fromStage)?.push(durationDays);
+    });
+  });
+  return stages
+    .map((stage) => {
+      const values = durations.get(stage) ?? [];
+      const average = values.length
+        ? values.reduce((sum, value) => sum + value, 0) / values.length
+        : 0;
+      return { stage, average, count: values.length };
+    })
+    .filter((metric) => metric.count > 0);
+}
+
 export function withProjectDefaults(project: AuditProject): AuditProject {
   const auditTeam = normalizeAuditTeam(project);
   return {
@@ -649,6 +729,7 @@ export function withProjectDefaults(project: AuditProject): AuditProject {
     brokerExpectedResponseDate: project.brokerExpectedResponseDate ?? "",
     checklistCompletions: project.checklistCompletions ?? {},
     comments: project.comments ?? [],
+    activityEvents: project.activityEvents ?? [],
   };
 }
 
@@ -888,6 +969,14 @@ export function activityTimeline(project: AuditProject): ActivityItem[] {
       detail: key.split(":").slice(1).join(":") || key,
       tone: "ok",
     }));
+  const eventItems: ActivityItem[] = (project.activityEvents ?? []).map((event) => ({
+    id: `event-${event.id}`,
+    timestamp: event.createdAt,
+    type: event.type === "team" || event.type === "field" ? "stage" : event.type,
+    title: event.title,
+    detail: `${event.detail} · ${event.actor}`,
+    tone: event.type === "document" ? "warning" : "muted",
+  }));
   const documentItems: ActivityItem[] = [];
   if (project.documentRequestDate) {
     documentItems.push({
@@ -911,7 +1000,7 @@ export function activityTimeline(project: AuditProject): ActivityItem[] {
       tone: "warning",
     });
   }
-  return [...stageItems, ...commentItems, ...checklistItems, ...documentItems].sort(
+  return [...eventItems, ...stageItems, ...commentItems, ...checklistItems, ...documentItems].sort(
     (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
   );
 }
@@ -998,6 +1087,7 @@ function App() {
   );
   const [savedView, setSavedView] = useState<SavedView>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
+  const [durationRange, setDurationRange] = useState<DurationRange>("ytd");
   const [hiddenWorkloadAuditors, setHiddenWorkloadAuditors] = useState<
     string[]
   >([]);
@@ -1102,6 +1192,7 @@ function App() {
   };
 
   const upsertProject = (project: AuditProject) => {
+    const exists = projects.some((item) => item.id === project.id);
     const cleanProject = withProjectDefaults({
       ...project,
       quoteAmount: Number(project.quoteAmount) || 0,
@@ -1110,8 +1201,17 @@ function App() {
         project.assignmentSource === "DAM"
           ? project.damSubmissionStatus
           : ("Not Required" as DamSubmissionStatus),
+      activityEvents: [
+        ...(project.activityEvents ?? []),
+        createActivityEvent(
+          "field",
+          exists ? "Project edited" : "Project created",
+          exists
+            ? "Project fields were updated from Edit Project."
+            : "Project was created from guided intake.",
+        ),
+      ],
     });
-    const exists = projects.some((item) => item.id === cleanProject.id);
     const nextProjects = exists
       ? projects.map((item) =>
           item.id === cleanProject.id ? cleanProject : item,
@@ -1139,6 +1239,14 @@ function App() {
             ? "Blocked"
             : "In Progress",
       lastUpdatedDate: new Date().toISOString().slice(0, 10),
+      activityEvents: [
+        ...(project.activityEvents ?? []),
+        createActivityEvent(
+          "stage",
+          `${project.currentStage} → ${targetStage}`,
+          "Stage changed in tracker.",
+        ),
+      ],
       statusHistory: [
         ...project.statusHistory,
         {
@@ -1163,6 +1271,10 @@ function App() {
     const updatedProject = {
       ...project,
       comments: [...project.comments, comment],
+      activityEvents: [
+        ...(project.activityEvents ?? []),
+        createActivityEvent("field", "Comment added", comment.body),
+      ],
       lastUpdatedDate: new Date().toISOString().slice(0, 10),
     };
     persist(
@@ -1179,6 +1291,16 @@ function App() {
         ...project.checklistCompletions,
         [key]: !project.checklistCompletions[key],
       },
+      activityEvents: [
+        ...(project.activityEvents ?? []),
+        createActivityEvent(
+          "checklist",
+          project.checklistCompletions[key]
+            ? "Checklist item reopened"
+            : "Checklist item completed",
+          key.split(":").slice(1).join(":") || key,
+        ),
+      ],
       lastUpdatedDate: new Date().toISOString().slice(0, 10),
     };
     persist(
@@ -1187,22 +1309,53 @@ function App() {
     setSelectedId(project.id);
   };
 
-  const updateProjectDocumentWorkflow = (
-    project: AuditProject,
-    action: DocumentWorkflowAction,
-  ) => {
-    const updatedProject = applyDocumentWorkflowAction(project, action);
+  const addSupportingAuditor = (project: AuditProject, auditor: string) => {
+    if (!auditor || projectHasAuditor(project, auditor)) return;
+    const updatedProject = withProjectDefaults({
+      ...project,
+      auditTeam: [
+        ...normalizeAuditTeam(project),
+        { person: auditor, role: "Supporting Auditor" },
+      ],
+      activityEvents: [
+        ...(project.activityEvents ?? []),
+        createActivityEvent(
+          "team",
+          "Supporting auditor added",
+          `${auditor} joined as a supporting auditor.`,
+        ),
+      ],
+      lastUpdatedDate: new Date().toISOString().slice(0, 10),
+    });
     persist(
       projects.map((item) => (item.id === project.id ? updatedProject : item)),
     );
     setSelectedId(project.id);
-    const actionMessage =
+    setMessage(`${auditor} added to ${project.assignmentNumber}.`);
+  };
+
+  const updateProjectDocumentWorkflow = (
+    project: AuditProject,
+    action: DocumentWorkflowAction,
+  ) => {
+    const eventTitle =
       action === "markDocumentsComplete"
-        ? "Document readiness marked complete."
+        ? "Documents marked complete"
         : action === "recordBrokerChase"
-          ? "Broker follow-up recorded."
-          : "Waiting on Broker applied.";
-    setMessage(`${actionMessage} ${project.assignmentNumber} updated.`);
+          ? "Broker chase recorded"
+          : "Waiting on Broker applied";
+    const updatedProject = {
+      ...applyDocumentWorkflowAction(project, action),
+      activityEvents: [
+        ...(project.activityEvents ?? []),
+        createActivityEvent("document", eventTitle, eventTitle),
+      ],
+    };
+    persist(
+      projects.map((item) => (item.id === project.id ? updatedProject : item)),
+    );
+    setSelectedId(project.id);
+    setMessage(`${eventTitle}. ${project.assignmentNumber} updated.`);
   };
 
   return (
@@ -1239,6 +1392,11 @@ function App() {
       )}
 
       <Dashboard projects={projects} />
+      <CycleTimeDashboard
+        projects={projects}
+        range={durationRange}
+        setRange={setDurationRange}
+      />
       <SavedViews
         savedView={savedView}
         setSavedView={setSavedView}
@@ -1323,6 +1481,8 @@ function App() {
           onAddComment={addProjectComment}
           onToggleChecklist={toggleChecklistItem}
           onDocumentWorkflowAction={updateProjectDocumentWorkflow}
+          auditors={auditors}
+          onAddSupportingAuditor={addSupportingAuditor}
         />
       )}
       {editing && (
@@ -1373,6 +1533,67 @@ function Dashboard({ projects }: { projects: AuditProject[] }) {
           maximumFractionDigits: 0,
         })}
       />
+    </section>
+  );
+}
+
+function CycleTimeDashboard({
+  projects,
+  range,
+  setRange,
+}: {
+  projects: AuditProject[];
+  range: DurationRange;
+  setRange: (range: DurationRange) => void;
+}) {
+  const metrics = stageDurationMetrics(projects, range);
+  const rangeLabel =
+    range === "ytd" ? "YTD" : range === "90d" ? "last 3 months" : "last week";
+  return (
+    <section className="panel cycle-dashboard">
+      <div className="section-title">
+        <div>
+          <p className="eyebrow dark">Cycle time</p>
+          <h2>Average stage duration</h2>
+          <span>How long lifecycle steps take for {rangeLabel}</span>
+        </div>
+        <div className="segmented">
+          <button
+            type="button"
+            className={range === "ytd" ? "active" : "secondary"}
+            onClick={() => setRange("ytd")}
+          >
+            YTD
+          </button>
+          <button
+            type="button"
+            className={range === "90d" ? "active" : "secondary"}
+            onClick={() => setRange("90d")}
+          >
+            3 months
+          </button>
+          <button
+            type="button"
+            className={range === "7d" ? "active" : "secondary"}
+            onClick={() => setRange("7d")}
+          >
+            1 week
+          </button>
+        </div>
+      </div>
+      {metrics.length === 0 ? (
+        <p>No stage moves in this period yet.</p>
+      ) : (
+        <div className="cycle-grid">
+          {metrics.map((metric) => (
+            <article className="cycle-card" key={metric.stage}>
+              <span>{metric.stage}</span>
+              <strong>{metric.average.toFixed(1)}d</strong>
+              <small>{metric.count} move{metric.count === 1 ? "" : "s"}</small>
+            </article>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -1473,18 +1694,25 @@ function WorkloadCounts({
       (project) =>
         daysUntil(project.dueDate) >= 0 && daysUntil(project.dueDate) <= 7,
     ).length;
-    const tone =
-      openProjects.length >= 4
-        ? "high"
-        : openProjects.length >= 2
-          ? "medium"
-          : "low";
+    const leadCount = openProjects.filter(
+      (project) => auditTeamRole(project, auditor) === "Lead Auditor",
+    ).length;
+    const supportCount = openProjects.filter(
+      (project) => auditTeamRole(project, auditor) === "Supporting Auditor",
+    ).length;
+    const units = openProjects.reduce(
+      (sum, project) => sum + workloadUnits(project, auditor),
+      0,
+    );
+    const capacity = 4;
+    const utilization = Math.round((units / capacity) * 100);
+    const tone = units >= capacity ? "high" : units >= capacity * 0.6 ? "medium" : "low";
     const status =
       openProjects.length === 0
         ? "Available"
-        : openProjects.length >= 4
+        : units >= capacity
           ? "At capacity"
-          : openProjects.length >= 2
+          : units >= capacity * 0.6
             ? "Moderate load"
             : "Light load";
     return {
@@ -1492,6 +1720,10 @@ function WorkloadCounts({
       openCount: openProjects.length,
       blockedCount,
       dueSoonCount,
+      leadCount,
+      supportCount,
+      units,
+      utilization,
       status,
       tone,
     };
@@ -1500,9 +1732,9 @@ function WorkloadCounts({
     (auditor) => !hiddenAuditors.includes(auditor),
   );
   const workloadRows = visibleAuditors.map(buildRow);
-  const totalOpen = auditors
-    .map(buildRow)
-    .reduce((sum, row) => sum + row.openCount, 0);
+  const allRows = auditors.map(buildRow);
+  const totalOpen = allRows.reduce((sum, row) => sum + row.openCount, 0);
+  const totalUnits = allRows.reduce((sum, row) => sum + row.units, 0);
 
   return (
     <section className="panel workload-dashboard">
@@ -1512,8 +1744,8 @@ function WorkloadCounts({
           <h2>Auditor workload</h2>
         </div>
         <div className="workload-summary">
-          <strong>{totalOpen}</strong>
-          <span>open assignments</span>
+          <strong>{totalUnits.toFixed(1)}</strong>
+          <span>weighted workload units</span>
           <small>
             {visibleAuditors.length} active · {hiddenAuditors.length} minimized
           </small>
@@ -1538,8 +1770,8 @@ function WorkloadCounts({
         </div>
       )}
       <p className="workload-meter-note">
-        Auditors with no open assignments are minimized by default. Active rows
-        show plain workload counts instead of relative bars.
+        Auditors with no open assignments are minimized by default. Lead work is
+        weighted heavier than support work, with due-soon and high-priority boosts.
       </p>
       <div className="workload-list">
         {workloadRows.map((row) => (
@@ -1555,8 +1787,8 @@ function WorkloadCounts({
               <div>
                 <strong>{row.auditor}</strong>
                 <small>
-                  {row.openCount} open · {row.blockedCount} blocked ·{" "}
-                  {row.dueSoonCount} due soon
+                  {row.openCount} open · {row.leadCount} lead · {row.supportCount} support ·{" "}
+                  {row.blockedCount} blocked
                 </small>
               </div>
             </div>
@@ -1573,7 +1805,13 @@ function WorkloadCounts({
                 <strong>{row.dueSoonCount}</strong>
                 Due soon
               </span>
-              <span className={`workload-status ${row.tone}`}>{row.status}</span>
+              <span className={`workload-stat ${row.tone === "high" ? "danger" : row.tone === "medium" ? "warning" : ""}`}>
+                <strong>{row.units.toFixed(1)}</strong>
+                Units
+              </span>
+              <span className={`workload-status ${row.tone}`}>
+                {row.status} · {row.utilization}%
+              </span>
             </div>
             <button
               type="button"
@@ -1999,6 +2237,8 @@ function ProjectDetail({
   onAddComment,
   onToggleChecklist,
   onDocumentWorkflowAction,
+  auditors,
+  onAddSupportingAuditor,
 }: {
   project: AuditProject;
   onEdit: () => void;
@@ -2006,6 +2246,8 @@ function ProjectDetail({
   onAddComment: (project: AuditProject, comment: ProjectComment) => void;
   onToggleChecklist: (project: AuditProject, key: string) => void;
   onDocumentWorkflowAction: (project: AuditProject, action: DocumentWorkflowAction) => void;
+  auditors: string[];
+  onAddSupportingAuditor: (project: AuditProject, auditor: string) => void;
 }) {
   const blockers = computedBlockers(project);
   return (
@@ -2080,6 +2322,11 @@ function ProjectDetail({
           </label>
         </div>
       </article>
+      <AuditTeamPanel
+        project={project}
+        auditors={auditors}
+        onAddSupportingAuditor={onAddSupportingAuditor}
+      />
       <DocumentReadiness
         project={project}
         onDocumentWorkflowAction={onDocumentWorkflowAction}
@@ -2097,6 +2344,74 @@ function Meta({ label, value }: { label: string; value: string }) {
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
+  );
+}
+
+function AuditTeamPanel({
+  project,
+  auditors,
+  onAddSupportingAuditor,
+}: {
+  project: AuditProject;
+  auditors: string[];
+  onAddSupportingAuditor: (project: AuditProject, auditor: string) => void;
+}) {
+  const [selectedAuditor, setSelectedAuditor] = useState(
+    auditors.find((auditor) => !projectHasAuditor(project, auditor)) ?? "",
+  );
+  const availableAuditors = auditors.filter(
+    (auditor) => !projectHasAuditor(project, auditor),
+  );
+  const selected = selectedAuditor || availableAuditors[0] || "";
+  return (
+    <article className="panel team-panel">
+      <div className="section-title">
+        <div>
+          <h2>Audit team</h2>
+          <span>Add help after intake when someone jumps in.</span>
+        </div>
+      </div>
+      <div className="team-list">
+        {normalizeAuditTeam(project).map((member) => (
+          <span className="team-member" key={member.person}>
+            <strong>{member.person}</strong>
+            <small>{member.role}</small>
+          </span>
+        ))}
+      </div>
+      <div className="add-support-row">
+        <label>
+          Add supporting auditor
+          <select
+            value={selected}
+            disabled={availableAuditors.length === 0}
+            onChange={(event) => setSelectedAuditor(event.target.value)}
+          >
+            {availableAuditors.length === 0 ? (
+              <option value="">All auditors are already assigned</option>
+            ) : (
+              availableAuditors.map((auditor) => (
+                <option key={auditor} value={auditor}>
+                  {auditor}
+                </option>
+              ))
+            )}
+          </select>
+        </label>
+        <button
+          type="button"
+          disabled={!selected}
+          onClick={() => {
+            onAddSupportingAuditor(project, selected);
+            setSelectedAuditor(
+              availableAuditors.find((auditor) => auditor !== selected) ?? "",
+            );
+          }}
+        >
+          Add support
+        </button>
+      </div>
+    </article>
   );
 }
 
@@ -2123,10 +2438,6 @@ function DocumentReadiness({
       </div>
       <div className="readiness-track" aria-hidden="true">
         <span style={{ width: `${readiness.percent}%` }} />
-      </div>
-      <div className="readiness-legend" aria-label="Document readiness legend">
-        <span className="legend-complete">Green = complete</span>
-        <span className="legend-pending">Yellow = missing, not started, or in progress</span>
       </div>
       <div className="document-status-grid">
         {requiredDocuments.map((doc) => {
