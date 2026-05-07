@@ -528,3 +528,17 @@ td span {
     grid-template-columns: 1fr;
   }
 }
+.card[draggable="true"] {
+  cursor: grab;
+}
+.card[draggable="true"]:active {
+  cursor: grabbing;
+}
+.column:has(.card[draggable="true"]) {
+  transition:
+    border-color 160ms ease,
+    background 160ms ease;
+}
+.column:hover {
+  border-color: #9fb7dc;
+}

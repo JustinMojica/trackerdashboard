@@ -55,6 +55,8 @@ type AuditProject = {
   id: string;
   assignmentNumber: string;
   assignmentSource: AssignmentSource;
+  assignmentType: AssignmentType;
+  auditEntity: string;
   clientCoverholderCode: string;
   broker: string;
   assignedAuditor: string;
@@ -77,6 +79,7 @@ type AuditProject = {
   coverholderResponseReceivedDate: string;
   reportStatus: ReportStatus;
   invoiceStatus: InvoiceStatus;
+  paymentReceived: boolean;
   damSubmissionStatus: DamSubmissionStatus;
   nextAction: string;
   blockers: string;
@@ -122,6 +125,13 @@ const storageKey = "audit-assignment-tracker-projects-v1";
 const auditorStorageKey = "audit-assignment-tracker-auditors-v1";
 const myAuditorStorageKey = "audit-assignment-tracker-my-auditor-v1";
 
+const assignmentTypeOptions: AssignmentType[] = [
+  "DCA",
+  "CH",
+  "MGA",
+  "Company Contract",
+];
+
 const defaultAuditorOptions = [
   "Lorraine Mojica",
   "Walter Aviles",
@@ -139,6 +149,8 @@ const sampleProjects: AuditProject[] = [
     id: "audit-001",
     assignmentNumber: "AA-2026-0142",
     assignmentSource: "DAM",
+    assignmentType: "CH",
+    auditEntity: "Northbridge Coverholder Operations",
     clientCoverholderCode: "CH-1048",
     broker: "Northbridge Market Services",
     assignedAuditor: "Lorraine Mojica",
@@ -161,6 +173,7 @@ const sampleProjects: AuditProject[] = [
     coverholderResponseReceivedDate: "",
     reportStatus: "Not Started",
     invoiceStatus: "Not Started",
+    paymentReceived: false,
     damSubmissionStatus: "Not Started",
     nextAction: "Follow up on DAM quote approval and endorsements.",
     blockers: "",
@@ -189,6 +202,8 @@ const sampleProjects: AuditProject[] = [
     id: "audit-002",
     assignmentNumber: "AA-2026-0148",
     assignmentSource: "Email",
+    assignmentType: "MGA",
+    auditEntity: "Harbor Specialty Program",
     clientCoverholderCode: "CH-2217",
     broker: "Harbor Underwriting Group",
     assignedAuditor: "Walter Aviles",
@@ -211,6 +226,7 @@ const sampleProjects: AuditProject[] = [
     coverholderResponseReceivedDate: "",
     reportStatus: "Not Started",
     invoiceStatus: "Not Started",
+    paymentReceived: false,
     damSubmissionStatus: "Not Required",
     nextAction: "Receive premium bordereau before file selection.",
     blockers: "",
@@ -247,6 +263,8 @@ const sampleProjects: AuditProject[] = [
     id: "audit-003",
     assignmentNumber: "AA-2026-0155",
     assignmentSource: "DAM",
+    assignmentType: "DCA",
+    auditEntity: "Summit Claims Administration",
     clientCoverholderCode: "CH-3094",
     broker: "Summit Specialty Brokers",
     assignedAuditor: "Lorraine Mojica",
@@ -269,6 +287,7 @@ const sampleProjects: AuditProject[] = [
     coverholderResponseReceivedDate: "",
     reportStatus: "Not Started",
     invoiceStatus: "Not Started",
+    paymentReceived: false,
     damSubmissionStatus: "Not Started",
     nextAction: "Chase coverholder response to findings.",
     blockers: "",
@@ -297,6 +316,8 @@ const sampleProjects: AuditProject[] = [
     id: "audit-004",
     assignmentNumber: "AA-2026-0161",
     assignmentSource: "Email",
+    assignmentType: "Company Contract",
+    auditEntity: "Cedar Binding Authority",
     clientCoverholderCode: "CH-4175",
     broker: "Cedar Risk Partners",
     assignedAuditor: "Justin Mojica",
@@ -319,6 +340,7 @@ const sampleProjects: AuditProject[] = [
     coverholderResponseReceivedDate: "2026-04-22",
     reportStatus: "Issued",
     invoiceStatus: "Prepared",
+    paymentReceived: false,
     damSubmissionStatus: "Not Required",
     nextAction: "Send final report package and invoice by email.",
     blockers: "",
@@ -349,6 +371,8 @@ const blankProject = (): AuditProject => ({
   id: `audit-${Date.now()}`,
   assignmentNumber: `AA-2026-${Math.floor(1000 + Math.random() * 9000)}`,
   assignmentSource: "Email",
+  assignmentType: "CH",
+  auditEntity: "",
   clientCoverholderCode: "",
   broker: "",
   assignedAuditor: "",
@@ -371,6 +395,7 @@ const blankProject = (): AuditProject => ({
   coverholderResponseReceivedDate: "",
   reportStatus: "Not Started",
   invoiceStatus: "Not Started",
+  paymentReceived: false,
   damSubmissionStatus: "Not Required",
   nextAction: "",
   blockers: "",
@@ -436,13 +461,28 @@ const checklistByStage: Record<Stage, string[]> = {
     "Submit to the correct channel",
     "Record submission confirmation",
   ],
-  Invoice: ["Prepare invoice", "Issue invoice", "Track payment"],
+  Invoice: [
+    "Prepare invoice",
+    "Issue invoice",
+    "Track payment",
+    "Confirm payment received",
+  ],
   Closed: [
     "Confirm final report, submission, and invoice complete",
     "Archive audit record",
     "Capture lessons learned",
   ],
 };
+
+function withProjectDefaults(project: AuditProject): AuditProject {
+  return {
+    ...project,
+    assignmentType: project.assignmentType ?? "CH",
+    auditEntity: project.auditEntity ?? "",
+    paymentReceived:
+      project.paymentReceived ?? project.invoiceStatus === "Paid",
+  };
+}
 
 function loadProjects(): AuditProject[] {
   const raw = localStorage.getItem(storageKey);
@@ -451,7 +491,7 @@ function loadProjects(): AuditProject[] {
     return sampleProjects;
   }
   try {
-    return JSON.parse(raw) as AuditProject[];
+    return (JSON.parse(raw) as AuditProject[]).map(withProjectDefaults);
   } catch {
     return sampleProjects;
   }
@@ -579,6 +619,8 @@ function exportProjectsToCsv(projects: AuditProject[]) {
   ][] = [
     ["Assignment Number", (project) => project.assignmentNumber],
     ["Source", (project) => project.assignmentSource],
+    ["Assignment Type", (project) => project.assignmentType],
+    ["Audit Entity", (project) => project.auditEntity],
     ["Client / Coverholder Code", (project) => project.clientCoverholderCode],
     ["Broker", (project) => project.broker],
     ["Assigned Auditor", (project) => project.assignedAuditor],
@@ -588,6 +630,7 @@ function exportProjectsToCsv(projects: AuditProject[]) {
     ["Quote Status", (project) => project.quoteStatus],
     ["Quote Amount", (project) => project.quoteAmount],
     ["Due Date", (project) => project.dueDate],
+    ["Payment Received", (project) => project.paymentReceived],
     ["Next Action", (project) => project.nextAction],
     ["Blockers", (project) => computedBlockers(project).join("; ")],
   ];
@@ -704,7 +747,7 @@ function App() {
   };
 
   const upsertProject = (project: AuditProject) => {
-    const cleanProject = {
+    const cleanProject = withProjectDefaults({
       ...project,
       quoteAmount: Number(project.quoteAmount) || 0,
       lastUpdatedDate: new Date().toISOString().slice(0, 10),
@@ -712,7 +755,7 @@ function App() {
         project.assignmentSource === "DAM"
           ? project.damSubmissionStatus
           : ("Not Required" as DamSubmissionStatus),
-    };
+    });
     const exists = projects.some((item) => item.id === cleanProject.id);
     const nextProjects = exists
       ? projects.map((item) =>
@@ -1012,7 +1055,13 @@ function PeopleAdmin({
   const addAuditor = (event: FormEvent) => {
     event.preventDefault();
     const cleanName = newAuditor.trim();
-    if (!cleanName || auditorOptions.includes(cleanName)) return;
+    if (
+      !cleanName ||
+      auditorOptions.some(
+        (auditor) => auditor.toLowerCase() === cleanName.toLowerCase(),
+      )
+    )
+      return;
     setAuditorOptions([...auditorOptions, cleanName]);
     setNewAuditor("");
   };
@@ -1024,7 +1073,20 @@ function PeopleAdmin({
     <section className="panel people-admin">
       <div className="section-title">
         <h2>People / admin settings</h2>
-        <span>Manage auditor dropdown names locally</span>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() =>
+            setAuditorOptions([
+              ...defaultAuditorOptions,
+              ...auditorOptions.filter(
+                (auditor) => !defaultAuditorOptions.includes(auditor),
+              ),
+            ])
+          }
+        >
+          Restore default auditors
+        </button>
       </div>
       <div className="admin-grid">
         <form onSubmit={addAuditor} className="add-person-form">
@@ -1084,11 +1146,14 @@ function ProjectTable({
           <thead>
             <tr>
               <th>Assignment</th>
+              <th>Type</th>
+              <th>Audit entity</th>
               <th>Auditor</th>
               <th>Stage</th>
               <th>Source</th>
               <th>Quote</th>
               <th>Due</th>
+              <th>Payment received</th>
               <th>Next action</th>
               <th>Blockers</th>
             </tr>
@@ -1103,6 +1168,8 @@ function ProjectTable({
                     <strong>{project.assignmentNumber}</strong>
                     <span>{project.clientCoverholderCode}</span>
                   </td>
+                  <td>{project.assignmentType}</td>
+                  <td>{project.auditEntity || "—"}</td>
                   <td>{project.assignedAuditor}</td>
                   <td>{project.currentStage}</td>
                   <td>{project.assignmentSource}</td>
@@ -1110,6 +1177,7 @@ function ProjectTable({
                   <td>
                     <span className={`pill ${due.className}`}>{due.text}</span>
                   </td>
+                  <td>{project.paymentReceived ? "Yes" : "No"}</td>
                   <td>{project.nextAction}</td>
                   <td>{blockers.length ? blockers.join("; ") : "—"}</td>
                 </tr>
@@ -1241,15 +1309,28 @@ function Kanban({
   onSelect: (id: string) => void;
   onMove: (project: AuditProject, stage: Stage) => void;
 }) {
+  const handleDrop = (projectId: string, targetStage: Stage) => {
+    const project = projects.find((item) => item.id === projectId);
+    if (project) onMove(project, targetStage);
+  };
+
   return (
     <section className="panel">
       <div className="section-title">
         <h2>Kanban by lifecycle stage</h2>
-        <span>{projects.length} visible</span>
+        <span>{projects.length} visible · drag cards between stages</span>
       </div>
       <div className="kanban">
         {stages.map((stage) => (
-          <div className="column" key={stage}>
+          <div
+            className="column"
+            key={stage}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => {
+              event.preventDefault();
+              handleDrop(event.dataTransfer.getData("text/plain"), stage);
+            }}
+          >
             <h3>{stage}</h3>
             {projects
               .filter((project) => project.currentStage === stage)
@@ -1257,15 +1338,21 @@ function Kanban({
                 const due = dueLabel(project);
                 return (
                   <article
+                    draggable
                     className={`card ${selectedId === project.id ? "selected" : ""}`}
                     key={project.id}
                     onClick={() => onSelect(project.id)}
+                    onDragStart={(event) => {
+                      event.dataTransfer.setData("text/plain", project.id);
+                      event.dataTransfer.effectAllowed = "move";
+                    }}
                   >
                     <strong>{project.assignmentNumber}</strong>
                     <span>
                       {project.clientCoverholderCode} ·{" "}
                       {project.assignedAuditor}
                     </span>
+                    <span className="pill muted">{project.assignmentType}</span>
                     <span className={`pill ${due.className}`}>{due.text}</span>
                     {computedBlockers(project).length > 0 && (
                       <span className="pill danger">Blocked</span>
@@ -1312,6 +1399,8 @@ function ProjectDetail({
         </div>
         <div className="meta-grid">
           <Meta label="Source" value={project.assignmentSource} />
+          <Meta label="Assignment type" value={project.assignmentType} />
+          <Meta label="Audit entity" value={project.auditEntity || "Not set"} />
           <Meta
             label="Client / coverholder code"
             value={project.clientCoverholderCode}
@@ -1329,6 +1418,10 @@ function ProjectDetail({
             value={`${project.tentativeAuditWeek || "No week"} · ${project.confirmedAuditDate || "No date"}`}
           />
           <Meta label="Audit type" value={project.auditType} />
+          <Meta
+            label="Payment received"
+            value={project.paymentReceived ? "Yes" : "No"}
+          />
           <Meta label="Last updated" value={project.lastUpdatedDate} />
         </div>
         <h3>Next action</h3>
@@ -1492,6 +1585,19 @@ function ProjectForm({
               update("assignmentSource", value as AssignmentSource)
             }
           />
+          <Select
+            label="Assignment type"
+            value={draft.assignmentType}
+            options={assignmentTypeOptions}
+            onChange={(value) =>
+              update("assignmentType", value as AssignmentType)
+            }
+          />
+          <Input
+            label="Audit Entity"
+            value={draft.auditEntity}
+            onChange={(value) => update("auditEntity", value)}
+          />
           <Input
             label="Client / coverholder code"
             value={draft.clientCoverholderCode}
@@ -1628,9 +1734,15 @@ function ProjectForm({
             label="Invoice status"
             value={draft.invoiceStatus}
             options={["Not Started", "Prepared", "Sent", "Paid"]}
-            onChange={(value) =>
-              update("invoiceStatus", value as InvoiceStatus)
-            }
+            onChange={(value) => {
+              update("invoiceStatus", value as InvoiceStatus);
+              if (value === "Paid") update("paymentReceived", true);
+            }}
+          />
+          <Check
+            label="Payment received"
+            checked={draft.paymentReceived}
+            onChange={(value) => update("paymentReceived", value)}
           />
           {draft.assignmentSource === "DAM" && (
             <Select
