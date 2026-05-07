@@ -15,7 +15,7 @@ const baseProject: LogicProject = {
   assignedAuditor: "Lorraine Mojica",
   auditTeam: [
     { person: "Lorraine Mojica", role: "Lead Auditor" },
-    { person: "Walter Aviles", role: "Supporting Auditor" },
+    { person: "Leslie Domenech", role: "Supporting Auditor" },
   ],
   currentStage: "Quote",
   assignmentStatus: "New",
@@ -88,7 +88,7 @@ test("document readiness workflow completes documents and clears waiting label",
 test("role-based audit team exposes every assigned auditor", () => {
   assert.deepEqual(assignedAuditorNames(baseProject), [
     "Lorraine Mojica",
-    "Walter Aviles",
+    "Leslie Domenech",
   ]);
 });
 

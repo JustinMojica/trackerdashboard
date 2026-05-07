@@ -67,7 +67,8 @@ A future SharePoint implementation should use an **Audit Assignments** list for 
 
 | Update size | Version | What changed                                                                                                                                            |
 | ----------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Major       | UX-5    | Add five prioritized recommended next steps, clean dashboard labels, and hover-link helper text for work queues and next-action guidance.              |
+| Minor       | UX-6    | Remove saved work queues, clarify sample auditor pairings, and tighten the project detail layout to avoid empty spacing.                              |
+| Minor       | UX-5    | Add five prioritized recommended next steps, clean dashboard labels, and next-action hover guidance.                                                    |
 | Major       | UX-4    | Add activity event tracking, post-intake support additions, cycle-time reporting ranges, and simplified role-based workload counts.                    |
 | Major       | UX-3    | Add lead/supporting audit teams, count shared assignments in workload, and clarify document readiness status colors.                                    |
 | Major       | UX-2    | Add audit trail, document readiness workflow actions, zero-load workload minimization, and a Node test suite for workflow logic.                  |

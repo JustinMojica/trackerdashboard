@@ -134,13 +134,6 @@ type Filters = {
   missingDocuments: boolean;
 };
 
-type SavedView =
-  | "all"
-  | "todaysWork"
-  | "myAudits"
-  | "blocked"
-  | "dueThisWeek"
-  | "awaitingDocuments";
 type ViewMode = "kanban" | "table";
 
 export const stages: Stage[] = [
@@ -161,7 +154,6 @@ export const stages: Stage[] = [
 const today = new Date("2026-05-05T12:00:00Z");
 const storageKey = "audit-assignment-tracker-projects-v1";
 const auditorStorageKey = "audit-assignment-tracker-auditors-v1";
-const myAuditorStorageKey = "audit-assignment-tracker-my-auditor-v1";
 
 const assignmentTypeOptions: AssignmentType[] = [
   "DCA",
@@ -272,7 +264,7 @@ export const sampleProjects: AuditProject[] = [
     assignedAuditor: "Walter Aviles",
     auditTeam: [
       { person: "Walter Aviles", role: "Lead Auditor" },
-      { person: "Lorraine Mojica", role: "Supporting Auditor" },
+      { person: "Leslie Domenech", role: "Supporting Auditor" },
     ],
     reviewer: "Priya Shah",
     currentStage: "Pre-Audit",
@@ -1157,10 +1149,6 @@ function App() {
   const [auditorOptions, setAuditorOptions] = useState<string[]>(() =>
     loadAuditors(),
   );
-  const [myAuditor, setMyAuditorState] = useState(
-    () => localStorage.getItem(myAuditorStorageKey) || auditorOptions[0] || "",
-  );
-  const [savedView, setSavedView] = useState<SavedView>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
   const [durationRange, setDurationRange] = useState<DurationRange>("ytd");
   const [hiddenWorkloadAuditors, setHiddenWorkloadAuditors] = useState<
@@ -1213,36 +1201,9 @@ function App() {
           getMissingDocuments(project).length === 0
         )
           return false;
-        if (
-          savedView === "todaysWork" &&
-          !(
-            project.currentStage !== "Closed" &&
-            (daysUntil(project.dueDate) <= 1 ||
-              computedBlockers(project).length > 0)
-          )
-        )
-          return false;
-        if (savedView === "myAudits" && !projectHasAuditor(project, myAuditor))
-          return false;
-        if (
-          savedView === "blocked" &&
-          computedBlockers(project).length === 0 &&
-          project.assignmentStatus !== "Blocked"
-        )
-          return false;
-        if (
-          savedView === "dueThisWeek" &&
-          !(daysUntil(project.dueDate) >= 0 && daysUntil(project.dueDate) <= 7)
-        )
-          return false;
-        if (
-          savedView === "awaitingDocuments" &&
-          getMissingDocuments(project).length === 0
-        )
-          return false;
         return true;
       }),
-    [projects, filters, savedView, myAuditor],
+    [projects, filters],
   );
   const selectedProject =
     projects.find((project) => project.id === selectedId) ?? projects[0];
@@ -1255,15 +1216,6 @@ function App() {
   const updateAuditors = (nextAuditors: string[]) => {
     setAuditorOptions(nextAuditors);
     saveAuditors(nextAuditors);
-    if (nextAuditors.length && !nextAuditors.includes(myAuditor)) {
-      setMyAuditorState(nextAuditors[0]);
-      localStorage.setItem(myAuditorStorageKey, nextAuditors[0]);
-    }
-  };
-
-  const updateMyAuditor = (auditor: string) => {
-    setMyAuditorState(auditor);
-    localStorage.setItem(myAuditorStorageKey, auditor);
   };
 
   const upsertProject = (project: AuditProject) => {
@@ -1472,11 +1424,6 @@ function App() {
         range={durationRange}
         setRange={setDurationRange}
       />
-      <SavedViews
-        savedView={savedView}
-        setSavedView={setSavedView}
-        myAuditor={myAuditor}
-      />
       <WorkloadCounts
         projects={projects}
         auditors={auditors}
@@ -1511,8 +1458,6 @@ function App() {
       <PeopleAdmin
         auditorOptions={auditorOptions}
         setAuditorOptions={updateAuditors}
-        myAuditor={myAuditor}
-        setMyAuditor={updateMyAuditor}
       />
       <FiltersPanel
         filters={filters}
@@ -1699,76 +1644,6 @@ function SummaryCard({
   );
 }
 
-function SavedViews({
-  savedView,
-  setSavedView,
-  myAuditor,
-}: {
-  savedView: SavedView;
-  setSavedView: (view: SavedView) => void;
-  myAuditor: string;
-}) {
-  const views: { id: SavedView; label: string; helper: string }[] = [
-    {
-      id: "all",
-      label: "All audits",
-      helper: "All assignments matching the active filters.",
-    },
-    {
-      id: "todaysWork",
-      label: "Today’s work",
-      helper: "Audits that are due, blocked, or need the next action.",
-    },
-    {
-      id: "myAudits",
-      label: "My audits",
-      helper: myAuditor
-        ? `Assigned to ${myAuditor}.`
-        : "Choose your auditor in Admin.",
-    },
-    {
-      id: "blocked",
-      label: "Blocked audits",
-      helper: "Assignments with blockers or a blocked status.",
-    },
-    {
-      id: "dueThisWeek",
-      label: "Due this week",
-      helper: "Assignments due in the next seven days.",
-    },
-    {
-      id: "awaitingDocuments",
-      label: "Awaiting documents",
-      helper: "Assignments missing BAA, endorsements, or Premium BDX.",
-    },
-  ];
-  return (
-    <section className="panel saved-views">
-      <div className="section-title">
-        <h2>Saved work queues</h2>
-        <HoverLink
-          label="What is this?"
-          helper="One-click queues for common audit follow-up views."
-        />
-      </div>
-      <div className="saved-view-grid">
-        {views.map((view) => (
-          <button
-            key={view.id}
-            className={
-              savedView === view.id ? "saved-view active" : "saved-view"
-            }
-            onClick={() => setSavedView(view.id)}
-          >
-            <strong>{view.label}</strong>
-            <HoverLink label="Helper" helper={view.helper} />
-          </button>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function WorkloadCounts({
   projects,
   auditors,
@@ -1930,13 +1805,9 @@ function WorkloadCounts({
 function PeopleAdmin({
   auditorOptions,
   setAuditorOptions,
-  myAuditor,
-  setMyAuditor,
 }: {
   auditorOptions: string[];
   setAuditorOptions: (auditors: string[]) => void;
-  myAuditor: string;
-  setMyAuditor: (auditor: string) => void;
 }) {
   const availableDefaultAuditors = defaultAuditorOptions.filter(
     (auditor) => !auditorOptions.includes(auditor),
@@ -2034,19 +1905,6 @@ function PeopleAdmin({
             Add selected
           </button>
         </div>
-        <label>
-          My auditor for saved view
-          <select
-            value={myAuditor}
-            onChange={(event) => setMyAuditor(event.target.value)}
-          >
-            {auditorOptions.map((auditor) => (
-              <option key={auditor} value={auditor}>
-                {auditor}
-              </option>
-            ))}
-          </select>
-        </label>
       </div>
       <div className="person-chips">
         {auditorOptions.map((auditor) => (
@@ -2696,7 +2554,7 @@ function Checklist({
       project.checklistCompletions[checklistKey(project.currentStage, item)],
   ).length;
   return (
-    <article className="panel">
+    <article className="panel checklist-panel">
       <div className="section-title">
         <div>
           <h2>Stage checklist</h2>
@@ -3001,8 +2859,8 @@ function ProjectForm({
       <div>
         <h3>People</h3>
         <p>
-          Assign ownership so the card immediately appears in workload and saved
-          views.
+          Assign ownership so the card immediately appears in workload reporting
+          and auditor filters.
         </p>
       </div>
       <div className="form-grid wizard-grid">
