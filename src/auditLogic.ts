@@ -37,8 +37,15 @@ export type DocumentWorkflowAction =
   | "markWaitingOnBroker"
   | "recordBrokerChase"
   | "markDocumentsComplete";
+export type AuditTeamRole = "Lead Auditor" | "Supporting Auditor";
+export type AuditTeamMember = {
+  person: string;
+  role: AuditTeamRole;
+};
 
 export type LogicProject = {
+  assignedAuditor: string;
+  auditTeam: AuditTeamMember[];
   currentStage: Stage;
   assignmentStatus: AssignmentStatus;
   quoteStatus: QuoteStatus;
@@ -77,6 +84,53 @@ export const requiredDocuments = [
   { key: "endorsementsReceived", label: "Endorsements received" },
   { key: "premiumBdxReceived", label: "Premium BDX received" },
 ] as const;
+
+export function normalizeAuditTeam(project: LogicProject): AuditTeamMember[] {
+  const seededTeam = (project.auditTeam ?? [])
+    .filter((member) => member.person.trim())
+    .map((member) => ({
+      person: member.person.trim(),
+      role:
+        member.role === "Lead Auditor"
+          ? ("Lead Auditor" as AuditTeamRole)
+          : ("Supporting Auditor" as AuditTeamRole),
+    }));
+  const fallbackTeam =
+    seededTeam.length > 0
+      ? seededTeam
+      : project.assignedAuditor
+        ? [
+            {
+              person: project.assignedAuditor.trim(),
+              role: "Lead Auditor" as AuditTeamRole,
+            },
+          ]
+        : [];
+  const seen = new Set<string>();
+  const uniqueTeam = fallbackTeam.filter((member) => {
+    if (seen.has(member.person)) return false;
+    seen.add(member.person);
+    return true;
+  });
+  if (
+    uniqueTeam.length > 0 &&
+    !uniqueTeam.some((member) => member.role === "Lead Auditor")
+  ) {
+    return [
+      { ...uniqueTeam[0], role: "Lead Auditor" as AuditTeamRole },
+      ...uniqueTeam.slice(1),
+    ];
+  }
+  return uniqueTeam;
+}
+
+export function assignedAuditorNames(project: LogicProject) {
+  return normalizeAuditTeam(project).map((member) => member.person);
+}
+
+export function projectHasAuditor(project: LogicProject, auditor: string) {
+  return assignedAuditorNames(project).includes(auditor);
+}
 
 function addUniqueLabel(labels: ProjectLabel[], label: ProjectLabel) {
   return labels.includes(label) ? labels : [...labels, label];

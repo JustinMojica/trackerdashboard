@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   applyDocumentWorkflowAction,
+  assignedAuditorNames,
   canMoveToStage,
   computedBlockers,
   documentReadiness,
@@ -9,6 +10,11 @@ import {
 } from "../src/auditLogic.js";
 
 const baseProject: LogicProject = {
+  assignedAuditor: "Lorraine Mojica",
+  auditTeam: [
+    { person: "Lorraine Mojica", role: "Lead Auditor" },
+    { person: "Walter Aviles", role: "Supporting Auditor" },
+  ],
   currentStage: "Quote",
   assignmentStatus: "New",
   quoteStatus: "Sent",
@@ -70,4 +76,12 @@ test("document readiness workflow completes documents and clears waiting label",
   assert.equal(documentReadiness(complete).percent, 100);
   assert.equal(complete.assignmentStatus, "In Progress");
   assert.equal(complete.labels.includes("Waiting on Broker"), false);
+});
+
+
+test("role-based audit team exposes every assigned auditor", () => {
+  assert.deepEqual(assignedAuditorNames(baseProject), [
+    "Lorraine Mojica",
+    "Walter Aviles",
+  ]);
 });

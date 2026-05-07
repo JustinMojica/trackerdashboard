@@ -338,11 +338,26 @@ textarea {
   display: block;
   height: 100%;
 }
+.readiness-legend,
 .document-status-grid,
 .document-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+.readiness-legend span {
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 900;
+  padding: 0.25rem 0.55rem;
+}
+.legend-complete {
+  background: #e7f7ed;
+  color: #14713a;
+}
+.legend-pending {
+  background: #fff1cc;
+  color: #905400;
 }
 .document-chip {
   background: #fff1cc;
@@ -355,6 +370,10 @@ textarea {
 .document-chip.complete {
   background: #e7f7ed;
   color: #14713a;
+}
+.document-chip.pending {
+  background: #fff1cc;
+  color: #905400;
 }
 .document-dates {
   display: grid;
@@ -906,21 +925,29 @@ td span {
 .wizard-grid {
   grid-template-columns: repeat(2, minmax(220px, 1fr));
 }
-.label-picker {
+.label-picker,
+.team-picker {
   display: grid;
   gap: 0.5rem;
 }
-.label-picker > span {
+.label-picker > span,
+.team-picker > span {
   color: #40506a;
   font-weight: 800;
 }
+.team-picker p {
+  color: #66748a;
+  margin: 0;
+}
 .label-picker > div,
-.label-strip {
+.label-strip,
+.team-picker > div {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
 }
 .label-option,
+.team-option,
 .project-label {
   border-radius: 999px;
   display: inline-flex;
@@ -928,9 +955,14 @@ td span {
   font-weight: 900;
   padding: 0.35rem 0.65rem;
 }
-.label-option {
+.label-option,
+.team-option {
   background: #eef1f6;
   color: #40506a;
+}
+.team-option.selected {
+  background: #eaf1ff;
+  color: #15386d;
 }
 .label-option.selected,
 .project-label {

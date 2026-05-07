@@ -64,6 +64,13 @@ export type ProjectComment = {
   body: string;
 };
 
+export type AuditTeamRole = "Lead Auditor" | "Supporting Auditor";
+
+export type AuditTeamMember = {
+  person: string;
+  role: AuditTeamRole;
+};
+
 export type AuditProject = {
   id: string;
   assignmentNumber: string;
@@ -73,6 +80,7 @@ export type AuditProject = {
   clientCoverholderCode: string;
   broker: string;
   assignedAuditor: string;
+  auditTeam: AuditTeamMember[];
   reviewer: string;
   currentStage: Stage;
   assignmentStatus: AssignmentStatus;
@@ -181,6 +189,10 @@ export const sampleProjects: AuditProject[] = [
     clientCoverholderCode: "CH-1048",
     broker: "Northbridge Market Services",
     assignedAuditor: "Lorraine Mojica",
+    auditTeam: [
+      { person: "Lorraine Mojica", role: "Lead Auditor" },
+      { person: "Walter Aviles", role: "Supporting Auditor" },
+    ],
     reviewer: "Owen Price",
     currentStage: "Quote",
     assignmentStatus: "Blocked",
@@ -247,6 +259,10 @@ export const sampleProjects: AuditProject[] = [
     clientCoverholderCode: "CH-2217",
     broker: "Harbor Underwriting Group",
     assignedAuditor: "Walter Aviles",
+    auditTeam: [
+      { person: "Walter Aviles", role: "Lead Auditor" },
+      { person: "Lorraine Mojica", role: "Supporting Auditor" },
+    ],
     reviewer: "Priya Shah",
     currentStage: "Pre-Audit",
     assignmentStatus: "In Progress",
@@ -314,6 +330,7 @@ export const sampleProjects: AuditProject[] = [
     clientCoverholderCode: "CH-3094",
     broker: "Summit Specialty Brokers",
     assignedAuditor: "Lorraine Mojica",
+    auditTeam: [{ person: "Lorraine Mojica", role: "Lead Auditor" }],
     reviewer: "Noah Reed",
     currentStage: "Findings",
     assignmentStatus: "Blocked",
@@ -380,6 +397,7 @@ export const sampleProjects: AuditProject[] = [
     clientCoverholderCode: "CH-4175",
     broker: "Cedar Risk Partners",
     assignedAuditor: "Justin Mojica",
+    auditTeam: [{ person: "Justin Mojica", role: "Lead Auditor" }],
     reviewer: "Priya Shah",
     currentStage: "Final Submission",
     assignmentStatus: "In Progress",
@@ -441,6 +459,7 @@ const blankProject = (): AuditProject => ({
   clientCoverholderCode: "",
   broker: "",
   assignedAuditor: "",
+  auditTeam: [],
   reviewer: "",
   currentStage: "Intake",
   assignmentStatus: "New",
@@ -545,11 +564,83 @@ const checklistByStage: Record<Stage, string[]> = {
   ],
 };
 
+function normalizeAuditTeam(project: AuditProject): AuditTeamMember[] {
+  const seededTeam: AuditTeamMember[] = (project.auditTeam ?? [])
+    .filter((member) => member.person.trim())
+    .map((member) => ({
+      person: member.person.trim(),
+      role:
+        member.role === "Lead Auditor"
+          ? "Lead Auditor"
+          : "Supporting Auditor",
+    }));
+  const fallbackTeam =
+    seededTeam.length > 0
+      ? seededTeam
+      : project.assignedAuditor
+        ? [
+            {
+              person: project.assignedAuditor.trim(),
+              role: "Lead Auditor" as AuditTeamRole,
+            },
+          ]
+        : [];
+  const seen = new Set<string>();
+  const uniqueTeam = fallbackTeam.filter((member) => {
+    if (seen.has(member.person)) return false;
+    seen.add(member.person);
+    return true;
+  });
+  if (
+    uniqueTeam.length > 0 &&
+    !uniqueTeam.some((member) => member.role === "Lead Auditor")
+  ) {
+    return [
+      { ...uniqueTeam[0], role: "Lead Auditor" as AuditTeamRole },
+      ...uniqueTeam.slice(1),
+    ];
+  }
+  return uniqueTeam;
+}
+
+function primaryAuditor(project: AuditProject) {
+  const team = normalizeAuditTeam(project);
+  return (
+    team.find((member) => member.role === "Lead Auditor")?.person ??
+    team[0]?.person ??
+    project.assignedAuditor ??
+    ""
+  );
+}
+
+function assignedAuditorNames(project: AuditProject) {
+  return normalizeAuditTeam(project).map((member) => member.person);
+}
+
+function projectHasAuditor(project: AuditProject, auditor: string) {
+  return assignedAuditorNames(project).includes(auditor);
+}
+
+function formatAuditTeam(project: AuditProject) {
+  const team = normalizeAuditTeam(project);
+  if (team.length === 0) return "Not assigned";
+  return team
+    .map((member) =>
+      member.role === "Lead Auditor"
+        ? `${member.person} (Lead)`
+        : `${member.person} (Support)`,
+    )
+    .join(", ");
+}
+
 export function withProjectDefaults(project: AuditProject): AuditProject {
+  const auditTeam = normalizeAuditTeam(project);
   return {
     ...project,
     assignmentType: project.assignmentType ?? "CH",
     auditEntity: project.auditEntity ?? "",
+    assignedAuditor: primaryAuditor({ ...project, auditTeam }),
+    auditTeam,
     paymentReceived:
       project.paymentReceived ?? project.invoiceStatus === "Paid",
     labels: project.labels ?? [],
@@ -856,7 +947,8 @@ function exportProjectsToCsv(projects: AuditProject[]) {
     ["Audit Entity", (project) => project.auditEntity],
     ["Client / Coverholder Code", (project) => project.clientCoverholderCode],
     ["Broker", (project) => project.broker],
-    ["Assigned Auditor", (project) => project.assignedAuditor],
+    ["Lead Auditor", (project) => primaryAuditor(project)],
+    ["Audit Team", (project) => formatAuditTeam(project)],
     ["Reviewer", (project) => project.reviewer],
     ["Current Stage", (project) => project.currentStage],
     ["Assignment Status", (project) => project.assignmentStatus],
@@ -911,17 +1003,17 @@ function App() {
   >([]);
   const [shownZeroLoadAuditors, setShownZeroLoadAuditors] = useState<string[]>([]);
 
-  const auditors = [
-    ...auditorOptions,
-    ...projects
-      .map((project) => project.assignedAuditor)
-      .filter((auditor) => auditor && !auditorOptions.includes(auditor)),
-  ];
+  const auditors = Array.from(
+    new Set([
+      ...auditorOptions,
+      ...projects.flatMap((project) => assignedAuditorNames(project)),
+    ]),
+  );
   const zeroLoadAuditors = auditors.filter(
     (auditor) =>
       !projects.some(
         (project) =>
-          project.assignedAuditor === auditor && project.currentStage !== "Closed",
+          projectHasAuditor(project, auditor) && project.currentStage !== "Closed",
       ),
   );
   const effectiveHiddenWorkloadAuditors = Array.from(
@@ -936,7 +1028,7 @@ function App() {
   const filteredProjects = useMemo(
     () =>
       projects.filter((project) => {
-        if (filters.auditor && project.assignedAuditor !== filters.auditor)
+        if (filters.auditor && !projectHasAuditor(project, filters.auditor))
           return false;
         if (filters.stage && project.currentStage !== filters.stage)
           return false;
@@ -965,7 +1057,7 @@ function App() {
           )
         )
           return false;
-        if (savedView === "myAudits" && project.assignedAuditor !== myAuditor)
+        if (savedView === "myAudits" && !projectHasAuditor(project, myAuditor))
           return false;
         if (
           savedView === "blocked" &&
@@ -1371,7 +1463,7 @@ function WorkloadCounts({
   const buildRow = (auditor: string) => {
     const openProjects = projects.filter(
       (project) =>
-        project.assignedAuditor === auditor &&
+        projectHasAuditor(project, auditor) &&
         project.currentStage !== "Closed",
     );
     const blockedCount = openProjects.filter(
@@ -1652,7 +1744,7 @@ function ProjectTable({
               <th>Assignment</th>
               <th>Type</th>
               <th>Audit entity</th>
-              <th>Auditor</th>
+              <th>Audit team</th>
               <th>Stage</th>
               <th>Source</th>
               <th>Quote</th>
@@ -1674,7 +1766,7 @@ function ProjectTable({
                   </td>
                   <td>{project.assignmentType}</td>
                   <td>{project.auditEntity || "—"}</td>
-                  <td>{project.assignedAuditor}</td>
+                  <td>{formatAuditTeam(project)}</td>
                   <td>{project.currentStage}</td>
                   <td>{project.assignmentSource}</td>
                   <td>{project.quoteStatus}</td>
@@ -1856,7 +1948,7 @@ function Kanban({
                     <strong>{project.assignmentNumber}</strong>
                     <span>
                       {project.clientCoverholderCode} ·{" "}
-                      {project.assignedAuditor}
+                      {formatAuditTeam(project)}
                     </span>
                     <span className="pill muted">{project.assignmentType}</span>
                     {project.labels.map((label) => (
@@ -1944,7 +2036,7 @@ function ProjectDetail({
             value={project.clientCoverholderCode}
           />
           <Meta label="Broker" value={project.broker} />
-          <Meta label="Auditor" value={project.assignedAuditor} />
+          <Meta label="Audit team" value={formatAuditTeam(project)} />
           <Meta label="Reviewer" value={project.reviewer} />
           <Meta label="Status" value={project.assignmentStatus} />
           <Meta
@@ -2032,28 +2124,36 @@ function DocumentReadiness({
       <div className="readiness-track" aria-hidden="true">
         <span style={{ width: `${readiness.percent}%` }} />
       </div>
+      <div className="readiness-legend" aria-label="Document readiness legend">
+        <span className="legend-complete">Green = complete</span>
+        <span className="legend-pending">Yellow = missing, not started, or in progress</span>
+      </div>
       <div className="document-status-grid">
-        {requiredDocuments.map((doc) => (
-          <span
-            key={doc.key}
-            className={`document-chip ${project[doc.key] ? "complete" : "missing"}`}
-          >
-            {project[doc.key] ? "✓" : "•"} {doc.label}
-          </span>
-        ))}
+        {requiredDocuments.map((doc) => {
+          const shortLabel = doc.label.replace(" received", "");
+          const complete = Boolean(project[doc.key]);
+          return (
+            <span
+              key={doc.key}
+              className={`document-chip ${complete ? "complete" : "pending"}`}
+            >
+              {complete ? "Complete" : "Missing"}: {shortLabel}
+            </span>
+          );
+        })}
         <span
           className={`document-chip ${
-            project.preAuditQuestionnaireStatus === "Complete" ? "complete" : "missing"
+            project.preAuditQuestionnaireStatus === "Complete" ? "complete" : "pending"
           }`}
         >
-          Questionnaire: {project.preAuditQuestionnaireStatus}
+          {project.preAuditQuestionnaireStatus === "Complete" ? "Complete" : project.preAuditQuestionnaireStatus}: Questionnaire
         </span>
         <span
           className={`document-chip ${
-            project.documentRequestStatus === "Complete" ? "complete" : "missing"
+            project.documentRequestStatus === "Complete" ? "complete" : "pending"
           }`}
         >
-          Request: {project.documentRequestStatus}
+          {project.documentRequestStatus === "Complete" ? "Complete" : project.documentRequestStatus}: Document request
         </span>
       </div>
       <div className="document-dates">
@@ -2336,6 +2436,40 @@ function ProjectForm({
         : [...draft.labels, label]) as AuditProject["labels"],
     );
   };
+  const draftAuditTeam = normalizeAuditTeam(draft);
+  const leadAuditor = primaryAuditor(draft);
+  const updateLeadAuditor = (auditor: string) => {
+    const supportingTeam = draftAuditTeam
+      .filter((member) => member.person !== auditor)
+      .map((member) => ({
+        ...member,
+        role:
+          member.role === "Lead Auditor"
+            ? ("Supporting Auditor" as AuditTeamRole)
+            : member.role,
+      }));
+    setDraft({
+      ...draft,
+      assignedAuditor: auditor,
+      auditTeam: auditor
+        ? [{ person: auditor, role: "Lead Auditor" }, ...supportingTeam]
+        : supportingTeam,
+    });
+  };
+  const toggleSupportingAuditor = (auditor: string) => {
+    if (auditor === leadAuditor) return;
+    const existing = draftAuditTeam.some((member) => member.person === auditor);
+    setDraft({
+      ...draft,
+      auditTeam: existing
+        ? draftAuditTeam.filter((member) => member.person !== auditor)
+        : [
+            ...draftAuditTeam,
+            { person: auditor, role: "Supporting Auditor" },
+          ],
+    });
+  };
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (isNewProject && step < steps.length - 1) {
@@ -2425,11 +2559,11 @@ function ProjectForm({
       </div>
       <div className="form-grid wizard-grid">
         <Select
-          label="Assigned auditor"
-          value={draft.assignedAuditor}
+          label="Lead auditor"
+          value={leadAuditor}
           options={auditorOptions}
-          placeholder="Select auditor"
-          onChange={(value) => update("assignedAuditor", value)}
+          placeholder="Select lead auditor"
+          onChange={updateLeadAuditor}
         />
         <Input
           label="Reviewer"
@@ -2451,6 +2585,30 @@ function ProjectForm({
           value={draft.dueDate}
           onChange={(value) => update("dueDate", value)}
         />
+      </div>
+      <div className="team-picker">
+        <span>Supporting auditors</span>
+        <p>Choose any additional auditors working this assignment with the lead.</p>
+        <div>
+          {auditorOptions
+            .filter((auditor) => auditor !== leadAuditor)
+            .map((auditor) => {
+              const selected = draftAuditTeam.some(
+                (member) => member.person === auditor,
+              );
+              return (
+                <button
+                  type="button"
+                  key={auditor}
+                  className={selected ? "team-option selected" : "team-option"}
+                  onClick={() => toggleSupportingAuditor(auditor)}
+                >
+                  {selected ? "✓ " : "+ "}
+                  {auditor}
+                </button>
+              );
+            })}
+        </div>
       </div>
     </section>
   );
@@ -2603,7 +2761,7 @@ function ProjectForm({
           value={`${draft.assignmentSource} · ${draft.assignmentType}`}
         />
         <Meta label="Audit Entity" value={draft.auditEntity || "Not set"} />
-        <Meta label="Auditor" value={draft.assignedAuditor || "Not assigned"} />
+        <Meta label="Audit team" value={formatAuditTeam(draft)} />
         <Meta label="Reviewer" value={draft.reviewer || "Not assigned"} />
         <Meta label="Due date" value={draft.dueDate || "Not set"} />
         <Meta

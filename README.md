@@ -47,7 +47,7 @@ The `AuditProject` shape in `src/main.tsx` is intentionally flat and list-friend
 | `auditEntity`                                                                             | Single line of text                             | Captures the free-form audited entity name shown on assignment records                                  |
 | `clientCoverholderCode`                                                                   | Single line of text                             | Uses non-sensitive code rather than real client name                                                    |
 | `broker`                                                                                  | Single line of text or lookup                   | Can become a Broker lookup list later                                                                   |
-| `assignedAuditor`, `reviewer`                                                             | Person or Group                                 | Can support workload dashboards and approvals                                                           |
+| `auditTeam`, `assignedAuditor`, `reviewer`                                                | Multi-person / Person or Group                  | Supports lead + supporting auditor teams, legacy primary auditor compatibility, workload dashboards, and approvals |
 | `currentStage`                                                                            | Choice                                          | Maps to Kanban buckets and Power BI funnel visuals                                                      |
 | `assignmentStatus`, `quoteStatus`, `reportStatus`, `invoiceStatus`, `damSubmissionStatus` | Choice                                          | Suitable for Power Apps dropdowns and Power Automate conditions                                         |
 | `quoteAmount`                                                                             | Currency                                        | Feeds pipeline value reporting                                                                          |
@@ -66,6 +66,7 @@ A future SharePoint implementation should use an **Audit Assignments** list for 
 
 | Update size | Version | What changed                                                                                                                                            |
 | ----------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Major       | UX-3    | Add lead/supporting audit teams, count shared assignments in workload, and clarify document readiness status colors.                                    |
 | Major       | UX-2    | Add activity timeline, document readiness workflow actions, zero-load workload minimization, and a Node test suite for workflow logic.                  |
 | Major       | UX-1    | Redesign workload as a dashboard, add guided intake, Trello-style labels, Today’s Work, interactive checklists, and stronger Office 365 data readiness. |
 | Small       | Patch   | Copy changes, option-list tweaks, and small field additions that do not change the primary workflow.                                                    |
@@ -78,7 +79,7 @@ Move to Office 365 after the team validates this major UX iteration with realist
 - **Audit Assignment Comments** for Trello-style card comments.
 - **Audit Assignment Checklist Items** for per-stage checklist completion.
 - **Audit Assignment Status History** for timestamped stage and status changes.
-- **Auditors / Reviewers** for active users, capacity, and workload reporting.
+- **Auditors / Reviewers** for active users, lead/supporting audit team roles, capacity, and workload reporting.
 - **Documents Requested / Received** for BAA, endorsements, Premium BDX, and audit support tracking.
 
 This split keeps the main assignment row Power BI friendly while letting Power Apps and Power Automate handle related activity, comments, reminders, and approvals.
