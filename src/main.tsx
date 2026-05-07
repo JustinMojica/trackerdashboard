@@ -39,9 +39,9 @@ type ReportStatus = "Not Started" | "Drafting" | "Review" | "Issued";
 type InvoiceStatus = "Not Started" | "Prepared" | "Sent" | "Paid";
 type ProjectLabel =
   | "High Priority"
-  | "Waiting on Broker"
-  | "Internal Review"
-  | "Urgent";
+  | "Medium Priority"
+  | "Low Priority"
+  | "Waiting on Broker";
 type DamSubmissionStatus =
   | "Not Required"
   | "Not Started"
@@ -151,9 +151,9 @@ const assignmentTypeOptions: AssignmentType[] = [
 
 const labelOptions: ProjectLabel[] = [
   "High Priority",
+  "Medium Priority",
+  "Low Priority",
   "Waiting on Broker",
-  "Internal Review",
-  "Urgent",
 ];
 
 const defaultAuditorOptions = [
@@ -330,7 +330,7 @@ const sampleProjects: AuditProject[] = [
     blockers: "",
     dueDate: "2026-05-10",
     lastUpdatedDate: "2026-05-04",
-    labels: ["Urgent"],
+    labels: ["High Priority"],
     checklistCompletions: {},
     statusHistory: [
       {
@@ -393,7 +393,7 @@ const sampleProjects: AuditProject[] = [
     blockers: "",
     dueDate: "2026-05-06",
     lastUpdatedDate: "2026-05-04",
-    labels: ["Internal Review"],
+    labels: ["Medium Priority"],
     checklistCompletions: {},
     statusHistory: [
       {
@@ -1221,6 +1221,10 @@ function WorkloadCounts({
           </button>
         </div>
       )}
+      <p className="workload-meter-note">
+        Blue bars compare each auditor’s open assignments with the busiest visible
+        auditor. Longer bars mean more open work relative to that peak.
+      </p>
       <div className="workload-list">
         {workloadRows.map((row) => (
           <article className={`workload-row ${row.tone}`} key={row.auditor}>
@@ -1240,10 +1244,30 @@ function WorkloadCounts({
                 </small>
               </div>
             </div>
-            <div className="workload-meter" aria-hidden="true">
-              <span
-                style={{ width: `${(row.openCount / busiestCount) * 100}%` }}
-              />
+            <div
+              className="workload-meter-group"
+              aria-label={`${row.auditor} workload: ${row.openCount} open assignments, ${Math.round(
+                (row.openCount / busiestCount) * 100,
+              )}% of the busiest visible auditor`}
+            >
+              <div className="workload-meter-label">
+                <span>Relative open load</span>
+                <strong>
+                  {row.openCount} / {busiestCount}
+                </strong>
+              </div>
+              <div
+                className="workload-meter"
+                role="progressbar"
+                aria-label="Open assignments compared with the busiest visible auditor"
+                aria-valuemin={0}
+                aria-valuemax={busiestCount}
+                aria-valuenow={row.openCount}
+              >
+                <span
+                  style={{ width: `${(row.openCount / busiestCount) * 100}%` }}
+                />
+              </div>
             </div>
             <button
               type="button"
@@ -2014,7 +2038,6 @@ function ProjectForm({
         <Input
           label="Audit Entity"
           value={draft.auditEntity}
-          placeholder="Entity, program, or agreement being audited"
           onChange={(value) => update("auditEntity", value)}
         />
         <Input
@@ -2035,11 +2058,9 @@ function ProjectForm({
             <button
               type="button"
               key={label}
-              className={
-                draft.labels.includes(label)
-                  ? "label-option selected"
-                  : "label-option"
-              }
+              className={`label-option ${label.toLowerCase().replace(/ /g, "-")}${
+                draft.labels.includes(label) ? " selected" : ""
+              }`}
               onClick={() => toggleLabel(label)}
             >
               {label}

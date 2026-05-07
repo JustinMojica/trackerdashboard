@@ -629,6 +629,11 @@ td span {
   color: #40506a;
   display: block;
 }
+.workload-meter-note {
+  color: #53637a;
+  font-size: 0.9rem;
+  margin: 0 0 0.75rem;
+}
 .workload-list {
   display: grid;
   gap: 0.65rem;
@@ -673,6 +678,24 @@ td span {
 .workload-person small {
   color: #66748a;
 }
+.workload-meter-group {
+  display: grid;
+  gap: 0.35rem;
+}
+.workload-meter-label {
+  align-items: center;
+  color: #53637a;
+  display: flex;
+  font-size: 0.78rem;
+  font-weight: 800;
+  justify-content: space-between;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.workload-meter-label strong {
+  color: #15386d;
+  font-size: 0.82rem;
+}
 .workload-meter {
   background: #edf2f8;
   border-radius: 999px;
@@ -684,7 +707,6 @@ td span {
   border-radius: inherit;
   display: block;
   height: 100%;
-  min-width: 4px;
 }
 .intake-modal {
   max-width: 1040px;
@@ -775,16 +797,23 @@ td span {
   background: #fff1cc;
   color: #905400;
 }
-.project-label.urgent,
+.label-option.high-priority.selected,
 .project-label.high-priority {
   background: #ffe5e5;
   color: #a92020;
 }
-.project-label.waiting-on-broker {
+.label-option.medium-priority.selected,
+.project-label.medium-priority {
   background: #fff1cc;
   color: #905400;
 }
-.project-label.internal-review {
+.label-option.low-priority.selected,
+.project-label.low-priority {
+  background: #e7f7ed;
+  color: #14713a;
+}
+.label-option.waiting-on-broker.selected,
+.project-label.waiting-on-broker {
   background: #eaf1ff;
   color: #15386d;
 }
@@ -793,8 +822,12 @@ td span {
 }
 .review-grid {
   display: grid;
-  gap: 0.9rem;
+  gap: 0.9rem 2rem;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.review-grid strong {
+  display: block;
+  margin-top: 0.25rem;
 }
 .sticky-actions {
   background: #fff;
