@@ -68,6 +68,23 @@ test("document readiness workflow can mark waiting on broker", () => {
   assert.ok(updated.labels.includes("Waiting on Broker"));
 });
 
+test("document readiness workflow can clear waiting on broker without completing documents", () => {
+  const waiting = applyDocumentWorkflowAction(
+    baseProject,
+    "markWaitingOnBroker",
+    "2026-05-07",
+  );
+  const cleared = applyDocumentWorkflowAction(
+    waiting,
+    "clearWaitingOnBroker",
+    "2026-05-08",
+  );
+
+  assert.equal(cleared.labels.includes("Waiting on Broker"), false);
+  assert.equal(cleared.assignmentStatus, "In Progress");
+  assert.equal(documentReadiness(cleared).percent < 100, true);
+});
+
 test("document readiness workflow completes documents and clears waiting label", () => {
   const waiting = applyDocumentWorkflowAction(
     baseProject,

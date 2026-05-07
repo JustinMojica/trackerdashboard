@@ -36,6 +36,7 @@ export type QuoteStatus =
 export type DocumentWorkflowAction =
   | "markWaitingOnBroker"
   | "recordBrokerChase"
+  | "clearWaitingOnBroker"
   | "markDocumentsComplete";
 export type AuditTeamRole = "Lead Auditor" | "Supporting Auditor";
 export type AuditTeamMember = {
@@ -378,6 +379,18 @@ export function applyDocumentWorkflowAction(
       documentRequestDate: project.documentRequestDate || date,
       brokerLastChasedDate: date,
       nextAction: `Broker chased on ${date}; await outstanding documents.`,
+      lastUpdatedDate: date,
+    };
+  }
+  if (action === "clearWaitingOnBroker") {
+    return {
+      ...project,
+      labels: project.labels.filter((label) => label !== "Waiting on Broker"),
+      assignmentStatus:
+        project.currentStage === "Closed" ? project.assignmentStatus : "In Progress",
+      nextAction:
+        project.nextAction ||
+        "Broker completed their action; review received support and continue readiness.",
       lastUpdatedDate: date,
     };
   }

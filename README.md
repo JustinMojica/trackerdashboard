@@ -67,6 +67,8 @@ A future SharePoint implementation should use an **Audit Assignments** list for 
 
 | Update size | Version | What changed                                                                                                                                            |
 | ----------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Minor       | UX-10   | Make waiting-on-broker and broker-chase workflow events idempotent and collapse legacy same-day duplicates in the audit trail.                         |
+| Minor       | UX-9    | Add a clear waiting-on-broker workflow action for broker-completed follow-up that removes the label without forcing documents complete.                 |
 | Minor       | UX-8    | Prevent duplicate audit trail comment entries and make document-complete workflow idempotent.                                                           |
 | Minor       | UX-7    | Temporarily archive the auditor directory UI while keeping default auditor data available for filters, workload, and assignment forms.                  |
 | Minor       | UX-6    | Remove saved work queues, clarify sample auditor pairings, and tighten the project detail layout to avoid empty spacing.                              |

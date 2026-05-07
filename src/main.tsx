@@ -918,6 +918,7 @@ function recommendedNextSteps(
 export type DocumentWorkflowAction =
   | "markWaitingOnBroker"
   | "recordBrokerChase"
+  | "clearWaitingOnBroker"
   | "markDocumentsComplete";
 
 export type ActivityItem = {
@@ -986,6 +987,18 @@ export function applyDocumentWorkflowAction(
       lastUpdatedDate: date,
     });
   }
+  if (action === "clearWaitingOnBroker") {
+    return withProjectDefaults({
+      ...project,
+      labels: project.labels.filter((label) => label !== "Waiting on Broker"),
+      assignmentStatus:
+        project.currentStage === "Closed" ? project.assignmentStatus : "In Progress",
+      nextAction:
+        project.nextAction ||
+        "Broker completed their action; review received support and continue readiness.",
+      lastUpdatedDate: date,
+    });
+  }
   return withProjectDefaults({
     ...project,
     baaReceived: true,
@@ -1027,14 +1040,22 @@ export function activityTimeline(project: AuditProject): ActivityItem[] {
       detail: key.split(":").slice(1).join(":") || key,
       tone: "ok",
     }));
+  const seenWorkflowEvents = new Set<string>();
+  const dedupeWorkflowTitles = new Set([
+    "Waiting on Broker applied",
+    "Broker chase recorded",
+    "Waiting on Broker cleared",
+    "Documents marked complete",
+  ]);
   const eventItems: ActivityItem[] = (project.activityEvents ?? [])
-    .filter((event, index, events) => {
+    .filter((event) => {
       if (event.title === "Comment added") return false;
-      if (event.title !== "Documents marked complete") return true;
-      return (
-        index ===
-        events.findIndex((item) => item.title === "Documents marked complete")
-      );
+      if (!dedupeWorkflowTitles.has(event.title)) return true;
+      const eventDay = event.createdAt.split(",")[0] || event.createdAt;
+      const dedupeKey = `${event.title}:${eventDay}`;
+      if (seenWorkflowEvents.has(dedupeKey)) return false;
+      seenWorkflowEvents.add(dedupeKey);
+      return true;
     })
     .map((event) => ({
       id: `event-${event.id}`,
@@ -1364,12 +1385,29 @@ function App() {
       setMessage(`${project.assignmentNumber} documents are already complete.`);
       return;
     }
+    if (action === "markWaitingOnBroker" && readiness.waitingOnBroker) {
+      setMessage(`${project.assignmentNumber} is already waiting on broker.`);
+      return;
+    }
+    if (action === "recordBrokerChase") {
+      const alreadyChasedToday = project.brokerLastChasedDate === todayIso();
+      if (alreadyChasedToday) {
+        setMessage(`${project.assignmentNumber} already has a broker chase today.`);
+        return;
+      }
+    }
+    if (action === "clearWaitingOnBroker" && !readiness.waitingOnBroker) {
+      setMessage(`${project.assignmentNumber} is not marked waiting on broker.`);
+      return;
+    }
     const eventTitle =
       action === "markDocumentsComplete"
         ? "Documents marked complete"
         : action === "recordBrokerChase"
           ? "Broker chase recorded"
-          : "Waiting on Broker applied";
+          : action === "clearWaitingOnBroker"
+            ? "Waiting on Broker cleared"
+            : "Waiting on Broker applied";
     const updatedProject = {
       ...applyDocumentWorkflowAction(project, action),
       activityEvents: [
@@ -2280,6 +2318,7 @@ function DocumentReadiness({
 }) {
   const readiness = documentReadiness(project);
   const documentsComplete = readiness.percent === 100;
+  const waitingOnBroker = readiness.waitingOnBroker;
   return (
     <article className="panel document-workflow">
       <div className="section-title">
@@ -2343,18 +2382,30 @@ function DocumentReadiness({
         <button
           type="button"
           className="secondary"
+          disabled={waitingOnBroker}
           onClick={() =>
             onDocumentWorkflowAction(project, "markWaitingOnBroker")
           }
         >
-          Mark waiting on broker
+          {waitingOnBroker ? "Waiting on broker" : "Mark waiting on broker"}
         </button>
         <button
           type="button"
           className="secondary"
+          disabled={project.brokerLastChasedDate === todayIso()}
           onClick={() => onDocumentWorkflowAction(project, "recordBrokerChase")}
         >
-          Record broker chase
+          {project.brokerLastChasedDate === todayIso()
+            ? "Broker chased today"
+            : "Record broker chase"}
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          disabled={!waitingOnBroker}
+          onClick={() => onDocumentWorkflowAction(project, "clearWaitingOnBroker")}
+        >
+          {waitingOnBroker ? "Clear waiting label" : "Waiting label cleared"}
         </button>
         <button
           type="button"
