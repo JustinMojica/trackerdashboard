@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 
 type AssignmentSource = "Email" | "DAM";
+type AssignmentType = "DCA" | "CH" | "MGA" | "Company Contract";
 type AuditType = "Remote" | "Onsite";
 type Stage =
   | "Intake"
@@ -51,6 +52,13 @@ type StatusHistoryItem = {
   note: string;
 };
 
+type ProjectComment = {
+  id: string;
+  createdAt: string;
+  author: string;
+  body: string;
+};
+
 type AuditProject = {
   id: string;
   assignmentNumber: string;
@@ -86,6 +94,7 @@ type AuditProject = {
   dueDate: string;
   lastUpdatedDate: string;
   statusHistory: StatusHistoryItem[];
+  comments: ProjectComment[];
 };
 
 type Filters = {
@@ -197,6 +206,14 @@ const sampleProjects: AuditProject[] = [
         note: "Quote prepared and sent in DAM.",
       },
     ],
+    comments: [
+      {
+        id: "c-001",
+        createdAt: "2026-05-01 09:15 AM",
+        author: "Prototype user",
+        body: "Waiting on remaining intake support before moving forward.",
+      },
+    ],
   },
   {
     id: "audit-002",
@@ -258,6 +275,7 @@ const sampleProjects: AuditProject[] = [
         note: "Quote accepted and audit date confirmed.",
       },
     ],
+    comments: [],
   },
   {
     id: "audit-003",
@@ -309,6 +327,14 @@ const sampleProjects: AuditProject[] = [
         fromStage: "Audit Fieldwork",
         toStage: "Findings",
         note: "Testing completed; findings sent.",
+      },
+    ],
+    comments: [
+      {
+        id: "c-002",
+        createdAt: "2026-05-04 02:30 PM",
+        author: "Prototype user",
+        body: "Findings sent; response is the next gating item.",
       },
     ],
   },
@@ -364,6 +390,7 @@ const sampleProjects: AuditProject[] = [
         note: "Report approved for final issue.",
       },
     ],
+    comments: [],
   },
 ];
 
@@ -402,6 +429,7 @@ const blankProject = (): AuditProject => ({
   dueDate: "",
   lastUpdatedDate: new Date().toISOString().slice(0, 10),
   statusHistory: [],
+  comments: [],
 });
 
 const requiredDocuments = [
@@ -481,6 +509,7 @@ function withProjectDefaults(project: AuditProject): AuditProject {
     auditEntity: project.auditEntity ?? "",
     paymentReceived:
       project.paymentReceived ?? project.invoiceStatus === "Paid",
+    comments: project.comments ?? [],
   };
 }
 
@@ -520,6 +549,17 @@ function loadAuditors(): string[] {
 
 function saveAuditors(auditors: string[]) {
   localStorage.setItem(auditorStorageKey, JSON.stringify(auditors));
+}
+
+function timestampNow() {
+  return new Date().toLocaleString("en-US", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
 function getMissingDocuments(project: AuditProject) {
@@ -672,6 +712,9 @@ function App() {
   );
   const [savedView, setSavedView] = useState<SavedView>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
+  const [hiddenWorkloadAuditors, setHiddenWorkloadAuditors] = useState<
+    string[]
+  >([]);
 
   const auditors = [
     ...auditorOptions,
@@ -788,7 +831,7 @@ function App() {
         ...project.statusHistory,
         {
           id: `h-${Date.now()}`,
-          changedAt: new Date().toISOString().slice(0, 10),
+          changedAt: timestampNow(),
           changedBy: "Prototype user",
           fromStage: project.currentStage,
           toStage: targetStage,
@@ -799,6 +842,22 @@ function App() {
     persist(projects.map((item) => (item.id === project.id ? updated : item)));
     setSelectedId(project.id);
     setMessage(`${project.assignmentNumber} moved to ${targetStage}.`);
+  };
+
+  const addProjectComment = (
+    project: AuditProject,
+    comment: ProjectComment,
+  ) => {
+    const updatedProject = {
+      ...project,
+      comments: [...project.comments, comment],
+      lastUpdatedDate: new Date().toISOString().slice(0, 10),
+    };
+    persist(
+      projects.map((item) => (item.id === project.id ? updatedProject : item)),
+    );
+    setSelectedId(project.id);
+    setMessage(`Comment added to ${project.assignmentNumber}.`);
   };
 
   return (
@@ -840,7 +899,19 @@ function App() {
         setSavedView={setSavedView}
         myAuditor={myAuditor}
       />
-      <WorkloadCounts projects={projects} auditors={auditors} />
+      <WorkloadCounts
+        projects={projects}
+        auditors={auditors}
+        hiddenAuditors={hiddenWorkloadAuditors}
+        toggleAuditorHidden={(auditor) =>
+          setHiddenWorkloadAuditors((current) =>
+            current.includes(auditor)
+              ? current.filter((item) => item !== auditor)
+              : [...current, auditor],
+          )
+        }
+        showAllAuditors={() => setHiddenWorkloadAuditors([])}
+      />
       <PeopleAdmin
         auditorOptions={auditorOptions}
         setAuditorOptions={updateAuditors}
@@ -886,6 +957,7 @@ function App() {
           project={selectedProject}
           onEdit={() => setEditing(selectedProject)}
           onMove={moveProject}
+          onAddComment={addProjectComment}
         />
       )}
       {editing && (
@@ -1008,18 +1080,54 @@ function SavedViews({
 function WorkloadCounts({
   projects,
   auditors,
+  hiddenAuditors,
+  toggleAuditorHidden,
+  showAllAuditors,
 }: {
   projects: AuditProject[];
   auditors: string[];
+  hiddenAuditors: string[];
+  toggleAuditorHidden: (auditor: string) => void;
+  showAllAuditors: () => void;
 }) {
+  const visibleAuditors = auditors.filter(
+    (auditor) => !hiddenAuditors.includes(auditor),
+  );
+  const totalVisibleOpen = projects.filter(
+    (project) =>
+      visibleAuditors.includes(project.assignedAuditor) &&
+      project.currentStage !== "Closed",
+  ).length;
+
   return (
     <section className="panel">
       <div className="section-title">
         <h2>Auditor workload</h2>
-        <span>Open assignments by auditor</span>
+        <span>
+          {totalVisibleOpen} open assignments across {visibleAuditors.length}{" "}
+          visible auditors
+        </span>
       </div>
+      {hiddenAuditors.length > 0 && (
+        <div className="minimized-auditors">
+          <span>Minimized:</span>
+          {hiddenAuditors.map((auditor) => (
+            <button
+              type="button"
+              className="secondary"
+              key={auditor}
+              onClick={() => toggleAuditorHidden(auditor)}
+            >
+              Show {auditor}
+            </button>
+          ))}
+          <button type="button" onClick={showAllAuditors}>
+            Show all
+          </button>
+        </div>
+      )}
       <div className="workload-grid">
-        {auditors.map((auditor) => {
+        {visibleAuditors.map((auditor) => {
           const openCount = projects.filter(
             (project) =>
               project.assignedAuditor === auditor &&
@@ -1029,9 +1137,18 @@ function WorkloadCounts({
             openCount >= 4 ? "high" : openCount >= 2 ? "medium" : "low";
           return (
             <article className={`workload-card ${tone}`} key={auditor}>
-              <span>{auditor}</span>
-              <strong>{openCount}</strong>
-              <small>{openCount === 1 ? "open audit" : "open audits"}</small>
+              <div>
+                <span>{auditor}</span>
+                <strong>{openCount}</strong>
+                <small>{openCount === 1 ? "open audit" : "open audits"}</small>
+              </div>
+              <button
+                type="button"
+                className="link"
+                onClick={() => toggleAuditorHidden(auditor)}
+              >
+                Minimize
+              </button>
             </article>
           );
         })}
@@ -1051,19 +1168,38 @@ function PeopleAdmin({
   myAuditor: string;
   setMyAuditor: (auditor: string) => void;
 }) {
+  const availableDefaultAuditors = defaultAuditorOptions.filter(
+    (auditor) => !auditorOptions.includes(auditor),
+  );
   const [newAuditor, setNewAuditor] = useState("");
-  const addAuditor = (event: FormEvent) => {
-    event.preventDefault();
-    const cleanName = newAuditor.trim();
+  const [quickAuditor, setQuickAuditor] = useState(
+    availableDefaultAuditors[0] ?? "",
+  );
+  const selectedQuickAuditor =
+    quickAuditor || availableDefaultAuditors[0] || "";
+  const addAuditorName = (name: string) => {
+    const cleanName = name.trim();
     if (
       !cleanName ||
       auditorOptions.some(
         (auditor) => auditor.toLowerCase() === cleanName.toLowerCase(),
       )
     )
-      return;
+      return false;
     setAuditorOptions([...auditorOptions, cleanName]);
-    setNewAuditor("");
+    return true;
+  };
+  const addAuditor = (event: FormEvent) => {
+    event.preventDefault();
+    if (addAuditorName(newAuditor)) setNewAuditor("");
+  };
+  const quickAddAuditor = () => {
+    if (addAuditorName(selectedQuickAuditor)) {
+      const remainingAuditors = availableDefaultAuditors.filter(
+        (auditor) => auditor !== selectedQuickAuditor,
+      );
+      setQuickAuditor(remainingAuditors[0] ?? "");
+    }
   };
   const removeAuditor = (auditor: string) => {
     const nextAuditors = auditorOptions.filter((item) => item !== auditor);
@@ -1091,7 +1227,7 @@ function PeopleAdmin({
       <div className="admin-grid">
         <form onSubmit={addAuditor} className="add-person-form">
           <label>
-            Add auditor
+            Add custom auditor
             <input
               value={newAuditor}
               placeholder="Type auditor name"
@@ -1100,6 +1236,34 @@ function PeopleAdmin({
           </label>
           <button type="submit">Add</button>
         </form>
+        <div className="quick-add-auditor">
+          <label>
+            Quick add default auditor
+            <select
+              value={selectedQuickAuditor}
+              disabled={availableDefaultAuditors.length === 0}
+              onChange={(event) => setQuickAuditor(event.target.value)}
+            >
+              {availableDefaultAuditors.length === 0 ? (
+                <option value="">All default auditors are visible</option>
+              ) : (
+                availableDefaultAuditors.map((auditor) => (
+                  <option key={auditor} value={auditor}>
+                    {auditor}
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
+          <button
+            type="button"
+            className="secondary"
+            disabled={!selectedQuickAuditor}
+            onClick={quickAddAuditor}
+          >
+            Add selected
+          </button>
+        </div>
         <label>
           My auditor for saved view
           <select
@@ -1353,6 +1517,12 @@ function Kanban({
                       {project.assignedAuditor}
                     </span>
                     <span className="pill muted">{project.assignmentType}</span>
+                    {project.comments.length > 0 && (
+                      <span className="pill muted">
+                        {project.comments.length} comment
+                        {project.comments.length === 1 ? "" : "s"}
+                      </span>
+                    )}
                     <span className={`pill ${due.className}`}>{due.text}</span>
                     {computedBlockers(project).length > 0 && (
                       <span className="pill danger">Blocked</span>
@@ -1384,10 +1554,12 @@ function ProjectDetail({
   project,
   onEdit,
   onMove,
+  onAddComment,
 }: {
   project: AuditProject;
   onEdit: () => void;
   onMove: (project: AuditProject, stage: Stage) => void;
+  onAddComment: (project: AuditProject, comment: ProjectComment) => void;
 }) {
   const blockers = computedBlockers(project);
   return (
@@ -1451,6 +1623,7 @@ function ProjectDetail({
         </div>
       </article>
       <Checklist project={project} />
+      <Comments project={project} onAddComment={onAddComment} />
       <History project={project} />
     </section>
   );
@@ -1510,6 +1683,68 @@ function Checklist({ project }: { project: AuditProject }) {
           Document request: {project.documentRequestStatus}
         </li>
       </ul>
+    </article>
+  );
+}
+
+function Comments({
+  project,
+  onAddComment,
+}: {
+  project: AuditProject;
+  onAddComment: (project: AuditProject, comment: ProjectComment) => void;
+}) {
+  const [commentBody, setCommentBody] = useState("");
+  const [commentAuthor, setCommentAuthor] = useState("Prototype user");
+  const addComment = (event: FormEvent) => {
+    event.preventDefault();
+    const body = commentBody.trim();
+    if (!body) return;
+    onAddComment(project, {
+      id: `comment-${Date.now()}`,
+      createdAt: timestampNow(),
+      author: commentAuthor.trim() || "Prototype user",
+      body,
+    });
+    setCommentBody("");
+  };
+  return (
+    <article className="panel comments-panel">
+      <h2>Card comments</h2>
+      <form className="comment-form" onSubmit={addComment}>
+        <label>
+          Name
+          <input
+            value={commentAuthor}
+            onChange={(event) => setCommentAuthor(event.target.value)}
+          />
+        </label>
+        <label>
+          Comment
+          <textarea
+            value={commentBody}
+            placeholder="Add an update, question, or note for this audit card"
+            onChange={(event) => setCommentBody(event.target.value)}
+          />
+        </label>
+        <button type="submit">Add comment</button>
+      </form>
+      <div className="comment-list">
+        {project.comments.length === 0 ? (
+          <p>No comments yet.</p>
+        ) : (
+          project.comments
+            .slice()
+            .reverse()
+            .map((comment) => (
+              <div className="comment" key={comment.id}>
+                <strong>{comment.author}</strong>
+                <span>{comment.createdAt}</span>
+                <p>{comment.body}</p>
+              </div>
+            ))
+        )}
+      </div>
     </article>
   );
 }
