@@ -67,6 +67,7 @@ A future SharePoint implementation should use an **Audit Assignments** list for 
 
 | Update size | Version | What changed                                                                                                                                            |
 | ----------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Minor       | UX-7    | Temporarily archive the auditor directory UI while keeping default auditor data available for filters, workload, and assignment forms.                  |
 | Minor       | UX-6    | Remove saved work queues, clarify sample auditor pairings, and tighten the project detail layout to avoid empty spacing.                              |
 | Minor       | UX-5    | Add five prioritized recommended next steps, clean dashboard labels, and next-action hover guidance.                                                    |
 | Major       | UX-4    | Add activity event tracking, post-intake support additions, cycle-time reporting ranges, and simplified role-based workload counts.                    |
@@ -87,3 +88,22 @@ Move to Office 365 after the team validates this major UX iteration with realist
 - **Documents Requested / Received** for BAA, endorsements, Premium BDX, and audit support tracking.
 
 This split keeps the main assignment row Power BI friendly while letting Power Apps and Power Automate handle related activity, comments, reminders, and approvals.
+
+### Significant next upgrades
+
+1. **Replace prototype state with SharePoint/Microsoft Lists** so assignment records, audit teams, comments, status history, and document requests persist centrally instead of in browser local storage.
+2. **Build a Power Apps front end** for intake, stage movement, document readiness, comments, and reviewer sign-off once the SharePoint list schema is stable.
+3. **Automate the repeatable follow-up work** with Power Automate flows for new intake alerts, quote approval reminders, broker chase reminders, reviewer approvals, stage-history creation, and invoice/payment notifications.
+4. **Add document library integration** so BAA, endorsements, Premium BDX, testing sheets, reports, and invoice artifacts are stored against the assignment record instead of only represented as checkboxes.
+5. **Publish Power BI reporting** from the SharePoint lists for workload, aging, cycle time, overdue items, quote value, document blockers, and closed-audit throughput.
+6. **Define permissions and governance** before launch: auditor/reviewer roles, edit rights by stage, naming rules, required metadata, retention, and environment ownership.
+
+### Automation candidates
+
+- **On assignment created:** notify the lead auditor/reviewer, stamp initial status history, and create the default checklist rows.
+- **On stage changed:** write a child status-history row, validate gate requirements, and notify the next owner when a blocker exists.
+- **On document request date set:** schedule broker follow-up reminders until required documents are marked received.
+- **On quote accepted:** prompt scheduling tasks and notify the assigned audit team.
+- **On findings sent:** start a coverholder-response reminder clock.
+- **On final report issued:** create invoice tasks and, if needed, DAM submission follow-up.
+- **On invoice paid:** move eligible records toward close-out after final submission and archive checks are complete.

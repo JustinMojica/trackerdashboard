@@ -751,10 +751,6 @@ function loadAuditors(): string[] {
   }
 }
 
-function saveAuditors(auditors: string[]) {
-  localStorage.setItem(auditorStorageKey, JSON.stringify(auditors));
-}
-
 function timestampNow() {
   return new Date().toLocaleString("en-US", {
     year: "numeric",
@@ -1146,9 +1142,7 @@ function App() {
     missingDocuments: false,
   });
   const [message, setMessage] = useState("");
-  const [auditorOptions, setAuditorOptions] = useState<string[]>(() =>
-    loadAuditors(),
-  );
+  const [auditorOptions] = useState<string[]>(() => loadAuditors());
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
   const [durationRange, setDurationRange] = useState<DurationRange>("ytd");
   const [hiddenWorkloadAuditors, setHiddenWorkloadAuditors] = useState<
@@ -1211,11 +1205,6 @@ function App() {
   const persist = (nextProjects: AuditProject[]) => {
     setProjects(nextProjects);
     saveProjects(nextProjects);
-  };
-
-  const updateAuditors = (nextAuditors: string[]) => {
-    setAuditorOptions(nextAuditors);
-    saveAuditors(nextAuditors);
   };
 
   const upsertProject = (project: AuditProject) => {
@@ -1454,10 +1443,6 @@ function App() {
           setHiddenWorkloadAuditors([]);
           setShownZeroLoadAuditors(zeroLoadAuditors);
         }}
-      />
-      <PeopleAdmin
-        auditorOptions={auditorOptions}
-        setAuditorOptions={updateAuditors}
       />
       <FiltersPanel
         filters={filters}
@@ -1796,124 +1781,6 @@ function WorkloadCounts({
               Minimize
             </button>
           </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function PeopleAdmin({
-  auditorOptions,
-  setAuditorOptions,
-}: {
-  auditorOptions: string[];
-  setAuditorOptions: (auditors: string[]) => void;
-}) {
-  const availableDefaultAuditors = defaultAuditorOptions.filter(
-    (auditor) => !auditorOptions.includes(auditor),
-  );
-  const [newAuditor, setNewAuditor] = useState("");
-  const [quickAuditor, setQuickAuditor] = useState(
-    availableDefaultAuditors[0] ?? "",
-  );
-  const selectedQuickAuditor =
-    quickAuditor || availableDefaultAuditors[0] || "";
-  const addAuditorName = (name: string) => {
-    const cleanName = name.trim();
-    if (
-      !cleanName ||
-      auditorOptions.some(
-        (auditor) => auditor.toLowerCase() === cleanName.toLowerCase(),
-      )
-    )
-      return false;
-    setAuditorOptions([...auditorOptions, cleanName]);
-    return true;
-  };
-  const addAuditor = (event: FormEvent) => {
-    event.preventDefault();
-    if (addAuditorName(newAuditor)) setNewAuditor("");
-  };
-  const quickAddAuditor = () => {
-    if (addAuditorName(selectedQuickAuditor)) {
-      const remainingAuditors = availableDefaultAuditors.filter(
-        (auditor) => auditor !== selectedQuickAuditor,
-      );
-      setQuickAuditor(remainingAuditors[0] ?? "");
-    }
-  };
-  const removeAuditor = (auditor: string) => {
-    const nextAuditors = auditorOptions.filter((item) => item !== auditor);
-    setAuditorOptions(nextAuditors);
-  };
-  return (
-    <section className="panel people-admin">
-      <div className="section-title">
-        <h2>People / admin settings</h2>
-        <button
-          type="button"
-          className="secondary"
-          onClick={() =>
-            setAuditorOptions([
-              ...defaultAuditorOptions,
-              ...auditorOptions.filter(
-                (auditor) => !defaultAuditorOptions.includes(auditor),
-              ),
-            ])
-          }
-        >
-          Restore default auditors
-        </button>
-      </div>
-      <div className="admin-grid">
-        <form onSubmit={addAuditor} className="add-person-form">
-          <label>
-            Add custom auditor
-            <input
-              value={newAuditor}
-              placeholder="Type auditor name"
-              onChange={(event) => setNewAuditor(event.target.value)}
-            />
-          </label>
-          <button type="submit">Add</button>
-        </form>
-        <div className="quick-add-auditor">
-          <label>
-            Quick add default auditor
-            <select
-              value={selectedQuickAuditor}
-              disabled={availableDefaultAuditors.length === 0}
-              onChange={(event) => setQuickAuditor(event.target.value)}
-            >
-              {availableDefaultAuditors.length === 0 ? (
-                <option value="">All default auditors are visible</option>
-              ) : (
-                availableDefaultAuditors.map((auditor) => (
-                  <option key={auditor} value={auditor}>
-                    {auditor}
-                  </option>
-                ))
-              )}
-            </select>
-          </label>
-          <button
-            type="button"
-            className="secondary"
-            disabled={!selectedQuickAuditor}
-            onClick={quickAddAuditor}
-          >
-            Add selected
-          </button>
-        </div>
-      </div>
-      <div className="person-chips">
-        {auditorOptions.map((auditor) => (
-          <span className="person-chip" key={auditor}>
-            {auditor}
-            <button type="button" onClick={() => removeAuditor(auditor)}>
-              ×
-            </button>
-          </span>
         ))}
       </div>
     </section>
