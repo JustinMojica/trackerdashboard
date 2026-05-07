@@ -3,7 +3,6 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 
 type AssignmentSource = "Email" | "DAM";
-type AssignmentType = "DCA" | "CH" | "MGA" | "Company Contract";
 type AuditType = "Remote" | "Onsite";
 type Stage =
   | "Intake"
