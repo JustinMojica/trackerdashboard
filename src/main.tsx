@@ -37,6 +37,11 @@ type ProgressStatus =
   | "Not Required";
 type ReportStatus = "Not Started" | "Drafting" | "Review" | "Issued";
 type InvoiceStatus = "Not Started" | "Prepared" | "Sent" | "Paid";
+type ProjectLabel =
+  | "High Priority"
+  | "Waiting on Broker"
+  | "Internal Review"
+  | "Urgent";
 type DamSubmissionStatus =
   | "Not Required"
   | "Not Started"
@@ -93,6 +98,8 @@ type AuditProject = {
   blockers: string;
   dueDate: string;
   lastUpdatedDate: string;
+  labels: ProjectLabel[];
+  checklistCompletions: Record<string, boolean>;
   statusHistory: StatusHistoryItem[];
   comments: ProjectComment[];
 };
@@ -108,6 +115,7 @@ type Filters = {
 
 type SavedView =
   | "all"
+  | "todaysWork"
   | "myAudits"
   | "blocked"
   | "dueThisWeek"
@@ -139,6 +147,13 @@ const assignmentTypeOptions: AssignmentType[] = [
   "CH",
   "MGA",
   "Company Contract",
+];
+
+const labelOptions: ProjectLabel[] = [
+  "High Priority",
+  "Waiting on Broker",
+  "Internal Review",
+  "Urgent",
 ];
 
 const defaultAuditorOptions = [
@@ -188,6 +203,8 @@ const sampleProjects: AuditProject[] = [
     blockers: "",
     dueDate: "2026-05-03",
     lastUpdatedDate: "2026-05-01",
+    labels: ["Waiting on Broker", "High Priority"],
+    checklistCompletions: {},
     statusHistory: [
       {
         id: "h-001",
@@ -249,6 +266,8 @@ const sampleProjects: AuditProject[] = [
     blockers: "",
     dueDate: "2026-05-07",
     lastUpdatedDate: "2026-05-04",
+    labels: ["Waiting on Broker"],
+    checklistCompletions: {},
     statusHistory: [
       {
         id: "h-003",
@@ -311,6 +330,8 @@ const sampleProjects: AuditProject[] = [
     blockers: "",
     dueDate: "2026-05-10",
     lastUpdatedDate: "2026-05-04",
+    labels: ["Urgent"],
+    checklistCompletions: {},
     statusHistory: [
       {
         id: "h-006",
@@ -372,6 +393,8 @@ const sampleProjects: AuditProject[] = [
     blockers: "",
     dueDate: "2026-05-06",
     lastUpdatedDate: "2026-05-04",
+    labels: ["Internal Review"],
+    checklistCompletions: {},
     statusHistory: [
       {
         id: "h-008",
@@ -428,6 +451,8 @@ const blankProject = (): AuditProject => ({
   blockers: "",
   dueDate: "",
   lastUpdatedDate: new Date().toISOString().slice(0, 10),
+  labels: [],
+  checklistCompletions: {},
   statusHistory: [],
   comments: [],
 });
@@ -509,6 +534,8 @@ function withProjectDefaults(project: AuditProject): AuditProject {
     auditEntity: project.auditEntity ?? "",
     paymentReceived:
       project.paymentReceived ?? project.invoiceStatus === "Paid",
+    labels: project.labels ?? [],
+    checklistCompletions: project.checklistCompletions ?? {},
     comments: project.comments ?? [],
   };
 }
@@ -560,6 +587,10 @@ function timestampNow() {
     minute: "2-digit",
     second: "2-digit",
   });
+}
+
+function checklistKey(stage: Stage, item: string) {
+  return `${stage}:${item}`;
 }
 
 function getMissingDocuments(project: AuditProject) {
@@ -670,6 +701,7 @@ function exportProjectsToCsv(projects: AuditProject[]) {
     ["Quote Status", (project) => project.quoteStatus],
     ["Quote Amount", (project) => project.quoteAmount],
     ["Due Date", (project) => project.dueDate],
+    ["Labels", (project) => project.labels.join("; ")],
     ["Payment Received", (project) => project.paymentReceived],
     ["Next Action", (project) => project.nextAction],
     ["Blockers", (project) => computedBlockers(project).join("; ")],
@@ -743,6 +775,15 @@ function App() {
         if (
           filters.missingDocuments &&
           getMissingDocuments(project).length === 0
+        )
+          return false;
+        if (
+          savedView === "todaysWork" &&
+          !(
+            project.currentStage !== "Closed" &&
+            (daysUntil(project.dueDate) <= 1 ||
+              computedBlockers(project).length > 0)
+          )
         )
           return false;
         if (savedView === "myAudits" && project.assignedAuditor !== myAuditor)
@@ -860,6 +901,21 @@ function App() {
     setMessage(`Comment added to ${project.assignmentNumber}.`);
   };
 
+  const toggleChecklistItem = (project: AuditProject, key: string) => {
+    const updatedProject = {
+      ...project,
+      checklistCompletions: {
+        ...project.checklistCompletions,
+        [key]: !project.checklistCompletions[key],
+      },
+      lastUpdatedDate: new Date().toISOString().slice(0, 10),
+    };
+    persist(
+      projects.map((item) => (item.id === project.id ? updatedProject : item)),
+    );
+    setSelectedId(project.id);
+  };
+
   return (
     <main>
       <header className="hero">
@@ -958,6 +1014,7 @@ function App() {
           onEdit={() => setEditing(selectedProject)}
           onMove={moveProject}
           onAddComment={addProjectComment}
+          onToggleChecklist={toggleChecklistItem}
         />
       )}
       {editing && (
@@ -1041,6 +1098,11 @@ function SavedViews({
   const views: { id: SavedView; label: string; helper: string }[] = [
     { id: "all", label: "All audits", helper: "Everything visible" },
     {
+      id: "todaysWork",
+      label: "Today’s Work",
+      helper: "Due, blocked, or next",
+    },
+    {
       id: "myAudits",
       label: "My audits",
       helper: myAuditor || "Choose me in Admin",
@@ -1093,24 +1155,57 @@ function WorkloadCounts({
   const visibleAuditors = auditors.filter(
     (auditor) => !hiddenAuditors.includes(auditor),
   );
-  const totalVisibleOpen = projects.filter(
-    (project) =>
-      visibleAuditors.includes(project.assignedAuditor) &&
-      project.currentStage !== "Closed",
-  ).length;
+  const workloadRows = visibleAuditors.map((auditor) => {
+    const openProjects = projects.filter(
+      (project) =>
+        project.assignedAuditor === auditor &&
+        project.currentStage !== "Closed",
+    );
+    const blockedCount = openProjects.filter(
+      (project) => computedBlockers(project).length > 0,
+    ).length;
+    const dueSoonCount = openProjects.filter(
+      (project) =>
+        daysUntil(project.dueDate) >= 0 && daysUntil(project.dueDate) <= 7,
+    ).length;
+    const tone =
+      openProjects.length >= 4
+        ? "high"
+        : openProjects.length >= 2
+          ? "medium"
+          : "low";
+    return {
+      auditor,
+      openCount: openProjects.length,
+      blockedCount,
+      dueSoonCount,
+      tone,
+    };
+  });
+  const totalVisibleOpen = workloadRows.reduce(
+    (sum, row) => sum + row.openCount,
+    0,
+  );
+  const busiestCount = Math.max(...workloadRows.map((row) => row.openCount), 1);
 
   return (
-    <section className="panel">
-      <div className="section-title">
-        <h2>Auditor workload</h2>
-        <span>
-          {totalVisibleOpen} open assignments across {visibleAuditors.length}{" "}
-          visible auditors
-        </span>
+    <section className="panel workload-dashboard">
+      <div className="section-title workload-header">
+        <div>
+          <p className="eyebrow dark">Workload dashboard</p>
+          <h2>Auditor workload</h2>
+        </div>
+        <div className="workload-summary">
+          <strong>{totalVisibleOpen}</strong>
+          <span>open assignments</span>
+          <small>
+            {visibleAuditors.length} visible · {hiddenAuditors.length} minimized
+          </small>
+        </div>
       </div>
       {hiddenAuditors.length > 0 && (
         <div className="minimized-auditors">
-          <span>Minimized:</span>
+          <span>Minimized</span>
           {hiddenAuditors.map((auditor) => (
             <button
               type="button"
@@ -1126,32 +1221,39 @@ function WorkloadCounts({
           </button>
         </div>
       )}
-      <div className="workload-grid">
-        {visibleAuditors.map((auditor) => {
-          const openCount = projects.filter(
-            (project) =>
-              project.assignedAuditor === auditor &&
-              project.currentStage !== "Closed",
-          ).length;
-          const tone =
-            openCount >= 4 ? "high" : openCount >= 2 ? "medium" : "low";
-          return (
-            <article className={`workload-card ${tone}`} key={auditor}>
+      <div className="workload-list">
+        {workloadRows.map((row) => (
+          <article className={`workload-row ${row.tone}`} key={row.auditor}>
+            <div className="workload-person">
+              <span className="avatar">
+                {row.auditor
+                  .split(" ")
+                  .map((part) => part[0])
+                  .slice(0, 2)
+                  .join("")}
+              </span>
               <div>
-                <span>{auditor}</span>
-                <strong>{openCount}</strong>
-                <small>{openCount === 1 ? "open audit" : "open audits"}</small>
+                <strong>{row.auditor}</strong>
+                <small>
+                  {row.openCount} open · {row.blockedCount} blocked ·{" "}
+                  {row.dueSoonCount} due soon
+                </small>
               </div>
-              <button
-                type="button"
-                className="link"
-                onClick={() => toggleAuditorHidden(auditor)}
-              >
-                Minimize
-              </button>
-            </article>
-          );
-        })}
+            </div>
+            <div className="workload-meter" aria-hidden="true">
+              <span
+                style={{ width: `${(row.openCount / busiestCount) * 100}%` }}
+              />
+            </div>
+            <button
+              type="button"
+              className="link"
+              onClick={() => toggleAuditorHidden(row.auditor)}
+            >
+              Minimize
+            </button>
+          </article>
+        ))}
       </div>
     </section>
   );
@@ -1437,17 +1539,19 @@ function Select({
   value,
   options,
   onChange,
+  placeholder = "All",
 }: {
   label: string;
   value: string;
   options: (string | [string, string])[];
   onChange: (value: string) => void;
+  placeholder?: string;
 }) {
   return (
     <label>
       {label}
       <select value={value} onChange={(event) => onChange(event.target.value)}>
-        <option value="">All</option>
+        <option value="">{placeholder}</option>
         {options.map((option) => {
           const value = Array.isArray(option) ? option[0] : option;
           const text = Array.isArray(option) ? option[1] : option;
@@ -1517,6 +1621,14 @@ function Kanban({
                       {project.assignedAuditor}
                     </span>
                     <span className="pill muted">{project.assignmentType}</span>
+                    {project.labels.map((label) => (
+                      <span
+                        className={`project-label mini ${label.toLowerCase().replace(/ /g, "-")}`}
+                        key={label}
+                      >
+                        {label}
+                      </span>
+                    ))}
                     {project.comments.length > 0 && (
                       <span className="pill muted">
                         {project.comments.length} comment
@@ -1555,11 +1667,13 @@ function ProjectDetail({
   onEdit,
   onMove,
   onAddComment,
+  onToggleChecklist,
 }: {
   project: AuditProject;
   onEdit: () => void;
   onMove: (project: AuditProject, stage: Stage) => void;
   onAddComment: (project: AuditProject, comment: ProjectComment) => void;
+  onToggleChecklist: (project: AuditProject, key: string) => void;
 }) {
   const blockers = computedBlockers(project);
   return (
@@ -1569,6 +1683,18 @@ function ProjectDetail({
           <h2>{project.assignmentNumber}</h2>
           <button onClick={onEdit}>Edit project</button>
         </div>
+        {project.labels.length > 0 && (
+          <div className="label-strip">
+            {project.labels.map((label) => (
+              <span
+                className={`project-label ${label.toLowerCase().replace(/ /g, "-")}`}
+                key={label}
+              >
+                {label}
+              </span>
+            ))}
+          </div>
+        )}
         <div className="meta-grid">
           <Meta label="Source" value={project.assignmentSource} />
           <Meta label="Assignment type" value={project.assignmentType} />
@@ -1622,7 +1748,7 @@ function ProjectDetail({
           </label>
         </div>
       </article>
-      <Checklist project={project} />
+      <Checklist project={project} onToggleChecklist={onToggleChecklist} />
       <Comments project={project} onAddComment={onAddComment} />
       <History project={project} />
     </section>
@@ -1638,21 +1764,56 @@ function Meta({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Checklist({ project }: { project: AuditProject }) {
+function Checklist({
+  project,
+  onToggleChecklist,
+}: {
+  project: AuditProject;
+  onToggleChecklist: (project: AuditProject, key: string) => void;
+}) {
   const sourceSpecific = sourceTasks(project);
+  const checklistItems = [
+    ...checklistByStage[project.currentStage],
+    ...sourceSpecific,
+  ];
+  const completedCount = checklistItems.filter(
+    (item) =>
+      project.checklistCompletions[checklistKey(project.currentStage, item)],
+  ).length;
   return (
     <article className="panel">
-      <h2>Stage checklist</h2>
-      <h3>{project.currentStage}</h3>
-      <ul className="checklist">
-        {checklistByStage[project.currentStage].map((item) => (
-          <li key={item}>{item}</li>
-        ))}
-        {sourceSpecific.map((item) => (
-          <li key={item} className="conditional">
-            {item}
-          </li>
-        ))}
+      <div className="section-title">
+        <div>
+          <h2>Stage checklist</h2>
+          <span>
+            {completedCount}/{checklistItems.length} complete for{" "}
+            {project.currentStage}
+          </span>
+        </div>
+      </div>
+      <ul className="checklist interactive-checklist">
+        {checklistItems.map((item) => {
+          const key = checklistKey(project.currentStage, item);
+          return (
+            <li
+              key={key}
+              className={project.checklistCompletions[key] ? "done" : ""}
+            >
+              <label className="checklist-toggle">
+                <input
+                  type="checkbox"
+                  checked={Boolean(project.checklistCompletions[key])}
+                  onChange={() => onToggleChecklist(project, key)}
+                />
+                <span
+                  className={sourceSpecific.includes(item) ? "conditional" : ""}
+                >
+                  {item}
+                </span>
+              </label>
+            </li>
+          );
+        })}
       </ul>
       <h3>Document readiness</h3>
       <ul className="document-list">
@@ -1787,234 +1948,423 @@ function ProjectForm({
   auditorOptions: string[];
 }) {
   const [draft, setDraft] = useState(project);
+  const [step, setStep] = useState(0);
+  const isNewProject = project.statusHistory.length === 0;
+  const steps = [
+    "Assignment basics",
+    "People",
+    "Planning",
+    "Documents & quote",
+    "Review",
+  ];
   const update = <K extends keyof AuditProject>(
     key: K,
     value: AuditProject[K],
   ) => setDraft({ ...draft, [key]: value });
+  const toggleLabel = (label: ProjectLabel) => {
+    update(
+      "labels",
+      (draft.labels.includes(label)
+        ? draft.labels.filter((item) => item !== label)
+        : [...draft.labels, label]) as AuditProject["labels"],
+    );
+  };
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    if (isNewProject && step < steps.length - 1) {
+      setStep(step + 1);
+      return;
+    }
     onSave(draft);
   };
+
+  const basics = (
+    <section className="form-section-card">
+      <div>
+        <h3>Assignment basics</h3>
+        <p>
+          Capture the intake facts first. This is the minimum record users need
+          to start tracking the audit.
+        </p>
+      </div>
+      <div className="form-grid wizard-grid">
+        <Input
+          label="Assignment number"
+          value={draft.assignmentNumber}
+          onChange={(value) => update("assignmentNumber", value)}
+        />
+        <Select
+          label="Source"
+          value={draft.assignmentSource}
+          options={["Email", "DAM"]}
+          placeholder="Select source"
+          onChange={(value) =>
+            update("assignmentSource", value as AssignmentSource)
+          }
+        />
+        <Select
+          label="Assignment type"
+          value={draft.assignmentType}
+          options={assignmentTypeOptions}
+          placeholder="Select type"
+          onChange={(value) =>
+            update("assignmentType", value as AssignmentType)
+          }
+        />
+        <Input
+          label="Audit Entity"
+          value={draft.auditEntity}
+          placeholder="Entity, program, or agreement being audited"
+          onChange={(value) => update("auditEntity", value)}
+        />
+        <Input
+          label="Client / coverholder code"
+          value={draft.clientCoverholderCode}
+          onChange={(value) => update("clientCoverholderCode", value)}
+        />
+        <Input
+          label="Broker"
+          value={draft.broker}
+          onChange={(value) => update("broker", value)}
+        />
+      </div>
+      <div className="label-picker">
+        <span>Labels / tags</span>
+        <div>
+          {labelOptions.map((label) => (
+            <button
+              type="button"
+              key={label}
+              className={
+                draft.labels.includes(label)
+                  ? "label-option selected"
+                  : "label-option"
+              }
+              onClick={() => toggleLabel(label)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+
+  const people = (
+    <section className="form-section-card">
+      <div>
+        <h3>People</h3>
+        <p>
+          Assign ownership so the card immediately appears in workload and saved
+          views.
+        </p>
+      </div>
+      <div className="form-grid wizard-grid">
+        <Select
+          label="Assigned auditor"
+          value={draft.assignedAuditor}
+          options={auditorOptions}
+          placeholder="Select auditor"
+          onChange={(value) => update("assignedAuditor", value)}
+        />
+        <Input
+          label="Reviewer"
+          value={draft.reviewer}
+          onChange={(value) => update("reviewer", value)}
+        />
+        <Select
+          label="Assignment status"
+          value={draft.assignmentStatus}
+          options={["New", "In Progress", "Blocked", "On Hold", "Completed"]}
+          placeholder="Select status"
+          onChange={(value) =>
+            update("assignmentStatus", value as AssignmentStatus)
+          }
+        />
+        <Input
+          label="Due date"
+          type="date"
+          value={draft.dueDate}
+          onChange={(value) => update("dueDate", value)}
+        />
+      </div>
+    </section>
+  );
+
+  const planning = (
+    <section className="form-section-card">
+      <div>
+        <h3>Planning</h3>
+        <p>
+          Schedule the audit and choose how fieldwork will happen. Exact dates
+          can be filled in later.
+        </p>
+      </div>
+      <div className="form-grid wizard-grid">
+        <Input
+          label="Tentative audit week"
+          value={draft.tentativeAuditWeek}
+          placeholder="2026-W21"
+          onChange={(value) => update("tentativeAuditWeek", value)}
+        />
+        <Input
+          label="Confirmed audit date"
+          type="date"
+          value={draft.confirmedAuditDate}
+          onChange={(value) => update("confirmedAuditDate", value)}
+        />
+        <Select
+          label="Audit type"
+          value={draft.auditType}
+          options={["Remote", "Onsite"]}
+          placeholder="Select audit type"
+          onChange={(value) => update("auditType", value as AuditType)}
+        />
+        <Select
+          label="Current stage"
+          value={draft.currentStage}
+          options={stages}
+          placeholder="Select stage"
+          onChange={(value) => update("currentStage", value as Stage)}
+        />
+      </div>
+    </section>
+  );
+
+  const documentsQuote = (
+    <section className="form-section-card">
+      <div>
+        <h3>Documents & quote</h3>
+        <p>
+          Only capture early-stage readiness here. Later report and invoice
+          fields stay hidden until edit mode.
+        </p>
+      </div>
+      <div className="form-grid wizard-grid">
+        <Select
+          label="Quote status"
+          value={draft.quoteStatus}
+          options={["Not Started", "Drafting", "Sent", "Accepted", "Rejected"]}
+          placeholder="Select quote status"
+          onChange={(value) => update("quoteStatus", value as QuoteStatus)}
+        />
+        <Input
+          label="Quote amount"
+          value={String(draft.quoteAmount)}
+          type="number"
+          onChange={(value) => update("quoteAmount", Number(value))}
+        />
+        <Check
+          label="BAA received"
+          checked={draft.baaReceived}
+          onChange={(value) => update("baaReceived", value)}
+        />
+        <Check
+          label="Endorsements received"
+          checked={draft.endorsementsReceived}
+          onChange={(value) => update("endorsementsReceived", value)}
+        />
+        <Check
+          label="Premium BDX received"
+          checked={draft.premiumBdxReceived}
+          onChange={(value) => update("premiumBdxReceived", value)}
+        />
+        <Select
+          label="Pre-audit questionnaire"
+          value={draft.preAuditQuestionnaireStatus}
+          options={["Not Started", "In Progress", "Complete", "Not Required"]}
+          placeholder="Select questionnaire status"
+          onChange={(value) =>
+            update("preAuditQuestionnaireStatus", value as ProgressStatus)
+          }
+        />
+        <Select
+          label="Document request"
+          value={draft.documentRequestStatus}
+          options={["Not Started", "In Progress", "Complete", "Not Required"]}
+          placeholder="Select document status"
+          onChange={(value) =>
+            update("documentRequestStatus", value as ProgressStatus)
+          }
+        />
+      </div>
+      <label>
+        Next action
+        <textarea
+          value={draft.nextAction}
+          onChange={(event) => update("nextAction", event.target.value)}
+        />
+      </label>
+      <label>
+        Manual blockers
+        <textarea
+          value={draft.blockers}
+          onChange={(event) => update("blockers", event.target.value)}
+        />
+      </label>
+    </section>
+  );
+
+  const review = (
+    <section className="form-section-card review-card">
+      <div>
+        <h3>Review project before creating</h3>
+        <p>
+          This card will start in {draft.currentStage}. You can add advanced
+          report, findings, and invoice details later from Edit Project.
+        </p>
+      </div>
+      <div className="review-grid">
+        <Meta label="Assignment" value={draft.assignmentNumber} />
+        <Meta
+          label="Source / type"
+          value={`${draft.assignmentSource} · ${draft.assignmentType}`}
+        />
+        <Meta label="Audit Entity" value={draft.auditEntity || "Not set"} />
+        <Meta label="Auditor" value={draft.assignedAuditor || "Not assigned"} />
+        <Meta label="Reviewer" value={draft.reviewer || "Not assigned"} />
+        <Meta label="Due date" value={draft.dueDate || "Not set"} />
+        <Meta
+          label="Quote"
+          value={`${draft.quoteStatus} · ${draft.quoteAmount || 0}`}
+        />
+        <Meta
+          label="Labels"
+          value={draft.labels.length ? draft.labels.join(", ") : "None"}
+        />
+      </div>
+    </section>
+  );
+
+  const advanced = (
+    <section className="form-section-card">
+      <div>
+        <h3>Advanced lifecycle fields</h3>
+        <p>
+          These fields are shown in edit mode because they become relevant later
+          in the audit lifecycle.
+        </p>
+      </div>
+      <div className="form-grid wizard-grid">
+        <Check
+          label="File selection completed"
+          checked={draft.fileSelectionCompleted}
+          onChange={(value) => update("fileSelectionCompleted", value)}
+        />
+        <Check
+          label="Testing sheet completed"
+          checked={draft.testingSheetCompleted}
+          onChange={(value) => update("testingSheetCompleted", value)}
+        />
+        <Input
+          label="Findings sent date"
+          type="date"
+          value={draft.findingsSentDate}
+          onChange={(value) => update("findingsSentDate", value)}
+        />
+        <Input
+          label="Coverholder response date"
+          type="date"
+          value={draft.coverholderResponseReceivedDate}
+          onChange={(value) => update("coverholderResponseReceivedDate", value)}
+        />
+        <Select
+          label="Report status"
+          value={draft.reportStatus}
+          options={["Not Started", "Drafting", "Review", "Issued"]}
+          placeholder="Select report status"
+          onChange={(value) => update("reportStatus", value as ReportStatus)}
+        />
+        <Select
+          label="Invoice status"
+          value={draft.invoiceStatus}
+          options={["Not Started", "Prepared", "Sent", "Paid"]}
+          placeholder="Select invoice status"
+          onChange={(value) => {
+            update("invoiceStatus", value as InvoiceStatus);
+            if (value === "Paid") update("paymentReceived", true);
+          }}
+        />
+        <Check
+          label="Payment received"
+          checked={draft.paymentReceived}
+          onChange={(value) => update("paymentReceived", value)}
+        />
+        {draft.assignmentSource === "DAM" && (
+          <Select
+            label="DAM submission"
+            value={draft.damSubmissionStatus}
+            options={["Not Started", "Submitted", "Accepted"]}
+            placeholder="Select DAM status"
+            onChange={(value) =>
+              update("damSubmissionStatus", value as DamSubmissionStatus)
+            }
+          />
+        )}
+      </div>
+    </section>
+  );
+
+  const createStepContent = [basics, people, planning, documentsQuote, review];
+
   return (
     <div className="modal-backdrop">
-      <form className="modal" onSubmit={submit}>
-        <div className="section-title">
-          <h2>
-            {project.statusHistory.length ? "Edit project" : "Add project"}
-          </h2>
+      <form className="modal intake-modal" onSubmit={submit}>
+        <div className="section-title modal-title-row">
+          <div>
+            <p className="eyebrow dark">
+              {isNewProject ? "Guided intake" : "Advanced edit"}
+            </p>
+            <h2>{isNewProject ? "Add project" : "Edit project"}</h2>
+          </div>
           <button type="button" className="link" onClick={onCancel}>
             Close
           </button>
         </div>
-        <div className="form-grid">
-          <Input
-            label="Assignment number"
-            value={draft.assignmentNumber}
-            onChange={(value) => update("assignmentNumber", value)}
-          />
-          <Select
-            label="Source"
-            value={draft.assignmentSource}
-            options={["Email", "DAM"]}
-            onChange={(value) =>
-              update("assignmentSource", value as AssignmentSource)
-            }
-          />
-          <Select
-            label="Assignment type"
-            value={draft.assignmentType}
-            options={assignmentTypeOptions}
-            onChange={(value) =>
-              update("assignmentType", value as AssignmentType)
-            }
-          />
-          <Input
-            label="Audit Entity"
-            value={draft.auditEntity}
-            onChange={(value) => update("auditEntity", value)}
-          />
-          <Input
-            label="Client / coverholder code"
-            value={draft.clientCoverholderCode}
-            onChange={(value) => update("clientCoverholderCode", value)}
-          />
-          <Input
-            label="Broker"
-            value={draft.broker}
-            onChange={(value) => update("broker", value)}
-          />
-          <Select
-            label="Assigned auditor"
-            value={draft.assignedAuditor}
-            options={auditorOptions}
-            onChange={(value) => update("assignedAuditor", value)}
-          />
-          <Input
-            label="Reviewer"
-            value={draft.reviewer}
-            onChange={(value) => update("reviewer", value)}
-          />
-          <Select
-            label="Current stage"
-            value={draft.currentStage}
-            options={stages}
-            onChange={(value) => update("currentStage", value as Stage)}
-          />
-          <Select
-            label="Assignment status"
-            value={draft.assignmentStatus}
-            options={["New", "In Progress", "Blocked", "On Hold", "Completed"]}
-            onChange={(value) =>
-              update("assignmentStatus", value as AssignmentStatus)
-            }
-          />
-          <Select
-            label="Quote status"
-            value={draft.quoteStatus}
-            options={[
-              "Not Started",
-              "Drafting",
-              "Sent",
-              "Accepted",
-              "Rejected",
-            ]}
-            onChange={(value) => update("quoteStatus", value as QuoteStatus)}
-          />
-          <Input
-            label="Quote amount"
-            value={String(draft.quoteAmount)}
-            type="number"
-            onChange={(value) => update("quoteAmount", Number(value))}
-          />
-          <Input
-            label="Tentative audit week"
-            value={draft.tentativeAuditWeek}
-            placeholder="2026-W21"
-            onChange={(value) => update("tentativeAuditWeek", value)}
-          />
-          <Input
-            label="Confirmed audit date"
-            type="date"
-            value={draft.confirmedAuditDate}
-            onChange={(value) => update("confirmedAuditDate", value)}
-          />
-          <Select
-            label="Audit type"
-            value={draft.auditType}
-            options={["Remote", "Onsite"]}
-            onChange={(value) => update("auditType", value as AuditType)}
-          />
-          <Check
-            label="BAA received"
-            checked={draft.baaReceived}
-            onChange={(value) => update("baaReceived", value)}
-          />
-          <Check
-            label="Endorsements received"
-            checked={draft.endorsementsReceived}
-            onChange={(value) => update("endorsementsReceived", value)}
-          />
-          <Check
-            label="Premium BDX received"
-            checked={draft.premiumBdxReceived}
-            onChange={(value) => update("premiumBdxReceived", value)}
-          />
-          <Select
-            label="Pre-audit questionnaire"
-            value={draft.preAuditQuestionnaireStatus}
-            options={["Not Started", "In Progress", "Complete", "Not Required"]}
-            onChange={(value) =>
-              update("preAuditQuestionnaireStatus", value as ProgressStatus)
-            }
-          />
-          <Select
-            label="Document request"
-            value={draft.documentRequestStatus}
-            options={["Not Started", "In Progress", "Complete", "Not Required"]}
-            onChange={(value) =>
-              update("documentRequestStatus", value as ProgressStatus)
-            }
-          />
-          <Check
-            label="File selection completed"
-            checked={draft.fileSelectionCompleted}
-            onChange={(value) => update("fileSelectionCompleted", value)}
-          />
-          <Check
-            label="Testing sheet completed"
-            checked={draft.testingSheetCompleted}
-            onChange={(value) => update("testingSheetCompleted", value)}
-          />
-          <Input
-            label="Findings sent date"
-            type="date"
-            value={draft.findingsSentDate}
-            onChange={(value) => update("findingsSentDate", value)}
-          />
-          <Input
-            label="Coverholder response date"
-            type="date"
-            value={draft.coverholderResponseReceivedDate}
-            onChange={(value) =>
-              update("coverholderResponseReceivedDate", value)
-            }
-          />
-          <Select
-            label="Report status"
-            value={draft.reportStatus}
-            options={["Not Started", "Drafting", "Review", "Issued"]}
-            onChange={(value) => update("reportStatus", value as ReportStatus)}
-          />
-          <Select
-            label="Invoice status"
-            value={draft.invoiceStatus}
-            options={["Not Started", "Prepared", "Sent", "Paid"]}
-            onChange={(value) => {
-              update("invoiceStatus", value as InvoiceStatus);
-              if (value === "Paid") update("paymentReceived", true);
-            }}
-          />
-          <Check
-            label="Payment received"
-            checked={draft.paymentReceived}
-            onChange={(value) => update("paymentReceived", value)}
-          />
-          {draft.assignmentSource === "DAM" && (
-            <Select
-              label="DAM submission"
-              value={draft.damSubmissionStatus}
-              options={["Not Started", "Submitted", "Accepted"]}
-              onChange={(value) =>
-                update("damSubmissionStatus", value as DamSubmissionStatus)
-              }
-            />
-          )}
-          <Input
-            label="Due date"
-            type="date"
-            value={draft.dueDate}
-            onChange={(value) => update("dueDate", value)}
-          />
-        </div>
-        <label>
-          Next action
-          <textarea
-            value={draft.nextAction}
-            onChange={(event) => update("nextAction", event.target.value)}
-          />
-        </label>
-        <label>
-          Manual blockers
-          <textarea
-            value={draft.blockers}
-            onChange={(event) => update("blockers", event.target.value)}
-          />
-        </label>
-        <div className="modal-actions">
+        {isNewProject ? (
+          <>
+            <div className="wizard-steps" aria-label="Add project steps">
+              {steps.map((stepLabel, index) => (
+                <button
+                  type="button"
+                  key={stepLabel}
+                  className={
+                    index === step ? "active" : index < step ? "complete" : ""
+                  }
+                  onClick={() => setStep(index)}
+                >
+                  <span>{index + 1}</span>
+                  {stepLabel}
+                </button>
+              ))}
+            </div>
+            {createStepContent[step]}
+          </>
+        ) : (
+          <>
+            {basics}
+            {people}
+            {planning}
+            {documentsQuote}
+            {advanced}
+          </>
+        )}
+        <div className="modal-actions sticky-actions">
           <button type="button" className="secondary" onClick={onCancel}>
             Cancel
           </button>
-          <button type="submit">Save project</button>
+          {isNewProject && step > 0 && (
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setStep(step - 1)}
+            >
+              Back
+            </button>
+          )}
+          <button type="submit">
+            {isNewProject && step < steps.length - 1 ? "Next" : "Save project"}
+          </button>
         </div>
       </form>
     </div>

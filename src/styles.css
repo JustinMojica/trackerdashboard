@@ -603,3 +603,231 @@ td span {
     grid-column: auto;
   }
 }
+
+.workload-dashboard {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+.workload-header {
+  align-items: center;
+}
+.workload-summary {
+  background: #eef4ff;
+  border: 1px solid #d6e4ff;
+  border-radius: 18px;
+  min-width: 220px;
+  padding: 0.85rem 1rem;
+  text-align: right;
+}
+.workload-summary strong {
+  color: #123b7a;
+  display: block;
+  font-size: 2rem;
+  line-height: 1;
+}
+.workload-summary span,
+.workload-summary small {
+  color: #40506a;
+  display: block;
+}
+.workload-list {
+  display: grid;
+  gap: 0.65rem;
+}
+.workload-row {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #dfe7f2;
+  border-left: 6px solid #14713a;
+  border-radius: 18px;
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: minmax(230px, 1.4fr) minmax(160px, 2fr) auto;
+  padding: 0.8rem;
+}
+.workload-row.medium {
+  border-left-color: #b46b00;
+}
+.workload-row.high {
+  border-left-color: #c83232;
+}
+.workload-person {
+  align-items: center;
+  display: flex;
+  gap: 0.75rem;
+}
+.avatar {
+  align-items: center;
+  background: #eaf1ff;
+  border-radius: 999px;
+  color: #15386d;
+  display: inline-flex;
+  font-weight: 900;
+  height: 42px;
+  justify-content: center;
+  width: 42px;
+}
+.workload-person strong,
+.workload-person small {
+  display: block;
+}
+.workload-person small {
+  color: #66748a;
+}
+.workload-meter {
+  background: #edf2f8;
+  border-radius: 999px;
+  height: 10px;
+  overflow: hidden;
+}
+.workload-meter span {
+  background: linear-gradient(90deg, #29a0b1, #1358db);
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+  min-width: 4px;
+}
+.intake-modal {
+  max-width: 1040px;
+  padding: 0;
+  overflow: hidden;
+}
+.modal-title-row {
+  background: #f8fbff;
+  border-bottom: 1px solid #dfe7f2;
+  margin-bottom: 0;
+  padding: 1.25rem;
+}
+.eyebrow.dark {
+  color: #66748a;
+  margin: 0 0 0.25rem;
+}
+.wizard-steps {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(5, 1fr);
+  padding: 1rem 1.25rem 0;
+}
+.wizard-steps button {
+  align-items: center;
+  background: #eef4ff;
+  color: #40506a;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-start;
+  padding: 0.65rem;
+}
+.wizard-steps button span {
+  align-items: center;
+  background: #fff;
+  border-radius: 999px;
+  color: #1358db;
+  display: inline-flex;
+  font-weight: 900;
+  height: 26px;
+  justify-content: center;
+  width: 26px;
+}
+.wizard-steps button.active,
+.wizard-steps button.complete {
+  background: #1358db;
+  color: #fff;
+}
+.form-section-card {
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+}
+.form-section-card > div > p {
+  color: #66748a;
+  margin: 0.25rem 0 0;
+}
+.wizard-grid {
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+}
+.label-picker {
+  display: grid;
+  gap: 0.5rem;
+}
+.label-picker > span {
+  color: #40506a;
+  font-weight: 800;
+}
+.label-picker > div,
+.label-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.label-option,
+.project-label {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 0.82rem;
+  font-weight: 900;
+  padding: 0.35rem 0.65rem;
+}
+.label-option {
+  background: #eef1f6;
+  color: #40506a;
+}
+.label-option.selected,
+.project-label {
+  background: #fff1cc;
+  color: #905400;
+}
+.project-label.urgent,
+.project-label.high-priority {
+  background: #ffe5e5;
+  color: #a92020;
+}
+.project-label.waiting-on-broker {
+  background: #fff1cc;
+  color: #905400;
+}
+.project-label.internal-review {
+  background: #eaf1ff;
+  color: #15386d;
+}
+.project-label.mini {
+  width: fit-content;
+}
+.review-grid {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.sticky-actions {
+  background: #fff;
+  border-top: 1px solid #dfe7f2;
+  margin-top: 0;
+  padding: 1rem 1.25rem;
+  position: sticky;
+  bottom: 0;
+}
+.interactive-checklist {
+  list-style: none;
+  padding-left: 0;
+}
+.interactive-checklist li.done span {
+  color: #66748a;
+  text-decoration: line-through;
+}
+.checklist-toggle {
+  align-items: center;
+  display: flex;
+  font-weight: 800;
+}
+.checklist-toggle input {
+  width: auto;
+}
+@media (max-width: 900px) {
+  .workload-row,
+  .wizard-grid,
+  .review-grid,
+  .wizard-steps {
+    grid-template-columns: 1fr;
+  }
+  .workload-summary {
+    text-align: left;
+  }
+}

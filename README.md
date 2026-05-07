@@ -45,6 +45,8 @@ The `AuditProject` shape in `src/main.tsx` is intentionally flat and list-friend
 | `assignmentStatus`, `quoteStatus`, `reportStatus`, `invoiceStatus`, `damSubmissionStatus` | Choice                                          | Suitable for Power Apps dropdowns and Power Automate conditions                                         |
 | `quoteAmount`                                                                             | Currency                                        | Feeds pipeline value reporting                                                                          |
 | `paymentReceived`                                                                         | Yes/No                                          | Supports invoice and payment received tracking                                                          |
+| `labels`                                                                                  | Multi-choice                                    | Supports Trello-style card tags such as High Priority, Waiting on Broker, Internal Review, and Urgent   |
+| `checklistCompletions`                                                                    | Child list                                      | Recommended as related checklist rows keyed by assignment, stage, and checklist item                    |
 | Date fields                                                                               | Date and time                                   | Supports due, overdue, and SLA reporting                                                                |
 | Document receipt and completion fields                                                    | Yes/No                                          | Supports missing document blockers and checklist automation                                             |
 | `nextAction`, `blockers`                                                                  | Multiple lines of text                          | Manual action notes and exception management                                                            |
@@ -52,3 +54,23 @@ The `AuditProject` shape in `src/main.tsx` is intentionally flat and list-friend
 | `comments`                                                                                | Child list                                      | Recommended as a related comments/activity list for card notes and collaboration                        |
 
 A future SharePoint implementation should use an **Audit Assignments** list for the main project record and an **Audit Assignment Status History** child list for the stage movement audit trail. Power Automate flows can enforce the same gate rules used in this prototype before advancing stages. The newer card comments and status history timestamps should map to child lists so users can keep a Trello-style activity trail without bloating the main assignment row.
+
+## Update log
+
+| Update size | Version | What changed                                                                                                                                            |
+| ----------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Major       | UX-1    | Redesign workload as a dashboard, add guided intake, Trello-style labels, Today’s Work, interactive checklists, and stronger Office 365 data readiness. |
+| Small       | Patch   | Copy changes, option-list tweaks, and small field additions that do not change the primary workflow.                                                    |
+
+## Office 365 migration readiness
+
+Move to Office 365 after the team validates this major UX iteration with realistic assignments. Recommended target lists:
+
+- **Audit Assignments** for the main flat assignment record.
+- **Audit Assignment Comments** for Trello-style card comments.
+- **Audit Assignment Checklist Items** for per-stage checklist completion.
+- **Audit Assignment Status History** for timestamped stage and status changes.
+- **Auditors / Reviewers** for active users, capacity, and workload reporting.
+- **Documents Requested / Received** for BAA, endorsements, Premium BDX, and audit support tracking.
+
+This split keeps the main assignment row Power BI friendly while letting Power Apps and Power Automate handle related activity, comments, reminders, and approvals.
