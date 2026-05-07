@@ -106,11 +106,13 @@ This split keeps the main assignment row Power BI friendly while letting Power A
 
 - **On assignment created:** notify the lead auditor/reviewer, stamp initial status history, and create the default checklist rows.
 - **On stage changed:** write a child status-history row, validate gate requirements, and notify the next owner when a blocker exists.
-- **On document request date set:** schedule broker follow-up reminders until required documents are marked received.
-- **On quote accepted:** prompt scheduling tasks and notify the assigned audit team.
-- **On findings sent:** start a coverholder-response reminder clock.
-- **On final report issued:** create invoice tasks and, if needed, DAM submission follow-up.
-- **On invoice paid:** move eligible records toward close-out after final submission and archive checks are complete.
+- **On document request date set:** generate the document-request email from a template, attach/link the document request package, send it to the broker/contact owner, and schedule follow-up reminders until required documents are marked received.
+- **On pre-audit questionnaire required:** create or copy the questionnaire from a Word/Forms template, send it to the broker/coverholder, set the expected response date, and add reminders until the questionnaire status is Complete or Not Required.
+- **On quote ready:** generate the quote document from assignment fields, save it to the assignment folder, send the quote email, and update quote status to Sent.
+- **On quote accepted:** prompt scheduling tasks, notify the assigned audit team, and create/update the audit confirmation email.
+- **On findings sent:** create the findings email from a template, send it to the recipient group, and start a coverholder-response reminder clock.
+- **On final report issued:** generate the final report package checklist, create invoice tasks, draft/send the invoice email, and, if needed, add DAM submission follow-up.
+- **On invoice sent or paid:** store the invoice artifact, notify finance/audit operations, update payment status, and move eligible records toward close-out after final submission and archive checks are complete.
 
 ### Teams and Microsoft 365 automation blueprint
 
@@ -120,15 +122,36 @@ Use SharePoint/Microsoft Lists as the system of record and Teams as the notifica
 | ------- | -------------------- | ------------------- |
 | Assignment item created or modified | SharePoint list trigger evaluates source, due date, assigned team, blockers, and current stage | Post a Teams message to the audit operations channel with assignment number, owner, due date, and next action |
 | Stage changed | Compare previous/current stage, append a status-history row, and run the same gate checks as `canMoveToStage` | Notify the next owner in Teams and include blockers if the stage move needs attention |
-| Document request sent or broker chase date updated | Schedule reminder flow until documents are received or Waiting on Broker is cleared | Send Teams reminders to the lead auditor and optional broker-facing owner |
+| Document request sent or broker chase date updated | Generate/send the document-request email and schedule reminders until documents are received or Waiting on Broker is cleared | Send Teams reminders to the lead auditor and optional broker-facing owner |
+| Pre-audit questionnaire required | Create or copy the questionnaire artifact, send the questionnaire email, set expected response date, and chase until complete | Notify the lead auditor when the questionnaire is sent, overdue, or received |
+| Quote ready or quote sent | Generate the quote document/email from assignment fields, save a copy to SharePoint, and update quote status | Notify the audit team that a quote was sent and surface quote value/status in Teams |
 | Quote accepted | Create scheduling/checklist tasks and update status history | Post a Teams update tagging the audit team to confirm audit week/date |
-| Findings sent | Start a response-deadline timer | Send Teams reminders until coverholder response date is populated |
+| Findings sent | Generate/send the findings email and start a response-deadline timer | Send Teams reminders until coverholder response date is populated |
 | Report ready for review | Start an approval | Route reviewer approval in Teams / Power Automate before final submission |
-| Invoice sent or paid | Update invoice status and close-out readiness | Notify finance/audit operations in Teams and move eligible records toward Closed |
+| Invoice ready, sent, or paid | Generate the invoice document/email, store the artifact, update invoice/payment status, and evaluate close-out readiness | Notify finance/audit operations in Teams and move eligible records toward Closed |
 
 Recommended implementation order:
 
 1. **Lists first:** create the SharePoint lists and required columns before building flows.
-2. **Notifications second:** start with Teams posts for created/modified assignments and broker/document reminders.
-3. **Approvals third:** add reviewer approvals after stage and document data is reliable.
-4. **Governance fourth:** add service accounts/owners, retry rules, naming conventions, and environment ownership before production.
+2. **Templates second:** create approved Outlook/Word templates for pre-audit questionnaires, document requests, quotes, findings, reports, and invoices.
+3. **Notifications third:** start with Teams posts for created/modified assignments and broker/document reminders.
+4. **Email/document automation fourth:** add automated sends and generated document copies only after templates and required fields are stable.
+5. **Approvals fifth:** add reviewer approvals after stage and document data is reliable.
+6. **Governance sixth:** add service accounts/owners, retry rules, naming conventions, and environment ownership before production.
+
+### Level-up plan: step, reason, practical example
+
+| Step | Why do it | Practical example |
+| ---- | --------- | ----------------- |
+| 1. Move data from browser local storage to SharePoint/Microsoft Lists | Gives the team one shared source of truth, version history, permissions, and a clean trigger point for automations. | A new audit entered by operations immediately appears for every auditor instead of only in one browser profile. |
+| 2. Split child data into related lists | Keeps the main assignment row fast and reportable while preserving detailed history and many-to-one records. | One assignment can have 12 comments, 8 checklist rows, 5 stage-history entries, and 4 document rows without bloating the assignment list. |
+| 3. Standardize email and document templates | Prevents automation from sending inconsistent wording or incomplete files. | Pre-audit questionnaire, document request, quote, findings, report, and invoice templates all use the same assignment fields. |
+| 4. Build Power Automate notifications | Reduces manual follow-up and makes the tracker actively push work to people. | When an assignment is created or modified, a Teams channel message posts the assignment number, owner, due date, blockers, and next action. |
+| 5. Automate outbound emails and generated documents | Removes repetitive manual drafting while preserving a saved copy of what was sent. | A quote-ready status generates the quote PDF/Word file, stores it in SharePoint, sends the quote email, and marks Quote status as Sent. |
+| 6. Add broker/document reminder flows | Prevents document requests from getting stale and standardizes chase cadence. | If Premium BDX is still missing two business days after the broker chase date, the lead auditor gets a Teams reminder. |
+| 7. Add stage-change automation | Makes cycle-time metrics reliable and creates an audit trail without relying on manual notes. | Moving from Quote to Scheduling automatically writes a status-history row and notifies the scheduler to confirm audit dates. |
+| 8. Add approval gates | Protects high-risk steps from moving forward without reviewer sign-off. | A report cannot move to Final Submission until the reviewer approves the draft from Teams Approvals. |
+| 9. Add document library integration | Moves from checkbox-only readiness to actual evidence management. | BAA, endorsements, Premium BDX, testing sheets, draft reports, final reports, and invoices live in a linked SharePoint folder for the assignment. |
+| 10. Add Power BI reporting | Turns operational data into leadership visibility. | Management can see aging by stage, open blockers, workload by auditor, quote pipeline, and average time from findings to final report. |
+| 11. Add governance and roles | Prevents automation drift and protects production records. | Auditors can update checklists/comments, reviewers can approve reports, finance can update invoice status, and only admins can edit lifecycle choices. |
+| 12. Pilot with real assignments | Validates the workflow before investing in more automation and avoids automating the wrong process. | Run 10 live audits through the list/app, note every exception, then adjust fields, notifications, and approvals before full rollout. |
