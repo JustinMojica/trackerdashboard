@@ -2,6 +2,10 @@
 
 This setup is based on the default auditor names and seeded project records in the tracker dashboard.
 
+## Prototype Credential Fields
+
+For tracker testing only, use `firstname.lastname` as the username and `password` as the test password. Do not use this password for live Microsoft 365, SharePoint, or production accounts.
+
 ## Permission Groups
 
 | Group | Use For | Access Level |
@@ -14,17 +18,17 @@ This setup is based on the default auditor names and seeded project records in t
 
 ## Internal User Setup
 
-| Full Name | Work Email | Role | Permission Group | Tracker Access | SharePoint Access | Notes |
-| --- | --- | --- | --- | --- | --- | --- |
-| Lorraine Mojica | lorraine.mojica@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | Lead auditor on seeded dashboard projects |
-| Walter Aviles | walter.aviles@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | Lead/supporting auditor on seeded dashboard projects |
-| Leslie Domenech | leslie.domenech@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | Supporting auditor on seeded dashboard projects |
-| Mark James | mark.james@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | In dashboard auditor list |
-| Justin Mojica | justin.mojica@[company-domain] | Auditor / Admin | Admin | Full edit | Full control | Lead auditor on seeded dashboard project and likely system owner |
-| Sheilah Couture | sheilah.couture@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | In dashboard auditor list |
-| Annabelle J. Crawford Mojica | annabelle.crawford.mojica@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | In dashboard auditor list; confirm preferred email format |
-| Molly Aviles | molly.aviles@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | In dashboard auditor list |
-| Lindsie Guillermo | lindsie.guillermo@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | In dashboard auditor list |
+| Full Name | Username | Test Password | Work Email | Role | Permission Group | Tracker Access | SharePoint Access | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Lorraine Mojica | lorraine.mojica | password | lorraine.mojica@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | Lead auditor on seeded dashboard projects |
+| Walter Aviles | walter.aviles | password | walter.aviles@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | Lead/supporting auditor on seeded dashboard projects |
+| Leslie Domenech | leslie.domenech | password | leslie.domenech@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | Supporting auditor on seeded dashboard projects |
+| Mark James | mark.james | password | mark.james@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | In dashboard auditor list |
+| Justin Mojica | justin.mojica | password | justin.mojica@[company-domain] | Auditor / Admin | Admin | Full edit | Full control | Lead auditor on seeded dashboard project and likely system owner |
+| Sheilah Couture | sheilah.couture | password | sheilah.couture@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | In dashboard auditor list |
+| Annabelle J. Crawford Mojica | annabelle.crawford.mojica | password | annabelle.crawford.mojica@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | In dashboard auditor list; confirm preferred username/email format |
+| Molly Aviles | molly.aviles | password | molly.aviles@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | In dashboard auditor list |
+| Lindsie Guillermo | lindsie.guillermo | password | lindsie.guillermo@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | In dashboard auditor list |
 
 ## Seeded Project Visibility
 
@@ -57,7 +61,7 @@ Use a standard login identity format:
 
 | Person Type | Email Format |
 | --- | --- |
-| Internal employees | firstname.lastname@[company-domain] |
+| Internal employees | firstname.lastname / firstname.lastname@[company-domain] |
 | Shared mailbox only if needed | audits@[company-domain] |
 | External clients/brokers | Do not create full internal logins yet |
 
@@ -70,6 +74,7 @@ Use a standard login identity format:
 5. Create or confirm the SharePoint folder permissions.
 6. Test with one auditor account before rolling out to the full team.
 7. Remove any shared credentials from the process.
+8. Replace prototype test passwords before connecting this to live authentication.
 
 ## External Access Rule
 
