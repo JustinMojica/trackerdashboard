@@ -1,0 +1,29 @@
+name: Apply Codex patch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'codex-patches/trackerdashboard-ux13-16.patchpart.*'
+      - '.github/workflows/apply-codex-patch.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ !contains(github.event.head_commit.message, '[codex-auto-apply]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply Codex patch
+        run: |
+          cat codex-patches/trackerdashboard-ux13-16.patchpart.* > /tmp/trackerdashboard-ux13-16.patch
+          git apply --whitespace=fix /tmp/trackerdashboard-ux13-16.patch
+          rm codex-patches/trackerdashboard-ux13-16.patchpart.*
+          rmdir codex-patches 2>/dev/null || true
+          git config user.name "codex-app"
+          git config user.email "codex-app@users.noreply.github.com"
+          git add -A
+          git commit -m "Apply tracker dashboard UX upgrades [codex-auto-apply]" || exit 0
+          git push
