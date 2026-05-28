@@ -1,0 +1,449 @@
++.demo-users {
++  display: grid;
++  gap: 0.6rem;
++  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
++}
++.demo-users button {
++  display: grid;
++  gap: 0.2rem;
++  justify-items: start;
++  min-height: 72px;
++  text-align: left;
++}
++.demo-users span {
++  color: #40506a;
++  font-size: 0.82rem;
++}
++.access-banner {
++  align-items: center;
++  display: flex;
++  gap: 1rem;
++  justify-content: space-between;
++}
++.access-banner > div {
++  align-items: center;
++  display: flex;
++  gap: 0.85rem;
++}
++.access-banner h2,
++.access-banner p {
++  margin: 0;
++}
++.access-banner span,
++.access-banner strong {
++  color: #40506a;
++}
++.user-management {
++  display: grid;
++  gap: 1rem;
++}
++.user-management-grid {
++  display: grid;
++  gap: 1rem;
++  grid-template-columns: minmax(240px, 0.7fr) minmax(0, 1.6fr);
++}
++.user-list {
++  display: grid;
++  gap: 0.55rem;
++}
++.user-list button {
++  display: grid;
++  gap: 0.2rem;
++  justify-items: start;
++  text-align: left;
++}
++.user-list button.selected {
++  background: #1358db;
++  color: #fff;
++}
++.user-list span {
++  font-size: 0.78rem;
++}
++.user-meta {
++  align-items: center;
++  display: flex;
++  flex-wrap: wrap;
++  gap: 0.35rem;
++}
++.user-status-badge {
++  border: 1px solid transparent;
++  border-radius: 999px;
++  font-size: 0.68rem !important;
++  font-weight: 900;
++  padding: 0.15rem 0.45rem;
++  text-transform: uppercase;
++}
++.user-status-badge.active {
++  background: #e7f7ed;
++  color: #14713a;
++}
++.user-status-badge.inactive {
++  background: #eef1f6;
++  color: #66748a;
++}
++.user-list button.selected .user-status-badge {
++  background: rgba(255, 255, 255, 0.18);
++  border-color: rgba(255, 255, 255, 0.42);
++  color: #fff;
++}
++.user-editor {
++  background: #f8fbff;
++  border: 1px solid #dfe7f2;
++  border-radius: 16px;
++  padding: 1rem;
++}
++.user-editor-grid {
++  grid-template-columns: repeat(3, minmax(180px, 1fr));
++}
++
+ .hero {
+   align-items: center;
+   background: linear-gradient(135deg, #101b33, #174ea6 70%, #29a0b1);
+@@ -141,6 +269,75 @@
+ .summary-card.warning strong {
+   color: #b46b00;
+ }
++.todays-work {
++  background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
++}
++.todays-work-grid {
++  display: grid;
++  gap: 0.75rem;
++  grid-template-columns: repeat(4, minmax(180px, 1fr));
++  margin-top: 0.85rem;
++}
++.todays-work-queue {
++  background: #fff;
++  border: 1px solid #dfe7f2;
++  border-radius: 14px;
++  display: grid;
++  gap: 0.65rem;
++  padding: 0.85rem;
++}
++.todays-work-queue.queue-danger {
++  border-top: 4px solid #c83232;
++}
++.todays-work-queue.queue-warning {
++  border-top: 4px solid #b46b00;
++}
++.queue-heading {
++  align-items: center;
++  display: flex;
++  justify-content: space-between;
++}
++.queue-heading span {
++  align-items: center;
++  background: #eef1f6;
++  border-radius: 999px;
++  color: #40506a;
++  display: inline-flex;
++  font-size: 0.8rem;
++  font-weight: 900;
++  height: 28px;
++  justify-content: center;
++  min-width: 28px;
++  padding: 0 0.45rem;
++}
++.todays-work-queue p {
++  color: #66748a;
++  margin: 0;
++}
++.queue-list {
++  display: grid;
++  gap: 0.5rem;
++}
++.queue-item {
++  background: #f8fbff;
++  border: 1px solid #dfe7f2;
++  color: #172033;
++  display: grid;
++  gap: 0.25rem;
++  justify-items: start;
++  padding: 0.7rem;
++  text-align: left;
++}
++.queue-item:hover {
++  background: #eef4ff;
++}
++.queue-item span {
++  color: #66748a;
++  font-size: 0.82rem;
++}
++.queue-item small {
++  font-size: 0.76rem;
++}
+ .panel {
+   border-radius: 22px;
+   margin-bottom: 1rem;
+@@ -161,7 +358,23 @@
+   align-items: end;
+   display: grid;
+   gap: 1rem;
+-  grid-template-columns: repeat(6, minmax(150px, 1fr));
++  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
++}
++.saved-views {
++  align-items: center;
++  display: flex;
++  flex-wrap: wrap;
++  gap: 0.5rem;
++  margin: 0.75rem 0 1rem;
++}
++.saved-views span {
++  color: #66748a;
++  font-size: 0.82rem;
++  font-weight: 900;
++  text-transform: uppercase;
++}
++.saved-views button {
++  padding: 0.55rem 0.75rem;
+ }
+ label {
+   color: #40506a;
+@@ -208,11 +421,32 @@
+   min-height: 240px;
+   padding: 0.75rem;
+ }
+-.column h3 {
++.column-heading {
++  align-items: center;
++  display: flex;
++  gap: 0.5rem;
++  justify-content: space-between;
++  margin-bottom: 0.8rem;
++  position: sticky;
++  top: 0;
++}
++.column-heading h3 {
+   color: #263955;
+   font-size: 0.95rem;
+-  position: sticky;
+-  top: 0;
++  margin: 0;
++}
++.column-heading span {
++  align-items: center;
++  background: #dce6f8;
++  border-radius: 999px;
++  color: #15386d;
++  display: inline-flex;
++  font-size: 0.8rem;
++  font-weight: 900;
++  height: 28px;
++  justify-content: center;
++  min-width: 28px;
++  padding: 0 0.45rem;
+ }
+ .card {
+   border-radius: 16px;
+@@ -265,7 +499,9 @@
+   grid-template-areas:
+     "detail detail team"
+     "detail detail documents"
+-    "checklist comments trail";
++    "finance finance documents"
++    "checklist comments templates"
++    "trail trail trail";
+   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(280px, 0.82fr);
+ }
+ .detail {
+@@ -384,6 +620,17 @@
+   display: grid;
+   gap: 0.85rem;
+   grid-area: documents;
++}
++.finance-panel {
++  display: grid;
++  gap: 0.85rem;
++  grid-area: finance;
++}
++.finance-grid {
++  align-items: end;
++  display: grid;
++  gap: 0.75rem;
++  grid-template-columns: minmax(220px, 1fr) auto;
+ }
+ .readiness-score {
+   border-radius: 999px;
+@@ -454,6 +701,37 @@
+ }
+ .activity-panel {
+   grid-area: trail;
++}
++.template-panel {
++  grid-area: templates;
++}
++.template-controls,
++.template-preview {
++  display: grid;
++  gap: 0.75rem;
++  margin-top: 0.85rem;
++}
++.template-preview textarea {
++  min-height: 240px;
++  resize: vertical;
++}
++.template-actions {
++  align-items: center;
++  display: flex;
++  flex-wrap: wrap;
++  gap: 0.6rem;
++  margin-top: 0.85rem;
++}
++.template-actions span {
++  color: #40506a;
++  font-size: 0.85rem;
++  font-weight: 800;
++}
++.activity-filters {
++  display: grid;
++  gap: 0.75rem;
++  grid-template-columns: minmax(220px, 1fr) minmax(160px, 0.35fr);
++  margin-bottom: 0.85rem;
+ }
+ .activity-summary {
+   display: flex;
+@@ -556,6 +834,25 @@
+   max-width: 1180px;
+   padding: 1.25rem;
+ }
++.confirmation-backdrop {
++  align-items: center;
++  display: grid;
++}
++.confirmation-modal {
++  margin: 0 auto;
++  max-width: 520px;
++  width: min(100%, 520px);
++}
++.confirmation-modal p {
++  color: #53637a;
++  margin: 0.35rem 0 0;
++}
++.danger-button {
++  background: #c83232;
++}
++.danger-button:hover {
++  background: #a92020;
++}
+ .form-grid {
+   display: grid;
+   gap: 1rem;
+@@ -579,6 +876,9 @@
+   .summary-grid {
+     grid-template-columns: repeat(2, minmax(0, 1fr));
+   }
++  .todays-work-grid {
++    grid-template-columns: repeat(2, minmax(0, 1fr));
++  }
+   .detail-grid {
+     grid-template-areas: none;
+     grid-template-columns: repeat(2, minmax(0, 1fr));
+@@ -586,8 +886,10 @@
+   .detail,
+   .team-panel,
+   .document-workflow,
++  .finance-panel,
+   .checklist-panel,
+   .comments-panel,
++  .template-panel,
+   .activity-panel {
+     grid-area: auto;
+   }
+@@ -606,11 +908,15 @@
+     padding: 0.75rem;
+   }
+   .summary-grid,
++  .todays-work-grid,
+   .detail-grid,
+   .filters,
+   .form-grid,
+   .meta-grid,
+-  .document-dates {
++  .activity-filters,
++  .document-dates,
++  .finance-grid,
++  .login-form {
+     grid-template-columns: 1fr;
+   }
+   .modal-backdrop {
+@@ -652,7 +958,32 @@
+   align-items: end;
+   display: grid;
+   gap: 1rem;
+-  grid-template-columns: 2fr 1fr;
++  grid-template-columns: 2fr repeat(4, minmax(170px, 1fr));
++}
++.last-export {
++  align-self: center;
++  color: #53637a;
++  font-size: 0.86rem;
++  font-weight: 800;
++}
++.import-control {
++  background: #eef4ff;
++  border: 1px solid #c6d6f0;
++  border-radius: 12px;
++  color: #15386d;
++  cursor: pointer;
++  padding: 0.75rem 1rem;
++}
++.import-control input {
++  margin-top: 0.5rem;
++  padding: 0;
++}
++.empty-state {
++  text-align: center;
++}
++.comment-author {
++  color: #40506a;
++  font-weight: 800;
+ }
+ .segmented {
+   display: flex;
+@@ -793,11 +1124,6 @@
+ .workload-summary small {
+   color: #40506a;
+   display: block;
+-}
+-.workload-meter-note {
+-  color: #53637a;
+-  font-size: 0.9rem;
+-  margin: 0 0 0.75rem;
+ }
+ .workload-list {
+   display: grid;
+@@ -1089,6 +1415,10 @@
+     text-align: left;
+   }
+   .add-support-row {
++    grid-template-columns: 1fr;
++  }
++  .user-management-grid,
++  .user-editor-grid {
+     grid-template-columns: 1fr;
+   }
+ }
+--- a/README.md
++++ b/README.md
+@@ -67,6 +67,11 @@
+ 
+ | Update size | Version | What changed                                                                                                                                            |
+ | ----------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
++| Medium      | UX-16   | Add Today's Work priority queues, role-based saved filter views, a clearer Clear filters action, Kanban stage counts, and due-today card badges.        |
++| Medium      | UX-15   | Add reusable email/document template previews and searchable project audit trails.                                                                       |
++| Minor       | UX-14   | Add confirmation prompts for reset/import actions, clearer role-based empty states, user status badges, and a last-export timestamp.                    |
++| Medium      | UX-13   | Add an Admin user management panel for prototype users, roles, active status, and default project visibility.                                           |
++| Major       | UX-12   | Add prototype login, role-scoped dashboards, user-aware audit activity, finance-only invoice updates, and JSON backup import/export.                    |
+ | Minor       | UX-11   | Add removable label chips so labels can be cleared directly from lifecycle cards and detail headers.                                                    |
+ | Minor       | UX-10   | Make waiting-on-broker and broker-chase workflow events idempotent and collapse legacy same-day duplicates in the audit trail.                         |
+ | Minor       | UX-9    | Add a clear waiting-on-broker workflow action for broker-completed follow-up that removes the label without forcing documents complete.                 |
+@@ -95,7 +100,7 @@
+ 
+ ### Significant next upgrades
+ 
+-1. **Replace prototype state with SharePoint/Microsoft Lists** so assignment records, audit teams, comments, status history, and document requests persist centrally instead of in browser local storage.
++1. **Replace prototype login and local state with Microsoft 365 identity plus SharePoint/Microsoft Lists** so users, assignment records, audit teams, comments, status history, and document requests persist centrally instead of in browser local storage.
+ 2. **Build a Power Apps front end** for intake, stage movement, document readiness, comments, and reviewer sign-off once the SharePoint list schema is stable.
+ 3. **Automate the repeatable follow-up work** with Power Automate flows for new intake alerts, quote approval reminders, broker chase reminders, reviewer approvals, stage-history creation, and invoice/payment notifications.
+ 4. **Add document library integration** so BAA, endorsements, Premium BDX, testing sheets, reports, and invoice artifacts are stored against the assignment record instead of only represented as checkboxes.
