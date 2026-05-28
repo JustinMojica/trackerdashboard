@@ -1,0 +1,450 @@
+     setMessage(`${eventTitle}. ${project.assignmentNumber} updated.`);
+   };
+ 
++  const updateProjectFinance = (
++    project: AuditProject,
++    invoiceStatus: InvoiceStatus,
++    paymentReceived: boolean,
++  ) => {
++    if (!canUpdateFinance(signedInUser, project) && !hasFullProjectAccess(signedInUser)) {
++      setMessage("Your role cannot update invoice or payment fields.");
++      return;
++    }
++    const updatedProject = withProjectDefaults({
++      ...project,
++      invoiceStatus,
++      paymentReceived: invoiceStatus === "Paid" ? true : paymentReceived,
++      lastUpdatedDate: new Date().toISOString().slice(0, 10),
++      activityEvents: [
++        ...(project.activityEvents ?? []),
++        createActivityEvent(
++          "field",
++          "Finance fields updated",
++          `Invoice status set to ${invoiceStatus}; payment received is ${
++            invoiceStatus === "Paid" || paymentReceived ? "yes" : "no"
++          }.`,
++          signedInUser.fullName,
++        ),
++      ],
++    });
++    persist(
++      projects.map((item) => (item.id === project.id ? updatedProject : item)),
++    );
++    setSelectedId(project.id);
++    setMessage(`${project.assignmentNumber} finance fields updated.`);
++  };
++
++  const importProjectsFromFile = async (file: File) => {
++    if (!hasFullProjectAccess(signedInUser)) {
++      setMessage("Only admins and audit managers can import project data.");
++      return;
++    }
++    try {
++      const text = await file.text();
++      const importedProjects = normalizeImportedProjects(JSON.parse(text));
++      if (!importedProjects || importedProjects.length === 0) {
++        setMessage("Import file did not contain any projects.");
++        return;
++      }
++      persist(importedProjects);
++      setSelectedId(importedProjects[0].id);
++      setMessage(`${importedProjects.length} projects imported from JSON.`);
++    } catch {
++      setMessage("Could not import that JSON file.");
++    }
++  };
++
++  const upsertUser = (
++    originalUsername: string | null,
++    draftUser: PrototypeUser,
++  ) => {
++    if (signedInUser.role !== "Admin") {
++      setMessage("Only admins can manage users.");
++      return;
++    }
++    const cleanUser = withUserDefaults({
++      ...draftUser,
++      username: draftUser.username.trim().toLowerCase(),
++      permissionGroup: draftUser.role,
++    });
++    if (!cleanUser.fullName.trim() || !cleanUser.username.trim()) {
++      setMessage("User name and username are required.");
++      return;
++    }
++    if (
++      users.some(
++        (user) =>
++          user.username === cleanUser.username &&
++          user.username !== originalUsername,
++      )
++    ) {
++      setMessage("That username already exists.");
++      return;
++    }
++    if (originalUsername === signedInUser.username && !cleanUser.active) {
++      setMessage("You cannot deactivate your own signed-in account.");
++      return;
++    }
++    const nextUsers = originalUsername
++      ? users.map((user) =>
++          user.username === originalUsername ? cleanUser : user,
++        )
++      : [...users, cleanUser];
++    if (!nextUsers.some((user) => user.active && user.role === "Admin")) {
++      setMessage("At least one active Admin user is required.");
++      return;
++    }
++    setUsers(nextUsers);
++    savePrototypeUsers(nextUsers);
++    if (originalUsername === signedInUser.username) {
++      setCurrentUsername(cleanUser.username);
++      saveCurrentUsername(cleanUser.username);
++    }
++    setMessage(`${cleanUser.fullName} saved.`);
++  };
++
++  const resetUsers = () => {
++    if (signedInUser.role !== "Admin") {
++      setMessage("Only admins can reset users.");
++      return;
++    }
++    setUsers(defaultPrototypeUsers);
++    savePrototypeUsers(defaultPrototypeUsers);
++    setCurrentUsername("justin.mojica");
++    saveCurrentUsername("justin.mojica");
++    setMessage("Prototype users reset.");
++  };
++
++  const confirmResetUsers = () => {
++    requestConfirmation({
++      title: "Reset prototype users?",
++      message:
++        "This restores the starter users, roles, passwords, and visibility settings in this browser.",
++      confirmLabel: "Reset users",
++      tone: "danger",
++      onConfirm: resetUsers,
++    });
++  };
++
+   return (
+     <main>
+       <header className="hero">
+         <div>
+-          <p className="eyebrow">Local storage prototype</p>
++          <p className="eyebrow">Prototype login: {signedInUser.role}</p>
+           <h1>Audit Assignment Tracker</h1>
+           <p>
+             Manage audit assignments from intake through final report, invoice,
+@@ -1452,17 +2188,21 @@
+           </p>
+         </div>
+         <div className="hero-actions">
+-          <button onClick={() => setEditing(blankProject())}>
++          <button
++            disabled={!canCreateProject(signedInUser)}
++            onClick={() => setEditing(blankProject())}
++          >
+             Add project
+           </button>
+           <button
+             className="secondary"
+-            onClick={() => {
+-              persist(sampleProjects);
+-              setSelectedId(sampleProjects[0].id);
+-            }}
++            disabled={!hasFullProjectAccess(signedInUser)}
++            onClick={resetSampleProjects}
+           >
+             Reset sample data
++          </button>
++          <button className="secondary" onClick={signOut}>
++            Sign out
+           </button>
+         </div>
+       </header>
+@@ -1473,14 +2213,23 @@
+         </div>
+       )}
+ 
+-      <Dashboard projects={projects} />
++      <AccessBanner user={signedInUser} visibleCount={visibleProjects.length} />
++      {signedInUser.role === "Admin" && (
++        <UserManagementPanel
++          users={users}
++          onSaveUser={upsertUser}
++          onResetUsers={confirmResetUsers}
++        />
++      )}
++      <Dashboard projects={visibleProjects} />
++      <TodaysWork projects={visibleProjects} onSelect={setSelectedId} />
+       <CycleTimeDashboard
+-        projects={projects}
++        projects={visibleProjects}
+         range={durationRange}
+         setRange={setDurationRange}
+       />
+       <WorkloadCounts
+-        projects={projects}
++        projects={visibleProjects}
+         auditors={auditors}
+         hiddenAuditors={effectiveHiddenWorkloadAuditors}
+         toggleAuditorHidden={(auditor) => {
+@@ -1513,7 +2262,14 @@
+       <FiltersPanel
+         filters={filters}
+         setFilters={setFilters}
+-        auditors={auditors}
++        presets={filterPresetsForUser(signedInUser)}
++        auditors={
++          hasFullProjectAccess(signedInUser) || signedInUser.role === "Read Only"
++            ? auditors
++            : auditors.filter((auditor) =>
++                visibleProjects.some((project) => projectHasAuditor(project, auditor)),
++              )
++        }
+       />
+       <div className="view-toolbar panel">
+         <div className="segmented">
+@@ -1530,9 +2286,31 @@
+             Audit table
+           </button>
+         </div>
+-        <button onClick={() => exportProjectsToCsv(filteredProjects)}>
++        <button onClick={handleExportCsv}>
+           Export filtered CSV
+         </button>
++        <button
++          className="secondary"
++          onClick={handleExportJson}
++        >
++          Export JSON backup
++        </button>
++        <span className="last-export">
++          Last export: {formatDateTime(lastExportedAt)}
++        </span>
++        <label className="import-control">
++          Import JSON
++          <input
++            type="file"
++            accept="application/json,.json"
++            disabled={!hasFullProjectAccess(signedInUser)}
++            onChange={(event) => {
++              const file = event.target.files?.[0];
++              if (file) queueProjectImport(file);
++              event.currentTarget.value = "";
++            }}
++          />
++        </label>
+       </div>
+       {viewMode === "kanban" ? (
+         <Kanban
+@@ -1541,6 +2319,7 @@
+           onSelect={setSelectedId}
+           onMove={moveProject}
+           onRemoveLabel={removeProjectLabel}
++          currentUser={signedInUser}
+         />
+       ) : (
+         <ProjectTable projects={filteredProjects} onSelect={setSelectedId} />
+@@ -1556,7 +2335,15 @@
+           onDocumentWorkflowAction={updateProjectDocumentWorkflow}
+           auditors={auditors}
+           onAddSupportingAuditor={addSupportingAuditor}
+-        />
++          currentUser={signedInUser}
++          onUpdateFinance={updateProjectFinance}
++        />
++      )}
++      {!selectedProject && (
++        <section className="panel empty-state">
++          <h2>{emptyProjectState(signedInUser).title}</h2>
++          <p>{emptyProjectState(signedInUser).message}</p>
++        </section>
+       )}
+       {editing && (
+         <ProjectForm
+@@ -1566,7 +2353,310 @@
+           auditorOptions={auditorOptions}
+         />
+       )}
++      {confirmation && (
++        <ConfirmDialog
++          request={confirmation}
++          onCancel={() => setConfirmation(null)}
++          onConfirm={() => {
++            void Promise.resolve(confirmation.onConfirm()).finally(() =>
++              setConfirmation(null),
++            );
++          }}
++        />
++      )}
+     </main>
++  );
++}
++
++function LoginScreen({
++  users,
++  message,
++  onLogin,
++}: {
++  users: PrototypeUser[];
++  message: string;
++  onLogin: (username: string, password: string) => void;
++}) {
++  const [username, setUsername] = useState("justin.mojica");
++  const [password, setPassword] = useState("password");
++
++  const submit = (event: FormEvent) => {
++    event.preventDefault();
++    onLogin(username, password);
++  };
++
++  return (
++    <main className="login-shell">
++      <section className="login-panel">
++        <div>
++          <p className="eyebrow dark">Prototype access</p>
++          <h1>Audit Assignment Tracker</h1>
++          <p>Sign in with a tracker test account.</p>
++        </div>
++        {message && (
++          <div className="toast" role="status">
++            {message}
++          </div>
++        )}
++        <form className="login-form" onSubmit={submit}>
++          <Input
++            label="Username"
++            value={username}
++            onChange={setUsername}
++            placeholder="firstname.lastname"
++          />
++          <Input
++            label="Password"
++            value={password}
++            onChange={setPassword}
++            type="password"
++            placeholder="password"
++          />
++          <button type="submit">Sign in</button>
++        </form>
++        <div className="demo-users">
++          {users.map((user) => (
++            <button
++              type="button"
++              className="secondary"
++              key={user.username}
++              onClick={() => {
++                setUsername(user.username);
++                setPassword(user.password);
++              }}
++            >
++              <strong>{user.fullName}</strong>
++              <span>{user.role}</span>
++            </button>
++          ))}
++        </div>
++      </section>
++    </main>
++  );
++}
++
++function ConfirmDialog({
++  request,
++  onCancel,
++  onConfirm,
++}: {
++  request: ConfirmationRequest;
++  onCancel: () => void;
++  onConfirm: () => void;
++}) {
++  return (
++    <div className="modal-backdrop confirmation-backdrop">
++      <section
++        className="panel confirmation-modal"
++        role="dialog"
++        aria-modal="true"
++        aria-labelledby="confirmation-title"
++      >
++        <div>
++          <p className="eyebrow dark">Confirm</p>
++          <h2 id="confirmation-title">{request.title}</h2>
++          <p>{request.message}</p>
++        </div>
++        <div className="modal-actions">
++          <button type="button" className="secondary" onClick={onCancel}>
++            Cancel
++          </button>
++          <button
++            type="button"
++            className={request.tone === "danger" ? "danger-button" : undefined}
++            onClick={onConfirm}
++          >
++            {request.confirmLabel}
++          </button>
++        </div>
++      </section>
++    </div>
++  );
++}
++
++function AccessBanner({
++  user,
++  visibleCount,
++}: {
++  user: PrototypeUser;
++  visibleCount: number;
++}) {
++  return (
++    <section className="panel access-banner">
++      <div>
++        <span className="avatar">
++          {user.fullName
++            .split(" ")
++            .map((part) => part[0])
++            .slice(0, 2)
++            .join("")}
++        </span>
++        <div>
++          <p className="eyebrow dark">Signed in</p>
++          <h2>{user.fullName}</h2>
++          <span>
++            {user.username} Â· {user.permissionGroup} Â· {visibleCount} visible projects
++          </span>
++        </div>
++      </div>
++      <strong>{visibleProjectMessage(user)}</strong>
++    </section>
++  );
++}
++
++function UserManagementPanel({
++  users,
++  onSaveUser,
++  onResetUsers,
++}: {
++  users: PrototypeUser[];
++  onSaveUser: (originalUsername: string | null, user: PrototypeUser) => void;
++  onResetUsers: () => void;
++}) {
++  const firstUsername = users[0]?.username ?? "";
++  const [selectedUsername, setSelectedUsername] = useState(firstUsername);
++  const selectedUser =
++    users.find((user) => user.username === selectedUsername) ?? users[0];
++  const [draft, setDraft] = useState<PrototypeUser>(
++    selectedUser ??
++      withUserDefaults({
++        fullName: "",
++        username: "",
++      }),
++  );
++  const [isNewUser, setIsNewUser] = useState(false);
++
++  const loadUser = (user: PrototypeUser) => {
++    setSelectedUsername(user.username);
++    setDraft(user);
++    setIsNewUser(false);
++  };
++
++  const startNewUser = () => {
++    setSelectedUsername("");
