@@ -132,9 +132,50 @@ type Filters = {
   quoteStatus: string;
   dueDate: string;
   missingDocuments: boolean;
+  workState: string;
+};
+
+type FilterPreset = {
+  id: string;
+  label: string;
+  filters: Partial<Filters>;
 };
 
 type ViewMode = "kanban" | "table";
+type UserRole = "Admin" | "Audit Manager" | "Auditor" | "Finance" | "Read Only";
+type ProjectVisibility =
+  | "Role Default"
+  | "All Projects"
+  | "Assigned Projects"
+  | "Finance Records";
+
+type PrototypeUser = {
+  fullName: string;
+  username: string;
+  password: string;
+  role: UserRole;
+  permissionGroup: UserRole;
+  email: string;
+  active: boolean;
+  defaultVisibility: ProjectVisibility;
+};
+
+type ConfirmationRequest = {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  tone?: "default" | "danger";
+  onConfirm: () => void | Promise<void>;
+};
+
+type CommunicationTemplate = {
+  id: string;
+  label: string;
+  kind: "Email" | "Document";
+  purpose: string;
+  subject: (project: AuditProject) => string;
+  body: (project: AuditProject) => string;
+};
 
 export const stages: Stage[] = [
   "Intake",
@@ -153,7 +194,34 @@ export const stages: Stage[] = [
 
 const today = new Date("2026-05-05T12:00:00Z");
 const storageKey = "audit-assignment-tracker-projects-v1";
-const auditorStorageKey = "audit-assignment-tracker-auditors-v1";
+const currentUserStorageKey = "audit-assignment-tracker-current-user-v1";
+const usersStorageKey = "audit-assignment-tracker-users-v1";
+const lastExportStorageKey = "audit-assignment-tracker-last-export-v1";
+
+const defaultFilters: Filters = {
+  auditor: "",
+  stage: "",
+  source: "",
+  quoteStatus: "",
+  dueDate: "",
+  missingDocuments: false,
+  workState: "",
+};
+
+const userRoleOptions: UserRole[] = [
+  "Admin",
+  "Audit Manager",
+  "Auditor",
+  "Finance",
+  "Read Only",
+];
+
+const projectVisibilityOptions: ProjectVisibility[] = [
+  "Role Default",
+  "All Projects",
+  "Assigned Projects",
+  "Finance Records",
+];
 
 const assignmentTypeOptions: AssignmentType[] = [
   "DCA",
@@ -169,16 +237,97 @@ const labelOptions: ProjectLabel[] = [
   "Waiting on Broker",
 ];
 
-const defaultAuditorOptions = [
-  "Lorraine Mojica",
-  "Walter Aviles",
-  "Leslie Domenech",
-  "Mark James",
-  "Justin Mojica",
-  "Sheilah Couture",
-  "Annabelle J. Crawford Mojica",
-  "Molly Aviles",
-  "Lindsie Guillermo",
+const defaultPrototypeUsers: PrototypeUser[] = [
+  {
+    fullName: "Lorraine Mojica",
+    username: "lorraine.mojica",
+    password: "password",
+    role: "Auditor",
+    permissionGroup: "Auditor",
+    email: "lorraine.mojica@[company-domain]",
+    active: true,
+    defaultVisibility: "Role Default",
+  },
+  {
+    fullName: "Walter Aviles",
+    username: "walter.aviles",
+    password: "password",
+    role: "Auditor",
+    permissionGroup: "Auditor",
+    email: "walter.aviles@[company-domain]",
+    active: true,
+    defaultVisibility: "Role Default",
+  },
+  {
+    fullName: "Leslie Domenech",
+    username: "leslie.domenech",
+    password: "password",
+    role: "Auditor",
+    permissionGroup: "Auditor",
+    email: "leslie.domenech@[company-domain]",
+    active: true,
+    defaultVisibility: "Role Default",
+  },
+  {
+    fullName: "Mark James",
+    username: "mark.james",
+    password: "password",
+    role: "Audit Manager",
+    permissionGroup: "Audit Manager",
+    email: "mark.james@[company-domain]",
+    active: true,
+    defaultVisibility: "Role Default",
+  },
+  {
+    fullName: "Justin Mojica",
+    username: "justin.mojica",
+    password: "password",
+    role: "Admin",
+    permissionGroup: "Admin",
+    email: "justin.mojica@[company-domain]",
+    active: true,
+    defaultVisibility: "Role Default",
+  },
+  {
+    fullName: "Sheilah Couture",
+    username: "sheilah.couture",
+    password: "password",
+    role: "Finance",
+    permissionGroup: "Finance",
+    email: "sheilah.couture@[company-domain]",
+    active: true,
+    defaultVisibility: "Role Default",
+  },
+  {
+    fullName: "Annabelle J. Crawford Mojica",
+    username: "annabelle.crawford.mojica",
+    password: "password",
+    role: "Read Only",
+    permissionGroup: "Read Only",
+    email: "annabelle.crawford.mojica@[company-domain]",
+    active: true,
+    defaultVisibility: "Role Default",
+  },
+  {
+    fullName: "Molly Aviles",
+    username: "molly.aviles",
+    password: "password",
+    role: "Auditor",
+    permissionGroup: "Auditor",
+    email: "molly.aviles@[company-domain]",
+    active: true,
+    defaultVisibility: "Role Default",
+  },
+  {
+    fullName: "Lindsie Guillermo",
+    username: "lindsie.guillermo",
+    password: "password",
+    role: "Auditor",
+    permissionGroup: "Auditor",
+    email: "lindsie.guillermo@[company-domain]",
+    active: true,
+    defaultVisibility: "Role Default",
+  },
 ];
 
 export const sampleProjects: AuditProject[] = [
@@ -644,16 +793,206 @@ function auditTeamRole(project: AuditProject, auditor: string) {
   return normalizeAuditTeam(project).find((member) => member.person === auditor)?.role;
 }
 
+function hasFullProjectAccess(user: PrototypeUser) {
+  return user.role === "Admin" || user.role === "Audit Manager";
+}
+
+function isFinanceProject(project: AuditProject) {
+  return (
+    project.currentStage === "Final Submission" ||
+    project.currentStage === "Invoice" ||
+    project.currentStage === "Closed" ||
+    project.invoiceStatus !== "Not Started" ||
+    project.reportStatus === "Issued"
+  );
+}
+
+function roleDefaultVisibility(role: UserRole): ProjectVisibility {
+  if (role === "Finance") return "Finance Records";
+  if (role === "Auditor") return "Assigned Projects";
+  return "All Projects";
+}
+
+function effectiveVisibility(user: PrototypeUser) {
+  return user.defaultVisibility === "Role Default"
+    ? roleDefaultVisibility(user.role)
+    : user.defaultVisibility;
+}
+
+function canViewProject(user: PrototypeUser, project: AuditProject) {
+  if (!user.active) return false;
+  const visibility = effectiveVisibility(user);
+  if (visibility === "All Projects") return true;
+  if (visibility === "Finance Records") return isFinanceProject(project);
+  return (
+    projectHasAuditor(project, user.fullName) ||
+    project.reviewer === user.fullName
+  );
+}
+
+function canEditProject(user: PrototypeUser, project: AuditProject) {
+  if (hasFullProjectAccess(user)) return true;
+  return user.role === "Auditor" && projectHasAuditor(project, user.fullName);
+}
+
+function canCreateProject(user: PrototypeUser) {
+  return user.role === "Admin" || user.role === "Audit Manager";
+}
+
+function canUpdateFinance(user: PrototypeUser, project: AuditProject) {
+  return user.role === "Finance" && isFinanceProject(project);
+}
+
+function canComment(user: PrototypeUser, project: AuditProject) {
+  return user.role !== "Read Only" && canViewProject(user, project);
+}
+
+function visibleProjectMessage(user: PrototypeUser) {
+  const visibility = effectiveVisibility(user);
+  if (visibility === "All Projects") {
+    return "Showing all projects.";
+  }
+  if (visibility === "Finance Records") {
+    return "Showing invoice, final submission, and close-out records.";
+  }
+  return "Showing projects where you are the lead or supporting auditor.";
+}
+
+function projectMatchesWorkState(project: AuditProject, workState: string) {
+  if (workState === "blocked") {
+    return (
+      computedBlockers(project).length > 0 ||
+      project.assignmentStatus === "Blocked"
+    );
+  }
+  if (workState === "waitingOnBroker") {
+    return project.labels.includes("Waiting on Broker");
+  }
+  if (workState === "pendingPayment") {
+    return isFinanceProject(project) && !project.paymentReceived;
+  }
+  return true;
+}
+
+function buildFilters(overrides: Partial<Filters> = {}): Filters {
+  return { ...defaultFilters, ...overrides };
+}
+
+function filterPresetsForUser(user: PrototypeUser): FilterPreset[] {
+  const shared: FilterPreset[] = [
+    { id: "all", label: "All visible", filters: {} },
+    { id: "overdue", label: "Overdue", filters: { dueDate: "overdue" } },
+    { id: "dueSoon", label: "Due soon", filters: { dueDate: "dueSoon" } },
+    {
+      id: "blocked",
+      label: "Blocked",
+      filters: { workState: "blocked" },
+    },
+    {
+      id: "waitingOnBroker",
+      label: "Waiting on broker",
+      filters: { workState: "waitingOnBroker" },
+    },
+  ];
+  if (user.role === "Auditor") {
+    return [
+      {
+        id: "myAssignments",
+        label: "My assignments",
+        filters: { auditor: user.fullName },
+      },
+      {
+        id: "myOverdue",
+        label: "My overdue",
+        filters: { auditor: user.fullName, dueDate: "overdue" },
+      },
+      {
+        id: "myMissingDocs",
+        label: "My missing docs",
+        filters: { auditor: user.fullName, missingDocuments: true },
+      },
+      ...shared,
+    ];
+  }
+  if (user.role === "Finance") {
+    return [
+      {
+        id: "pendingPayment",
+        label: "Pending payment",
+        filters: { workState: "pendingPayment" },
+      },
+      {
+        id: "invoiceStage",
+        label: "Invoice stage",
+        filters: { stage: "Invoice" },
+      },
+      ...shared,
+    ];
+  }
+  return shared;
+}
+
+function emptyProjectState(user: PrototypeUser) {
+  const visibility = effectiveVisibility(user);
+  if (visibility === "Finance Records") {
+    return {
+      title: "No finance records are ready",
+      message:
+        "Finance records appear after a project reaches final submission, invoice, closed status, or has invoice activity.",
+    };
+  }
+  if (visibility === "Assigned Projects") {
+    return {
+      title: "No assignments are assigned to you",
+      message:
+        "Assigned work appears here when your name is listed as lead, support, or reviewer on an active project.",
+    };
+  }
+  if (user.role === "Read Only") {
+    return {
+      title: "No read-only projects are available",
+      message:
+        "Read-only users can view projects once project records have been created and made visible.",
+    };
+  }
+  return {
+    title: "No projects in the tracker",
+    message:
+      "Create a project or import a JSON backup to start working from this browser.",
+  };
+}
+
+function formatCurrency(value: number) {
+  return value.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
+}
+
+function formatDateTime(value: string) {
+  if (!value) return "Never";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
 
 function createActivityEvent(
   type: AuditActivityEvent["type"],
   title: string,
   detail: string,
+  actor = "Prototype user",
 ): AuditActivityEvent {
   return {
     id: `event-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     createdAt: timestampNow(),
-    actor: "Prototype user",
+    actor,
     type,
     title,
     detail,
@@ -734,21 +1073,61 @@ function saveProjects(projects: AuditProject[]) {
   localStorage.setItem(storageKey, JSON.stringify(projects));
 }
 
-function loadAuditors(): string[] {
-  const raw = localStorage.getItem(auditorStorageKey);
+function withUserDefaults(user: Partial<PrototypeUser>): PrototypeUser {
+  const role = user.role ?? "Auditor";
+  return {
+    fullName: user.fullName?.trim() || "New User",
+    username: user.username?.trim().toLowerCase() || "new.user",
+    password: user.password || "password",
+    role,
+    permissionGroup: user.permissionGroup ?? role,
+    email: user.email?.trim() || "new.user@[company-domain]",
+    active: user.active ?? true,
+    defaultVisibility: user.defaultVisibility ?? "Role Default",
+  };
+}
+
+function loadPrototypeUsers(): PrototypeUser[] {
+  const raw = localStorage.getItem(usersStorageKey);
   if (!raw) {
-    localStorage.setItem(
-      auditorStorageKey,
-      JSON.stringify(defaultAuditorOptions),
-    );
-    return defaultAuditorOptions;
+    localStorage.setItem(usersStorageKey, JSON.stringify(defaultPrototypeUsers));
+    return defaultPrototypeUsers;
   }
   try {
-    const parsed = JSON.parse(raw) as string[];
-    return parsed.length ? parsed : defaultAuditorOptions;
+    const parsed = JSON.parse(raw) as Partial<PrototypeUser>[];
+    const users = parsed.map(withUserDefaults);
+    return users.length ? users : defaultPrototypeUsers;
   } catch {
-    return defaultAuditorOptions;
+    return defaultPrototypeUsers;
   }
+}
+
+function savePrototypeUsers(users: PrototypeUser[]) {
+  localStorage.setItem(usersStorageKey, JSON.stringify(users));
+}
+
+function authenticateUser(
+  username: string,
+  password: string,
+  users: PrototypeUser[],
+) {
+  const normalizedUsername = username.trim().toLowerCase();
+  return (
+    users.find(
+      (user) =>
+        user.active &&
+        user.username === normalizedUsername &&
+        user.password === password,
+    ) ?? null
+  );
+}
+
+function saveCurrentUsername(username: string) {
+  if (!username) {
+    localStorage.removeItem(currentUserStorageKey);
+    return;
+  }
+  localStorage.setItem(currentUserStorageKey, username);
 }
 
 function timestampNow() {
@@ -833,6 +1212,7 @@ export function dueLabel(project: AuditProject) {
     return { text: "No due date", className: "muted" };
   if (days < 0)
     return { text: `${Math.abs(days)}d overdue`, className: "danger" };
+  if (days === 0) return { text: "Due today", className: "warning" };
   if (days <= 3) return { text: `Due in ${days}d`, className: "warning" };
   return { text: `Due ${project.dueDate}`, className: "ok" };
 }
@@ -929,6 +1309,14 @@ export type ActivityItem = {
   detail: string;
   tone?: "ok" | "warning" | "danger" | "muted";
 };
+
+const activityTypeOptions: ActivityItem["type"][] = [
+  "stage",
+  "comment",
+  "checklist",
+  "document",
+  "team",
+];
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -1113,6 +1501,59 @@ function sourceTasks(project: AuditProject) {
       ];
 }
 
+const communicationTemplates: CommunicationTemplate[] = [
+  {
+    id: "document-request",
+    label: "Document request",
+    kind: "Email",
+    purpose: "Send the first document package request to the broker/contact owner.",
+    subject: (project) =>
+      `Document request - ${project.assignmentNumber} - ${project.auditEntity}`,
+    body: (project) =>
+      `Hello,\n\nPlease provide the required audit support for ${project.auditEntity} (${project.clientCoverholderCode}).\n\nRequired items:\n- Binding authority agreement\n- Endorsements\n- Premium bordereaux\n- Completed pre-audit questionnaire, if applicable\n\nRequested by: ${project.documentRequestDate || todayIso()}\nExpected response: ${project.brokerExpectedResponseDate || "TBD"}\n\nAudit team: ${formatAuditTeam(project)}\n\nThank you.`,
+  },
+  {
+    id: "pre-audit-questionnaire",
+    label: "Pre-audit questionnaire",
+    kind: "Document",
+    purpose: "Create the standard questionnaire request text before automation exists.",
+    subject: (project) =>
+      `Pre-audit questionnaire - ${project.assignmentNumber} - ${project.auditEntity}`,
+    body: (project) =>
+      `Pre-audit questionnaire request\n\nAssignment: ${project.assignmentNumber}\nAudit entity: ${project.auditEntity}\nBroker: ${project.broker}\nAudit type: ${project.auditType}\nTentative audit week: ${project.tentativeAuditWeek || "TBD"}\nConfirmed audit date: ${project.confirmedAuditDate || "TBD"}\n\nPlease complete the questionnaire and return it with supporting documents so the audit team can confirm readiness before fieldwork.`,
+  },
+  {
+    id: "quote-email",
+    label: "Quote email",
+    kind: "Email",
+    purpose: "Prepare the quote wording for review before sending.",
+    subject: (project) =>
+      `Quote for ${project.assignmentNumber} - ${project.auditEntity}`,
+    body: (project) =>
+      `Hello,\n\nPlease find the audit quote details for ${project.auditEntity}.\n\nAssignment: ${project.assignmentNumber}\nAssignment type: ${project.assignmentType}\nAudit type: ${project.auditType}\nQuote status: ${project.quoteStatus}\nQuote amount: ${formatCurrency(project.quoteAmount)}\nTentative audit week: ${project.tentativeAuditWeek || "TBD"}\n\nPlease confirm acceptance or advise if any changes are required.\n\nThank you.`,
+  },
+  {
+    id: "findings-follow-up",
+    label: "Findings follow-up",
+    kind: "Email",
+    purpose: "Send findings and start the coverholder response cycle.",
+    subject: (project) =>
+      `Findings response requested - ${project.assignmentNumber} - ${project.auditEntity}`,
+    body: (project) =>
+      `Hello,\n\nFindings have been issued for ${project.auditEntity}.\n\nAssignment: ${project.assignmentNumber}\nFindings sent: ${project.findingsSentDate || todayIso()}\nCoverholder response received: ${project.coverholderResponseReceivedDate || "Not yet received"}\n\nPlease provide responses and supporting evidence for each finding so the audit team can continue report finalization.\n\nThank you.`,
+  },
+  {
+    id: "invoice-note",
+    label: "Invoice note",
+    kind: "Document",
+    purpose: "Prepare invoice handoff details for finance.",
+    subject: (project) =>
+      `Invoice handoff - ${project.assignmentNumber} - ${project.auditEntity}`,
+    body: (project) =>
+      `Invoice handoff\n\nAssignment: ${project.assignmentNumber}\nAudit entity: ${project.auditEntity}\nClient / coverholder code: ${project.clientCoverholderCode}\nQuote amount: ${formatCurrency(project.quoteAmount)}\nInvoice status: ${project.invoiceStatus}\nPayment received: ${project.paymentReceived ? "Yes" : "No"}\nReport status: ${project.reportStatus}\nDAM submission: ${project.damSubmissionStatus}\n\nNext action: ${project.nextAction || "No next action recorded."}`,
+  },
+];
+
 export function escapeCsv(value: string | number | boolean) {
   const text = String(value ?? "");
   return `"${text.replace(/"/g, '""')}"`;
@@ -1157,38 +1598,85 @@ function exportProjectsToCsv(projects: AuditProject[]) {
   URL.revokeObjectURL(url);
 }
 
+function exportProjectsToJson(projects: AuditProject[]) {
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    app: "audit-assignment-tracker",
+    version: 1,
+    projects,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: "application/json;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `audit-assignments-${new Date().toISOString().slice(0, 10)}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function normalizeImportedProjects(payload: unknown) {
+  const candidate =
+    payload &&
+    typeof payload === "object" &&
+    "projects" in payload &&
+    Array.isArray((payload as { projects?: unknown }).projects)
+      ? (payload as { projects: unknown[] }).projects
+      : payload;
+  if (!Array.isArray(candidate)) return null;
+  return (candidate as AuditProject[]).map(withProjectDefaults);
+}
+
 function App() {
   const [projects, setProjects] = useState<AuditProject[]>(() =>
     loadProjects(),
   );
+  const [users, setUsers] = useState<PrototypeUser[]>(() =>
+    loadPrototypeUsers(),
+  );
+  const [currentUsername, setCurrentUsername] = useState(
+    () => localStorage.getItem(currentUserStorageKey) ?? "",
+  );
   const [selectedId, setSelectedId] = useState(projects[0]?.id ?? "");
   const [editing, setEditing] = useState<AuditProject | null>(null);
-  const [filters, setFilters] = useState<Filters>({
-    auditor: "",
-    stage: "",
-    source: "",
-    quoteStatus: "",
-    dueDate: "",
-    missingDocuments: false,
-  });
+  const [filters, setFilters] = useState<Filters>(defaultFilters);
   const [message, setMessage] = useState("");
-  const [auditorOptions] = useState<string[]>(() => loadAuditors());
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
   const [durationRange, setDurationRange] = useState<DurationRange>("ytd");
+  const [lastExportedAt, setLastExportedAt] = useState(
+    () => localStorage.getItem(lastExportStorageKey) ?? "",
+  );
+  const [confirmation, setConfirmation] = useState<ConfirmationRequest | null>(
+    null,
+  );
   const [hiddenWorkloadAuditors, setHiddenWorkloadAuditors] = useState<
     string[]
   >([]);
   const [shownZeroLoadAuditors, setShownZeroLoadAuditors] = useState<string[]>([]);
 
+  const signedInUser =
+    users.find((user) => user.active && user.username === currentUsername) ??
+    null;
+  const auditorOptions = users
+    .filter((user) => user.active && user.role !== "Finance" && user.role !== "Read Only")
+    .map((user) => user.fullName);
   const auditors = Array.from(
     new Set([
       ...auditorOptions,
       ...projects.flatMap((project) => assignedAuditorNames(project)),
     ]),
   );
+  const visibleProjects = useMemo(
+    () =>
+      signedInUser
+        ? projects.filter((project) => canViewProject(signedInUser, project))
+        : [],
+    [projects, signedInUser],
+  );
   const zeroLoadAuditors = auditors.filter(
     (auditor) =>
-      !projects.some(
+      !visibleProjects.some(
         (project) =>
           projectHasAuditor(project, auditor) && project.currentStage !== "Closed",
       ),
@@ -1204,7 +1692,7 @@ function App() {
 
   const filteredProjects = useMemo(
     () =>
-      projects.filter((project) => {
+      visibleProjects.filter((project) => {
         if (filters.auditor && !projectHasAuditor(project, filters.auditor))
           return false;
         if (filters.stage && project.currentStage !== filters.stage)
@@ -1225,20 +1713,115 @@ function App() {
           getMissingDocuments(project).length === 0
         )
           return false;
+        if (
+          filters.workState &&
+          !projectMatchesWorkState(project, filters.workState)
+        )
+          return false;
         return true;
       }),
-    [projects, filters],
+    [visibleProjects, filters],
   );
   const selectedProject =
-    projects.find((project) => project.id === selectedId) ?? projects[0];
+    visibleProjects.find((project) => project.id === selectedId) ??
+    visibleProjects[0];
+
+  const handleLogin = (username: string, password: string) => {
+    const user = authenticateUser(username, password, users);
+    if (!user) {
+      setMessage("Invalid prototype username or password.");
+      return;
+    }
+    setCurrentUsername(user.username);
+    saveCurrentUsername(user.username);
+    setFilters(buildFilters(user.role === "Auditor" ? { auditor: user.fullName } : {}));
+    setSelectedId("");
+    setMessage("");
+  };
+
+  const signOut = () => {
+    setCurrentUsername("");
+    saveCurrentUsername("");
+    setEditing(null);
+    setSelectedId("");
+    setMessage("");
+  };
+
+  if (!signedInUser) {
+    return (
+      <LoginScreen
+        users={users.filter((user) => user.active)}
+        message={message}
+        onLogin={handleLogin}
+      />
+    );
+  }
 
   const persist = (nextProjects: AuditProject[]) => {
     setProjects(nextProjects);
     saveProjects(nextProjects);
   };
 
+  const requestConfirmation = (request: ConfirmationRequest) => {
+    setConfirmation(request);
+  };
+
+  const recordExport = (label: string) => {
+    const exportedAt = new Date().toISOString();
+    setLastExportedAt(exportedAt);
+    localStorage.setItem(lastExportStorageKey, exportedAt);
+    setMessage(`${label} exported.`);
+  };
+
+  const handleExportCsv = () => {
+    exportProjectsToCsv(filteredProjects);
+    recordExport("Filtered CSV");
+  };
+
+  const handleExportJson = () => {
+    exportProjectsToJson(visibleProjects);
+    recordExport("JSON backup");
+  };
+
+  const resetSampleProjects = () => {
+    requestConfirmation({
+      title: "Reset sample data?",
+      message:
+        "This replaces the current project records in this browser with the starter sample data.",
+      confirmLabel: "Reset sample data",
+      tone: "danger",
+      onConfirm: () => {
+        persist(sampleProjects);
+        setSelectedId(sampleProjects[0].id);
+        setMessage("Sample data reset.");
+      },
+    });
+  };
+
+  const queueProjectImport = (file: File) => {
+    if (!hasFullProjectAccess(signedInUser)) {
+      setMessage("Only admins and audit managers can import project data.");
+      return;
+    }
+    requestConfirmation({
+      title: "Import JSON backup?",
+      message: `Importing ${file.name} replaces the current project records in this browser.`,
+      confirmLabel: "Import JSON",
+      tone: "danger",
+      onConfirm: () => importProjectsFromFile(file),
+    });
+  };
+
   const upsertProject = (project: AuditProject) => {
     const exists = projects.some((item) => item.id === project.id);
+    const originalProject = projects.find((item) => item.id === project.id);
+    if (
+      (exists && originalProject && !canEditProject(signedInUser, originalProject)) ||
+      (!exists && !canCreateProject(signedInUser))
+    ) {
+      setMessage("Your role cannot save that project.");
+      return;
+    }
     const cleanProject = withProjectDefaults({
       ...project,
       quoteAmount: Number(project.quoteAmount) || 0,
@@ -1255,6 +1838,7 @@ function App() {
           exists
             ? "Project fields were updated from Edit Project."
             : "Project was created from guided intake.",
+          signedInUser.fullName,
         ),
       ],
     });
@@ -1270,6 +1854,10 @@ function App() {
   };
 
   const moveProject = (project: AuditProject, targetStage: Stage) => {
+    if (!canEditProject(signedInUser, project)) {
+      setMessage("Your role cannot move this project.");
+      return;
+    }
     const blocker = canMoveToStage(project, targetStage);
     if (blocker) {
       setMessage(blocker);
@@ -1291,6 +1879,7 @@ function App() {
           "stage",
           `${project.currentStage} → ${targetStage}`,
           "Stage changed in tracker.",
+          signedInUser.fullName,
         ),
       ],
       statusHistory: [
@@ -1298,7 +1887,7 @@ function App() {
         {
           id: `h-${Date.now()}`,
           changedAt: timestampNow(),
-          changedBy: "Prototype user",
+          changedBy: signedInUser.fullName,
           fromStage: project.currentStage,
           toStage: targetStage,
           note: "Stage changed in tracker.",
@@ -1311,6 +1900,10 @@ function App() {
   };
 
   const removeProjectLabel = (project: AuditProject, label: ProjectLabel) => {
+    if (!canEditProject(signedInUser, project)) {
+      setMessage("Your role cannot update labels on this project.");
+      return;
+    }
     if (!project.labels.includes(label)) return;
     const updatedProject = withProjectDefaults({
       ...project,
@@ -1332,6 +1925,10 @@ function App() {
     project: AuditProject,
     comment: ProjectComment,
   ) => {
+    if (!canComment(signedInUser, project)) {
+      setMessage("Your role cannot add comments to this project.");
+      return;
+    }
     const updatedProject = {
       ...project,
       comments: [...project.comments, comment],
@@ -1345,6 +1942,10 @@ function App() {
   };
 
   const toggleChecklistItem = (project: AuditProject, key: string) => {
+    if (!canEditProject(signedInUser, project)) {
+      setMessage("Your role cannot update checklist items on this project.");
+      return;
+    }
     const updatedProject = {
       ...project,
       checklistCompletions: {
@@ -1359,6 +1960,7 @@ function App() {
             ? "Checklist item reopened"
             : "Checklist item completed",
           key.split(":").slice(1).join(":") || key,
+          signedInUser.fullName,
         ),
       ],
       lastUpdatedDate: new Date().toISOString().slice(0, 10),
@@ -1370,6 +1972,10 @@ function App() {
   };
 
   const addSupportingAuditor = (project: AuditProject, auditor: string) => {
+    if (!hasFullProjectAccess(signedInUser)) {
+      setMessage("Only admins and audit managers can change audit teams.");
+      return;
+    }
     if (!auditor || projectHasAuditor(project, auditor)) return;
     const updatedProject = withProjectDefaults({
       ...project,
@@ -1383,6 +1989,7 @@ function App() {
           "team",
           "Supporting auditor added",
           `${auditor} joined as a supporting auditor.`,
+          signedInUser.fullName,
         ),
       ],
       lastUpdatedDate: new Date().toISOString().slice(0, 10),
@@ -1398,6 +2005,10 @@ function App() {
     project: AuditProject,
     action: DocumentWorkflowAction,
   ) => {
+    if (!canEditProject(signedInUser, project)) {
+      setMessage("Your role cannot update document workflow on this project.");
+      return;
+    }
     const readiness = documentReadiness(project);
     if (action === "markDocumentsComplete" && readiness.percent === 100) {
       setMessage(`${project.assignmentNumber} documents are already complete.`);
@@ -1430,7 +2041,7 @@ function App() {
       ...applyDocumentWorkflowAction(project, action),
       activityEvents: [
         ...(project.activityEvents ?? []),
-        createActivityEvent("document", eventTitle, eventTitle),
+        createActivityEvent("document", eventTitle, eventTitle, signedInUser.fullName),
       ],
     };
     persist(
@@ -1440,11 +2051,136 @@ function App() {
     setMessage(`${eventTitle}. ${project.assignmentNumber} updated.`);
   };
 
+  const updateProjectFinance = (
+    project: AuditProject,
+    invoiceStatus: InvoiceStatus,
+    paymentReceived: boolean,
+  ) => {
+    if (!canUpdateFinance(signedInUser, project) && !hasFullProjectAccess(signedInUser)) {
+      setMessage("Your role cannot update invoice or payment fields.");
+      return;
+    }
+    const updatedProject = withProjectDefaults({
+      ...project,
+      invoiceStatus,
+      paymentReceived: invoiceStatus === "Paid" ? true : paymentReceived,
+      lastUpdatedDate: new Date().toISOString().slice(0, 10),
+      activityEvents: [
+        ...(project.activityEvents ?? []),
+        createActivityEvent(
+          "field",
+          "Finance fields updated",
+          `Invoice status set to ${invoiceStatus}; payment received is ${
+            invoiceStatus === "Paid" || paymentReceived ? "yes" : "no"
+          }.`,
+          signedInUser.fullName,
+        ),
+      ],
+    });
+    persist(
+      projects.map((item) => (item.id === project.id ? updatedProject : item)),
+    );
+    setSelectedId(project.id);
+    setMessage(`${project.assignmentNumber} finance fields updated.`);
+  };
+
+  const importProjectsFromFile = async (file: File) => {
+    if (!hasFullProjectAccess(signedInUser)) {
+      setMessage("Only admins and audit managers can import project data.");
+      return;
+    }
+    try {
+      const text = await file.text();
+      const importedProjects = normalizeImportedProjects(JSON.parse(text));
+      if (!importedProjects || importedProjects.length === 0) {
+        setMessage("Import file did not contain any projects.");
+        return;
+      }
+      persist(importedProjects);
+      setSelectedId(importedProjects[0].id);
+      setMessage(`${importedProjects.length} projects imported from JSON.`);
+    } catch {
+      setMessage("Could not import that JSON file.");
+    }
+  };
+
+  const upsertUser = (
+    originalUsername: string | null,
+    draftUser: PrototypeUser,
+  ) => {
+    if (signedInUser.role !== "Admin") {
+      setMessage("Only admins can manage users.");
+      return;
+    }
+    const cleanUser = withUserDefaults({
+      ...draftUser,
+      username: draftUser.username.trim().toLowerCase(),
+      permissionGroup: draftUser.role,
+    });
+    if (!cleanUser.fullName.trim() || !cleanUser.username.trim()) {
+      setMessage("User name and username are required.");
+      return;
+    }
+    if (
+      users.some(
+        (user) =>
+          user.username === cleanUser.username &&
+          user.username !== originalUsername,
+      )
+    ) {
+      setMessage("That username already exists.");
+      return;
+    }
+    if (originalUsername === signedInUser.username && !cleanUser.active) {
+      setMessage("You cannot deactivate your own signed-in account.");
+      return;
+    }
+    const nextUsers = originalUsername
+      ? users.map((user) =>
+          user.username === originalUsername ? cleanUser : user,
+        )
+      : [...users, cleanUser];
+    if (!nextUsers.some((user) => user.active && user.role === "Admin")) {
+      setMessage("At least one active Admin user is required.");
+      return;
+    }
+    setUsers(nextUsers);
+    savePrototypeUsers(nextUsers);
+    if (originalUsername === signedInUser.username) {
+      setCurrentUsername(cleanUser.username);
+      saveCurrentUsername(cleanUser.username);
+    }
+    setMessage(`${cleanUser.fullName} saved.`);
+  };
+
+  const resetUsers = () => {
+    if (signedInUser.role !== "Admin") {
+      setMessage("Only admins can reset users.");
+      return;
+    }
+    setUsers(defaultPrototypeUsers);
+    savePrototypeUsers(defaultPrototypeUsers);
+    setCurrentUsername("justin.mojica");
+    saveCurrentUsername("justin.mojica");
+    setMessage("Prototype users reset.");
+  };
+
+  const confirmResetUsers = () => {
+    requestConfirmation({
+      title: "Reset prototype users?",
+      message:
+        "This restores the starter users, roles, passwords, and visibility settings in this browser.",
+      confirmLabel: "Reset users",
+      tone: "danger",
+      onConfirm: resetUsers,
+    });
+  };
+
   return (
     <main>
       <header className="hero">
         <div>
-          <p className="eyebrow">Local storage prototype</p>
+          <p className="eyebrow">Prototype login: {signedInUser.role}</p>
           <h1>Audit Assignment Tracker</h1>
           <p>
             Manage audit assignments from intake through final report, invoice,
@@ -1452,17 +2188,21 @@ function App() {
           </p>
         </div>
         <div className="hero-actions">
-          <button onClick={() => setEditing(blankProject())}>
+          <button
+            disabled={!canCreateProject(signedInUser)}
+            onClick={() => setEditing(blankProject())}
+          >
             Add project
           </button>
           <button
             className="secondary"
-            onClick={() => {
-              persist(sampleProjects);
-              setSelectedId(sampleProjects[0].id);
-            }}
+            disabled={!hasFullProjectAccess(signedInUser)}
+            onClick={resetSampleProjects}
           >
             Reset sample data
+          </button>
+          <button className="secondary" onClick={signOut}>
+            Sign out
           </button>
         </div>
       </header>
@@ -1473,14 +2213,23 @@ function App() {
         </div>
       )}
 
-      <Dashboard projects={projects} />
+      <AccessBanner user={signedInUser} visibleCount={visibleProjects.length} />
+      {signedInUser.role === "Admin" && (
+        <UserManagementPanel
+          users={users}
+          onSaveUser={upsertUser}
+          onResetUsers={confirmResetUsers}
+        />
+      )}
+      <Dashboard projects={visibleProjects} />
+      <TodaysWork projects={visibleProjects} onSelect={setSelectedId} />
       <CycleTimeDashboard
-        projects={projects}
+        projects={visibleProjects}
         range={durationRange}
         setRange={setDurationRange}
       />
       <WorkloadCounts
-        projects={projects}
+        projects={visibleProjects}
         auditors={auditors}
         hiddenAuditors={effectiveHiddenWorkloadAuditors}
         toggleAuditorHidden={(auditor) => {
@@ -1513,7 +2262,14 @@ function App() {
       <FiltersPanel
         filters={filters}
         setFilters={setFilters}
-        auditors={auditors}
+        presets={filterPresetsForUser(signedInUser)}
+        auditors={
+          hasFullProjectAccess(signedInUser) || signedInUser.role === "Read Only"
+            ? auditors
+            : auditors.filter((auditor) =>
+                visibleProjects.some((project) => projectHasAuditor(project, auditor)),
+              )
+        }
       />
       <div className="view-toolbar panel">
         <div className="segmented">
@@ -1530,9 +2286,31 @@ function App() {
             Audit table
           </button>
         </div>
-        <button onClick={() => exportProjectsToCsv(filteredProjects)}>
+        <button onClick={handleExportCsv}>
           Export filtered CSV
         </button>
+        <button
+          className="secondary"
+          onClick={handleExportJson}
+        >
+          Export JSON backup
+        </button>
+        <span className="last-export">
+          Last export: {formatDateTime(lastExportedAt)}
+        </span>
+        <label className="import-control">
+          Import JSON
+          <input
+            type="file"
+            accept="application/json,.json"
+            disabled={!hasFullProjectAccess(signedInUser)}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) queueProjectImport(file);
+              event.currentTarget.value = "";
+            }}
+          />
+        </label>
       </div>
       {viewMode === "kanban" ? (
         <Kanban
@@ -1541,6 +2319,7 @@ function App() {
           onSelect={setSelectedId}
           onMove={moveProject}
           onRemoveLabel={removeProjectLabel}
+          currentUser={signedInUser}
         />
       ) : (
         <ProjectTable projects={filteredProjects} onSelect={setSelectedId} />
@@ -1556,7 +2335,15 @@ function App() {
           onDocumentWorkflowAction={updateProjectDocumentWorkflow}
           auditors={auditors}
           onAddSupportingAuditor={addSupportingAuditor}
+          currentUser={signedInUser}
+          onUpdateFinance={updateProjectFinance}
         />
+      )}
+      {!selectedProject && (
+        <section className="panel empty-state">
+          <h2>{emptyProjectState(signedInUser).title}</h2>
+          <p>{emptyProjectState(signedInUser).message}</p>
+        </section>
       )}
       {editing && (
         <ProjectForm
@@ -1566,7 +2353,310 @@ function App() {
           auditorOptions={auditorOptions}
         />
       )}
+      {confirmation && (
+        <ConfirmDialog
+          request={confirmation}
+          onCancel={() => setConfirmation(null)}
+          onConfirm={() => {
+            void Promise.resolve(confirmation.onConfirm()).finally(() =>
+              setConfirmation(null),
+            );
+          }}
+        />
+      )}
     </main>
+  );
+}
+
+function LoginScreen({
+  users,
+  message,
+  onLogin,
+}: {
+  users: PrototypeUser[];
+  message: string;
+  onLogin: (username: string, password: string) => void;
+}) {
+  const [username, setUsername] = useState("justin.mojica");
+  const [password, setPassword] = useState("password");
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    onLogin(username, password);
+  };
+
+  return (
+    <main className="login-shell">
+      <section className="login-panel">
+        <div>
+          <p className="eyebrow dark">Prototype access</p>
+          <h1>Audit Assignment Tracker</h1>
+          <p>Sign in with a tracker test account.</p>
+        </div>
+        {message && (
+          <div className="toast" role="status">
+            {message}
+          </div>
+        )}
+        <form className="login-form" onSubmit={submit}>
+          <Input
+            label="Username"
+            value={username}
+            onChange={setUsername}
+            placeholder="firstname.lastname"
+          />
+          <Input
+            label="Password"
+            value={password}
+            onChange={setPassword}
+            type="password"
+            placeholder="password"
+          />
+          <button type="submit">Sign in</button>
+        </form>
+        <div className="demo-users">
+          {users.map((user) => (
+            <button
+              type="button"
+              className="secondary"
+              key={user.username}
+              onClick={() => {
+                setUsername(user.username);
+                setPassword(user.password);
+              }}
+            >
+              <strong>{user.fullName}</strong>
+              <span>{user.role}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function ConfirmDialog({
+  request,
+  onCancel,
+  onConfirm,
+}: {
+  request: ConfirmationRequest;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="modal-backdrop confirmation-backdrop">
+      <section
+        className="panel confirmation-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirmation-title"
+      >
+        <div>
+          <p className="eyebrow dark">Confirm</p>
+          <h2 id="confirmation-title">{request.title}</h2>
+          <p>{request.message}</p>
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="secondary" onClick={onCancel}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className={request.tone === "danger" ? "danger-button" : undefined}
+            onClick={onConfirm}
+          >
+            {request.confirmLabel}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function AccessBanner({
+  user,
+  visibleCount,
+}: {
+  user: PrototypeUser;
+  visibleCount: number;
+}) {
+  return (
+    <section className="panel access-banner">
+      <div>
+        <span className="avatar">
+          {user.fullName
+            .split(" ")
+            .map((part) => part[0])
+            .slice(0, 2)
+            .join("")}
+        </span>
+        <div>
+          <p className="eyebrow dark">Signed in</p>
+          <h2>{user.fullName}</h2>
+          <span>
+            {user.username} · {user.permissionGroup} · {visibleCount} visible projects
+          </span>
+        </div>
+      </div>
+      <strong>{visibleProjectMessage(user)}</strong>
+    </section>
+  );
+}
+
+function UserManagementPanel({
+  users,
+  onSaveUser,
+  onResetUsers,
+}: {
+  users: PrototypeUser[];
+  onSaveUser: (originalUsername: string | null, user: PrototypeUser) => void;
+  onResetUsers: () => void;
+}) {
+  const firstUsername = users[0]?.username ?? "";
+  const [selectedUsername, setSelectedUsername] = useState(firstUsername);
+  const selectedUser =
+    users.find((user) => user.username === selectedUsername) ?? users[0];
+  const [draft, setDraft] = useState<PrototypeUser>(
+    selectedUser ??
+      withUserDefaults({
+        fullName: "",
+        username: "",
+      }),
+  );
+  const [isNewUser, setIsNewUser] = useState(false);
+
+  const loadUser = (user: PrototypeUser) => {
+    setSelectedUsername(user.username);
+    setDraft(user);
+    setIsNewUser(false);
+  };
+
+  const startNewUser = () => {
+    setSelectedUsername("");
+    setDraft(
+      withUserDefaults({
+        fullName: "",
+        username: "",
+        email: "",
+        role: "Auditor",
+        permissionGroup: "Auditor",
+      }),
+    );
+    setIsNewUser(true);
+  };
+
+  const updateDraft = <K extends keyof PrototypeUser>(
+    key: K,
+    value: PrototypeUser[K],
+  ) => {
+    const nextDraft = { ...draft, [key]: value };
+    if (key === "role") {
+      nextDraft.permissionGroup = value as UserRole;
+    }
+    setDraft(nextDraft);
+  };
+
+  return (
+    <section className="panel user-management">
+      <div className="section-title">
+        <div>
+          <p className="eyebrow dark">Admin</p>
+          <h2>User management</h2>
+          <span>Edit prototype users, roles, active status, and visibility.</span>
+        </div>
+        <div className="segmented">
+          <button type="button" onClick={startNewUser}>
+            Add user
+          </button>
+          <button type="button" className="secondary" onClick={onResetUsers}>
+            Reset users
+          </button>
+        </div>
+      </div>
+      <div className="user-management-grid">
+        <div className="user-list" aria-label="Prototype users">
+          {users.map((user) => (
+            <button
+              type="button"
+              className={
+                user.username === selectedUsername ? "selected secondary" : "secondary"
+              }
+              key={user.username}
+              onClick={() => loadUser(user)}
+            >
+              <strong>{user.fullName}</strong>
+              <span className="user-meta">
+                <span>{user.role}</span>
+                <span
+                  className={`user-status-badge ${
+                    user.active ? "active" : "inactive"
+                  }`}
+                >
+                  {user.active ? "Active" : "Inactive"}
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
+        <form
+          className="user-editor"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSaveUser(isNewUser ? null : selectedUsername, draft);
+            setSelectedUsername(draft.username.trim().toLowerCase());
+            setIsNewUser(false);
+          }}
+        >
+          <div className="form-grid user-editor-grid">
+            <Input
+              label="Full name"
+              value={draft.fullName}
+              onChange={(value) => updateDraft("fullName", value)}
+            />
+            <Input
+              label="Username"
+              value={draft.username}
+              onChange={(value) => updateDraft("username", value)}
+            />
+            <Input
+              label="Email"
+              value={draft.email}
+              onChange={(value) => updateDraft("email", value)}
+            />
+            <Input
+              label="Test password"
+              value={draft.password}
+              onChange={(value) => updateDraft("password", value)}
+            />
+            <Select
+              label="Role"
+              value={draft.role}
+              options={userRoleOptions}
+              placeholder="Select role"
+              onChange={(value) => updateDraft("role", value as UserRole)}
+            />
+            <Select
+              label="Default visibility"
+              value={draft.defaultVisibility}
+              options={projectVisibilityOptions}
+              placeholder="Select visibility"
+              onChange={(value) =>
+                updateDraft("defaultVisibility", value as ProjectVisibility)
+              }
+            />
+            <Check
+              label="Active user"
+              checked={draft.active}
+              onChange={(value) => updateDraft("active", value)}
+            />
+          </div>
+          <div className="modal-actions">
+            <button type="submit">Save user</button>
+          </div>
+        </form>
+      </div>
+    </section>
   );
 }
 
@@ -1606,6 +2696,99 @@ function Dashboard({ projects }: { projects: AuditProject[] }) {
           maximumFractionDigits: 0,
         })}
       />
+    </section>
+  );
+}
+
+function sortByUrgency(projects: AuditProject[]) {
+  return projects
+    .slice()
+    .sort((a, b) => daysUntil(a.dueDate) - daysUntil(b.dueDate));
+}
+
+function TodaysWork({
+  projects,
+  onSelect,
+}: {
+  projects: AuditProject[];
+  onSelect: (id: string) => void;
+}) {
+  const openProjects = projects.filter((project) => project.currentStage !== "Closed");
+  const queues = [
+    {
+      label: "Overdue",
+      tone: "queue-danger",
+      items: sortByUrgency(
+        openProjects.filter((project) => daysUntil(project.dueDate) < 0),
+      ),
+    },
+    {
+      label: "Due soon",
+      tone: "queue-warning",
+      items: sortByUrgency(
+        openProjects.filter(
+          (project) =>
+            daysUntil(project.dueDate) >= 0 && daysUntil(project.dueDate) <= 3,
+        ),
+      ),
+    },
+    {
+      label: "Blocked",
+      tone: "queue-danger",
+      items: sortByUrgency(
+        openProjects.filter((project) => projectMatchesWorkState(project, "blocked")),
+      ),
+    },
+    {
+      label: "Waiting on broker",
+      tone: "queue-warning",
+      items: sortByUrgency(
+        openProjects.filter((project) =>
+          projectMatchesWorkState(project, "waitingOnBroker"),
+        ),
+      ),
+    },
+  ];
+  return (
+    <section className="panel todays-work">
+      <div className="section-title">
+        <div>
+          <p className="eyebrow dark">Today</p>
+          <h2>Today's work</h2>
+          <span>Priority queues from your visible projects</span>
+        </div>
+      </div>
+      <div className="todays-work-grid">
+        {queues.map((queue) => (
+          <article className={`todays-work-queue ${queue.tone}`} key={queue.label}>
+            <div className="queue-heading">
+              <strong>{queue.label}</strong>
+              <span>{queue.items.length}</span>
+            </div>
+            {queue.items.length === 0 ? (
+              <p>No items</p>
+            ) : (
+              <div className="queue-list">
+                {queue.items.slice(0, 4).map((project) => {
+                  const due = dueLabel(project);
+                  return (
+                    <button
+                      type="button"
+                      className="queue-item"
+                      key={project.id}
+                      onClick={() => onSelect(project.id)}
+                    >
+                      <strong>{project.assignmentNumber}</strong>
+                      <span>{project.auditEntity || project.clientCoverholderCode}</span>
+                      <small className={`pill ${due.className}`}>{due.text}</small>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </article>
+        ))}
+      </div>
     </section>
   );
 }
@@ -1795,10 +2978,6 @@ function WorkloadCounts({
           </button>
         </div>
       )}
-      <p className="workload-meter-note">
-        Auditors with no open assignments are minimized by default. Active rows
-        show open audits, lead/support roles, blockers, and due-soon items.
-      </p>
       <div className="workload-list">
         {workloadRows.map((row) => (
           <article className={`workload-row ${row.tone}`} key={row.auditor}>
@@ -1920,31 +3099,41 @@ function ProjectTable({
 function FiltersPanel({
   filters,
   setFilters,
+  presets,
   auditors,
 }: {
   filters: Filters;
   setFilters: (filters: Filters) => void;
+  presets: FilterPreset[];
   auditors: string[];
 }) {
+  const activeFilterCount = Object.values(filters).filter(Boolean).length;
   return (
     <section className="panel">
       <div className="section-title">
-        <h2>Filters</h2>
+        <div>
+          <h2>Filters</h2>
+          <span>{activeFilterCount} active filter{activeFilterCount === 1 ? "" : "s"}</span>
+        </div>
         <button
           className="link"
-          onClick={() =>
-            setFilters({
-              auditor: "",
-              stage: "",
-              source: "",
-              quoteStatus: "",
-              dueDate: "",
-              missingDocuments: false,
-            })
-          }
+          onClick={() => setFilters(buildFilters())}
         >
-          Clear
+          Clear filters
         </button>
+      </div>
+      <div className="saved-views" aria-label="Saved filter views">
+        <span>Saved views</span>
+        {presets.map((preset) => (
+          <button
+            type="button"
+            className="secondary"
+            key={preset.id}
+            onClick={() => setFilters(buildFilters(preset.filters))}
+          >
+            {preset.label}
+          </button>
+        ))}
       </div>
       <div className="filters">
         <Select
@@ -1979,6 +3168,16 @@ function FiltersPanel({
             ["dueSoon", "Due in 3 days"],
           ]}
           onChange={(value) => setFilters({ ...filters, dueDate: value })}
+        />
+        <Select
+          label="Work state"
+          value={filters.workState}
+          options={[
+            ["blocked", "Blocked"],
+            ["waitingOnBroker", "Waiting on broker"],
+            ["pendingPayment", "Pending payment"],
+          ]}
+          onChange={(value) => setFilters({ ...filters, workState: value })}
         />
         <label className="checkbox">
           <input
@@ -2033,12 +3232,14 @@ function Kanban({
   onSelect,
   onMove,
   onRemoveLabel,
+  currentUser,
 }: {
   projects: AuditProject[];
   selectedId?: string;
   onSelect: (id: string) => void;
   onMove: (project: AuditProject, stage: Stage) => void;
   onRemoveLabel: (project: AuditProject, label: ProjectLabel) => void;
+  currentUser: PrototypeUser;
 }) {
   const handleDrop = (projectId: string, targetStage: Stage) => {
     const project = projects.find((item) => item.id === projectId);
@@ -2052,24 +3253,30 @@ function Kanban({
         <span>{projects.length} visible · drag cards between stages</span>
       </div>
       <div className="kanban">
-        {stages.map((stage) => (
-          <div
-            className="column"
-            key={stage}
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={(event) => {
-              event.preventDefault();
-              handleDrop(event.dataTransfer.getData("text/plain"), stage);
-            }}
-          >
-            <h3>{stage}</h3>
-            {projects
-              .filter((project) => project.currentStage === stage)
-              .map((project) => {
+        {stages.map((stage) => {
+          const stageProjects = projects.filter(
+            (project) => project.currentStage === stage,
+          );
+          return (
+            <div
+              className="column"
+              key={stage}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault();
+                handleDrop(event.dataTransfer.getData("text/plain"), stage);
+              }}
+            >
+              <div className="column-heading">
+                <h3>{stage}</h3>
+                <span>{stageProjects.length}</span>
+              </div>
+              {stageProjects.map((project) => {
                 const due = dueLabel(project);
+                const editable = canEditProject(currentUser, project);
                 return (
                   <article
-                    draggable
+                    draggable={editable}
                     className={`card ${selectedId === project.id ? "selected" : ""}`}
                     key={project.id}
                     onClick={() => onSelect(project.id)}
@@ -2089,10 +3296,14 @@ function Kanban({
                         label={label}
                         key={label}
                         compact
-                        onRemove={(event) => {
-                          event.stopPropagation();
-                          onRemoveLabel(project, label);
-                        }}
+                        onRemove={
+                          editable
+                            ? (event) => {
+                                event.stopPropagation();
+                                onRemoveLabel(project, label);
+                              }
+                            : undefined
+                        }
                       />
                     ))}
                     {project.comments.length > 0 && (
@@ -2107,6 +3318,7 @@ function Kanban({
                     )}
                     <select
                       value={project.currentStage}
+                      disabled={!editable}
                       onClick={(event) => event.stopPropagation()}
                       onChange={(event) =>
                         onMove(project, event.target.value as Stage)
@@ -2121,8 +3333,9 @@ function Kanban({
                   </article>
                 );
               })}
-          </div>
-        ))}
+            </div>
+          );
+        })}
       </div>
     </section>
   );
@@ -2172,6 +3385,8 @@ function ProjectDetail({
   onDocumentWorkflowAction,
   auditors,
   onAddSupportingAuditor,
+  currentUser,
+  onUpdateFinance,
 }: {
   project: AuditProject;
   onEdit: () => void;
@@ -2185,15 +3400,24 @@ function ProjectDetail({
   ) => void;
   auditors: string[];
   onAddSupportingAuditor: (project: AuditProject, auditor: string) => void;
+  currentUser: PrototypeUser;
+  onUpdateFinance: (
+    project: AuditProject,
+    invoiceStatus: InvoiceStatus,
+    paymentReceived: boolean,
+  ) => void;
 }) {
   const blockers = computedBlockers(project);
   const nextSteps = recommendedNextSteps(project);
+  const canEdit = canEditProject(currentUser, project);
+  const canManageFinance =
+    canUpdateFinance(currentUser, project) || hasFullProjectAccess(currentUser);
   return (
     <section className="detail-grid">
       <article className="panel detail">
         <div className="section-title">
           <h2>{project.assignmentNumber}</h2>
-          <button onClick={onEdit}>Edit project</button>
+          <button disabled={!canEdit} onClick={onEdit}>Edit project</button>
         </div>
         {project.labels.length > 0 && (
           <div className="label-strip">
@@ -2201,7 +3425,7 @@ function ProjectDetail({
               <LabelChip
                 label={label}
                 key={label}
-                onRemove={() => onRemoveLabel(project, label)}
+                onRemove={canEdit ? () => onRemoveLabel(project, label) : undefined}
               />
             ))}
           </div>
@@ -2264,6 +3488,7 @@ function ProjectDetail({
             Move stage
             <select
               value={project.currentStage}
+              disabled={!canEdit}
               onChange={(event) => onMove(project, event.target.value as Stage)}
             >
               {stages.map((stage) => (
@@ -2277,13 +3502,31 @@ function ProjectDetail({
         project={project}
         auditors={auditors}
         onAddSupportingAuditor={onAddSupportingAuditor}
+        canManageTeam={hasFullProjectAccess(currentUser)}
       />
       <DocumentReadiness
         project={project}
         onDocumentWorkflowAction={onDocumentWorkflowAction}
+        canUpdateDocuments={canEdit}
       />
-      <Checklist project={project} onToggleChecklist={onToggleChecklist} />
-      <Comments project={project} onAddComment={onAddComment} />
+      <FinancePanel
+        key={project.id}
+        project={project}
+        canUpdateFinance={canManageFinance}
+        onUpdateFinance={onUpdateFinance}
+      />
+      <Checklist
+        project={project}
+        onToggleChecklist={onToggleChecklist}
+        canUpdateChecklist={canEdit}
+      />
+      <Comments
+        project={project}
+        currentUser={currentUser}
+        canAddComment={canComment(currentUser, project)}
+        onAddComment={onAddComment}
+      />
+      <TemplateLibrary project={project} />
       <ActivityTimeline project={project} />
     </section>
   );
@@ -2302,10 +3545,12 @@ function AuditTeamPanel({
   project,
   auditors,
   onAddSupportingAuditor,
+  canManageTeam,
 }: {
   project: AuditProject;
   auditors: string[];
   onAddSupportingAuditor: (project: AuditProject, auditor: string) => void;
+  canManageTeam: boolean;
 }) {
   const [selectedAuditor, setSelectedAuditor] = useState(
     auditors.find((auditor) => !projectHasAuditor(project, auditor)) ?? "",
@@ -2332,10 +3577,10 @@ function AuditTeamPanel({
       </div>
       <div className="add-support-row">
         <label>
-          Add supporting auditor
+        Add supporting auditor
           <select
             value={selected}
-            disabled={availableAuditors.length === 0}
+            disabled={!canManageTeam || availableAuditors.length === 0}
             onChange={(event) => setSelectedAuditor(event.target.value)}
           >
             {availableAuditors.length === 0 ? (
@@ -2351,7 +3596,7 @@ function AuditTeamPanel({
         </label>
         <button
           type="button"
-          disabled={!selected}
+          disabled={!canManageTeam || !selected}
           onClick={() => {
             onAddSupportingAuditor(project, selected);
             setSelectedAuditor(
@@ -2369,12 +3614,14 @@ function AuditTeamPanel({
 function DocumentReadiness({
   project,
   onDocumentWorkflowAction,
+  canUpdateDocuments,
 }: {
   project: AuditProject;
   onDocumentWorkflowAction: (
     project: AuditProject,
     action: DocumentWorkflowAction,
   ) => void;
+  canUpdateDocuments: boolean;
 }) {
   const readiness = documentReadiness(project);
   const documentsComplete = readiness.percent === 100;
@@ -2442,7 +3689,7 @@ function DocumentReadiness({
         <button
           type="button"
           className="secondary"
-          disabled={waitingOnBroker}
+          disabled={!canUpdateDocuments || waitingOnBroker}
           onClick={() =>
             onDocumentWorkflowAction(project, "markWaitingOnBroker")
           }
@@ -2452,7 +3699,7 @@ function DocumentReadiness({
         <button
           type="button"
           className="secondary"
-          disabled={project.brokerLastChasedDate === todayIso()}
+          disabled={!canUpdateDocuments || project.brokerLastChasedDate === todayIso()}
           onClick={() => onDocumentWorkflowAction(project, "recordBrokerChase")}
         >
           {project.brokerLastChasedDate === todayIso()
@@ -2462,14 +3709,14 @@ function DocumentReadiness({
         <button
           type="button"
           className="secondary"
-          disabled={!waitingOnBroker}
+          disabled={!canUpdateDocuments || !waitingOnBroker}
           onClick={() => onDocumentWorkflowAction(project, "clearWaitingOnBroker")}
         >
           {waitingOnBroker ? "Clear waiting label" : "Waiting label cleared"}
         </button>
         <button
           type="button"
-          disabled={documentsComplete}
+          disabled={!canUpdateDocuments || documentsComplete}
           onClick={() =>
             onDocumentWorkflowAction(project, "markDocumentsComplete")
           }
@@ -2481,8 +3728,144 @@ function DocumentReadiness({
   );
 }
 
+function FinancePanel({
+  project,
+  canUpdateFinance,
+  onUpdateFinance,
+}: {
+  project: AuditProject;
+  canUpdateFinance: boolean;
+  onUpdateFinance: (
+    project: AuditProject,
+    invoiceStatus: InvoiceStatus,
+    paymentReceived: boolean,
+  ) => void;
+}) {
+  const [invoiceStatus, setInvoiceStatus] = useState(project.invoiceStatus);
+  const [paymentReceived, setPaymentReceived] = useState(project.paymentReceived);
+
+  return (
+    <article className="panel finance-panel">
+      <div className="section-title">
+        <div>
+          <h2>Finance</h2>
+          <span>Invoice and payment status</span>
+        </div>
+      </div>
+      <div className="finance-grid">
+        <Select
+          label="Invoice status"
+          value={invoiceStatus}
+          options={["Not Started", "Prepared", "Sent", "Paid"]}
+          placeholder="Select invoice status"
+          onChange={(value) => {
+            const nextStatus = value as InvoiceStatus;
+            setInvoiceStatus(nextStatus);
+            if (nextStatus === "Paid") setPaymentReceived(true);
+          }}
+        />
+        <Check
+          label="Payment received"
+          checked={paymentReceived}
+          onChange={setPaymentReceived}
+        />
+      </div>
+      <button
+        type="button"
+        disabled={!canUpdateFinance}
+        onClick={() =>
+          onUpdateFinance(project, invoiceStatus, paymentReceived)
+        }
+      >
+        Save finance
+      </button>
+    </article>
+  );
+}
+
+function TemplateLibrary({ project }: { project: AuditProject }) {
+  const [selectedTemplateId, setSelectedTemplateId] = useState(
+    communicationTemplates[0].id,
+  );
+  const [copyMessage, setCopyMessage] = useState("");
+  const template =
+    communicationTemplates.find((item) => item.id === selectedTemplateId) ??
+    communicationTemplates[0];
+  const subject = template.subject(project);
+  const body = template.body(project);
+
+  const copyText = async (label: string, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopyMessage(`${label} copied.`);
+    } catch {
+      setCopyMessage("Copy failed. Select the preview text manually.");
+    }
+  };
+
+  return (
+    <article className="panel template-panel">
+      <div className="section-title">
+        <div>
+          <p className="eyebrow dark">Templates</p>
+          <h2>Email and document templates</h2>
+          <span>{template.purpose}</span>
+        </div>
+      </div>
+      <div className="template-controls">
+        <Select
+          label="Template"
+          value={selectedTemplateId}
+          options={communicationTemplates.map((item) => [
+            item.id,
+            `${item.label} (${item.kind})`,
+          ])}
+          placeholder="Select template"
+          onChange={(value) =>
+            setSelectedTemplateId(value || communicationTemplates[0].id)
+          }
+        />
+      </div>
+      <div className="template-preview">
+        <label>
+          Subject
+          <input readOnly value={subject} />
+        </label>
+        <label>
+          Body
+          <textarea readOnly rows={10} value={body} />
+        </label>
+      </div>
+      <div className="template-actions">
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => void copyText("Subject", subject)}
+        >
+          Copy subject
+        </button>
+        <button type="button" onClick={() => void copyText("Body", body)}>
+          Copy body
+        </button>
+        {copyMessage && <span>{copyMessage}</span>}
+      </div>
+    </article>
+  );
+}
+
 function ActivityTimeline({ project }: { project: AuditProject }) {
   const items = activityTimeline(project);
+  const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredItems = items.filter((item) => {
+    if (typeFilter && item.type !== typeFilter) return false;
+    if (!normalizedQuery) return true;
+    return [item.type, item.title, item.detail, item.timestamp]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedQuery);
+  });
   return (
     <article className="panel activity-panel">
       <div className="section-title">
@@ -2498,29 +3881,49 @@ function ActivityTimeline({ project }: { project: AuditProject }) {
         <p>No activity yet.</p>
       ) : (
         <>
+          <div className="activity-filters">
+            <Input
+              label="Search audit trail"
+              value={query}
+              onChange={setQuery}
+              placeholder="Search dates, users, actions, or notes"
+            />
+            <Select
+              label="Event type"
+              value={typeFilter}
+              options={activityTypeOptions}
+              placeholder="All event types"
+              onChange={setTypeFilter}
+            />
+          </div>
           <div className="activity-summary">
-            <span>{items.length} events</span>
+            <span>{filteredItems.length} shown</span>
+            <span>{items.length} total</span>
             <span>{items.filter((item) => item.type === "document").length} document</span>
             <span>{items.filter((item) => item.type === "team").length} team</span>
             <span>{items.filter((item) => item.type === "stage").length} stage</span>
           </div>
-          <div className="activity-list">
-            {items.map((item) => (
-              <div className={`activity-item ${item.type}`} key={item.id}>
-                <div className="activity-marker" aria-hidden="true" />
-                <div>
-                  <div className="activity-heading">
-                    <span className={`activity-type ${item.tone || "muted"}`}>
-                      {item.type}
-                    </span>
-                    <small>{item.timestamp}</small>
+          {filteredItems.length === 0 ? (
+            <p>No activity matches the current search.</p>
+          ) : (
+            <div className="activity-list">
+              {filteredItems.map((item) => (
+                <div className={`activity-item ${item.type}`} key={item.id}>
+                  <div className="activity-marker" aria-hidden="true" />
+                  <div>
+                    <div className="activity-heading">
+                      <span className={`activity-type ${item.tone || "muted"}`}>
+                        {item.type}
+                      </span>
+                      <small>{item.timestamp}</small>
+                    </div>
+                    <strong>{item.title}</strong>
+                    <p>{item.detail}</p>
                   </div>
-                  <strong>{item.title}</strong>
-                  <p>{item.detail}</p>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </>
       )}
     </article>
@@ -2530,9 +3933,11 @@ function ActivityTimeline({ project }: { project: AuditProject }) {
 function Checklist({
   project,
   onToggleChecklist,
+  canUpdateChecklist,
 }: {
   project: AuditProject;
   onToggleChecklist: (project: AuditProject, key: string) => void;
+  canUpdateChecklist: boolean;
 }) {
   const sourceSpecific = sourceTasks(project);
   const checklistItems = [
@@ -2565,6 +3970,7 @@ function Checklist({
               <label className="checklist-toggle">
                 <input
                   type="checkbox"
+                  disabled={!canUpdateChecklist}
                   checked={Boolean(project.checklistCompletions[key])}
                   onChange={() => onToggleChecklist(project, key)}
                 />
@@ -2613,21 +4019,24 @@ function Checklist({
 
 function Comments({
   project,
+  currentUser,
+  canAddComment,
   onAddComment,
 }: {
   project: AuditProject;
+  currentUser: PrototypeUser;
+  canAddComment: boolean;
   onAddComment: (project: AuditProject, comment: ProjectComment) => void;
 }) {
   const [commentBody, setCommentBody] = useState("");
-  const [commentAuthor, setCommentAuthor] = useState("Prototype user");
   const addComment = (event: FormEvent) => {
     event.preventDefault();
     const body = commentBody.trim();
-    if (!body) return;
+    if (!body || !canAddComment) return;
     onAddComment(project, {
       id: `comment-${Date.now()}`,
       createdAt: timestampNow(),
-      author: commentAuthor.trim() || "Prototype user",
+      author: currentUser.fullName,
       body,
     });
     setCommentBody("");
@@ -2636,22 +4045,17 @@ function Comments({
     <article className="panel comments-panel">
       <h2>Card comments</h2>
       <form className="comment-form" onSubmit={addComment}>
-        <label>
-          Name
-          <input
-            value={commentAuthor}
-            onChange={(event) => setCommentAuthor(event.target.value)}
-          />
-        </label>
+        <span className="comment-author">Commenting as {currentUser.fullName}</span>
         <label>
           Comment
           <textarea
             value={commentBody}
+            disabled={!canAddComment}
             placeholder="Add an update, question, or note for this audit card"
             onChange={(event) => setCommentBody(event.target.value)}
           />
         </label>
-        <button type="submit">Add comment</button>
+        <button type="submit" disabled={!canAddComment}>Add comment</button>
       </form>
       <div className="comment-list">
         {project.comments.length === 0 ? (

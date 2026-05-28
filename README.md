@@ -67,6 +67,11 @@ A future SharePoint implementation should use an **Audit Assignments** list for 
 
 | Update size | Version | What changed                                                                                                                                            |
 | ----------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Medium      | UX-16   | Add Today's Work priority queues, role-based saved filter views, a clearer Clear filters action, Kanban stage counts, and due-today card badges.        |
+| Medium      | UX-15   | Add reusable email/document template previews and searchable project audit trails.                                                                       |
+| Minor       | UX-14   | Add confirmation prompts for reset/import actions, clearer role-based empty states, user status badges, and a last-export timestamp.                    |
+| Medium      | UX-13   | Add an Admin user management panel for prototype users, roles, active status, and default project visibility.                                           |
+| Major       | UX-12   | Add prototype login, role-scoped dashboards, user-aware audit activity, finance-only invoice updates, and JSON backup import/export.                    |
 | Minor       | UX-11   | Add removable label chips so labels can be cleared directly from lifecycle cards and detail headers.                                                    |
 | Minor       | UX-10   | Make waiting-on-broker and broker-chase workflow events idempotent and collapse legacy same-day duplicates in the audit trail.                         |
 | Minor       | UX-9    | Add a clear waiting-on-broker workflow action for broker-completed follow-up that removes the label without forcing documents complete.                 |
@@ -95,7 +100,7 @@ This split keeps the main assignment row Power BI friendly while letting Power A
 
 ### Significant next upgrades
 
-1. **Replace prototype state with SharePoint/Microsoft Lists** so assignment records, audit teams, comments, status history, and document requests persist centrally instead of in browser local storage.
+1. **Replace prototype login and local state with Microsoft 365 identity plus SharePoint/Microsoft Lists** so users, assignment records, audit teams, comments, status history, and document requests persist centrally instead of in browser local storage.
 2. **Build a Power Apps front end** for intake, stage movement, document readiness, comments, and reviewer sign-off once the SharePoint list schema is stable.
 3. **Automate the repeatable follow-up work** with Power Automate flows for new intake alerts, quote approval reminders, broker chase reminders, reviewer approvals, stage-history creation, and invoice/payment notifications.
 4. **Add document library integration** so BAA, endorsements, Premium BDX, testing sheets, reports, and invoice artifacts are stored against the assignment record instead of only represented as checkboxes.
