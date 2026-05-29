@@ -1,0 +1,350 @@
++  exportedBy: string;
++  storageTarget: "Microsoft Lists / SharePoint";
++  schemas: MicrosoftListSchema[];
++  graphListCreateRequests: Record<string, unknown>[];
++  rows: {
++    auditAssignments: MicrosoftListSeedRow[];
++    auditTeamMembers: MicrosoftListSeedRow[];
++    auditComments: MicrosoftListSeedRow[];
++    auditChecklistItems: MicrosoftListSeedRow[];
++    auditStatusHistory: MicrosoftListSeedRow[];
++    auditActivityLog: MicrosoftListSeedRow[];
++    trackerUsers: MicrosoftListSeedRow[];
++  };
++  totals: {
++    lists: number;
++    rows: number;
++    assignments: number;
++    activityLogEvents: number;
++  };
++};
++
++const stageChoices = [
++  "Intake",
++  "Registration",
++  "Quote",
++  "Scheduling",
++  "Pre-Audit",
++  "File Selection",
++  "Audit Fieldwork",
++  "Findings",
++  "Report Drafting",
++  "Final Submission",
++  "Invoice",
++  "Closed",
++];
++
++const assignmentStatusChoices = ["New", "In Progress", "Blocked", "On Hold", "Completed"];
++const quoteStatusChoices = ["Not Started", "Drafting", "Sent", "Accepted", "Rejected"];
++const progressChoices = ["Not Started", "In Progress", "Complete", "Not Required"];
++const reportStatusChoices = ["Not Started", "Drafting", "Review", "Issued"];
++const invoiceStatusChoices = ["Not Started", "Prepared", "Sent", "Paid"];
++const yesNoChoices = ["true", "false"];
++
++export const microsoftListSchemas: MicrosoftListSchema[] = [
++  {
++    key: "auditAssignments",
++    displayName: "Audit Assignments",
++    purpose: "One row per audit assignment; this is the main tracker record.",
++    columns: [
++      text("TrackerAssignmentId", "Tracker assignment ID", true, true),
++      text("AssignmentNumber", "Assignment number", true, true),
++      choice("AssignmentSource", "Assignment source", ["Email", "DAM"], true),
++      choice("AssignmentType", "Assignment type", ["DCA", "CH", "MGA", "Company Contract"], true),
++      text("AuditEntity", "Audit entity", true, true),
++      text("ClientCoverholderCode", "Client / coverholder code", false, true),
++      text("Broker", "Broker"),
++      text("LeadAuditor", "Lead auditor"),
++      text("Reviewer", "Reviewer"),
++      choice("CurrentStage", "Current stage", stageChoices, true),
++      choice("AssignmentStatus", "Assignment status", assignmentStatusChoices, true),
++      choice("QuoteStatus", "Quote status", quoteStatusChoices),
++      currency("QuoteAmount", "Quote amount"),
++      text("TentativeAuditWeek", "Tentative audit week"),
++      dateColumn("ConfirmedAuditDate", "Confirmed audit date"),
++      choice("AuditType", "Audit type", ["Remote", "Onsite"]),
++      booleanColumn("BaaReceived", "BAA received"),
++      booleanColumn("EndorsementsReceived", "Endorsements received"),
++      booleanColumn("PremiumBdxReceived", "Premium BDX received"),
++      choice("PreAuditQuestionnaireStatus", "Pre-audit questionnaire status", progressChoices),
++      choice("DocumentRequestStatus", "Document request status", progressChoices),
++      dateColumn("DocumentRequestDate", "Document request date"),
++      dateColumn("BrokerLastChasedDate", "Broker last chased date"),
++      dateColumn("BrokerExpectedResponseDate", "Broker expected response date"),
++      booleanColumn("FileSelectionCompleted", "File selection completed"),
++      booleanColumn("TestingSheetCompleted", "Testing sheet completed"),
++      dateColumn("FindingsSentDate", "Findings sent date"),
++      dateColumn("CoverholderResponseReceivedDate", "Coverholder response received date"),
++      choice("ReportStatus", "Report status", reportStatusChoices),
++      choice("InvoiceStatus", "Invoice status", invoiceStatusChoices),
++      booleanColumn("PaymentReceived", "Payment received"),
++      choice("DamSubmissionStatus", "DAM submission status", ["Not Required", "Not Started", "Submitted", "Accepted"]),
++      dateColumn("DueDate", "Due date"),
++      dateColumn("LastUpdatedDate", "Last updated date"),
++      note("Labels", "Labels"),
++      note("NextAction", "Next action"),
++      note("Blockers", "Blockers"),
++    ],
++  },
++  {
++    key: "auditTeamMembers",
++    displayName: "Audit Team Members",
++    purpose: "One row per assignment team member for lead/support workload reporting.",
++    columns: [
++      text("TrackerAssignmentId", "Tracker assignment ID", true, true),
++      text("AssignmentNumber", "Assignment number", true, true),
++      text("PersonName", "Person name", true, true),
++      choice("TeamRole", "Team role", ["Lead Auditor", "Supporting Auditor"], true),
++      booleanColumn("ActiveOnAssignment", "Active on assignment"),
++    ],
++  },
++  {
++    key: "auditComments",
++    displayName: "Audit Comments",
++    purpose: "One row per card comment, linked back to the assignment.",
++    columns: [
++      text("TrackerCommentId", "Tracker comment ID", true, true),
++      text("TrackerAssignmentId", "Tracker assignment ID", true, true),
++      text("AssignmentNumber", "Assignment number", true, true),
++      dateColumn("CommentCreatedAt", "Comment created at"),
++      text("CommentAuthor", "Comment author"),
++      note("CommentBody", "Comment body"),
++    ],
++  },
++  {
++    key: "auditChecklistItems",
++    displayName: "Audit Checklist Items",
++    purpose: "One row per completed or reopened checklist item.",
++    columns: [
++      text("TrackerAssignmentId", "Tracker assignment ID", true, true),
++      text("AssignmentNumber", "Assignment number", true, true),
++      text("ChecklistKey", "Checklist key", true, true),
++      text("ChecklistStage", "Checklist stage", false, true),
++      text("ChecklistItem", "Checklist item", true),
++      booleanColumn("Completed", "Completed"),
++    ],
++  },
++  {
++    key: "auditStatusHistory",
++    displayName: "Audit Status History",
++    purpose: "One row per stage movement for cycle-time and stage history reporting.",
++    columns: [
++      text("TrackerHistoryId", "Tracker history ID", true, true),
++      text("TrackerAssignmentId", "Tracker assignment ID", true, true),
++      text("AssignmentNumber", "Assignment number", true, true),
++      dateColumn("ChangedAt", "Changed at"),
++      text("ChangedBy", "Changed by"),
++      choice("FromStage", "From stage", stageChoices),
++      choice("ToStage", "To stage", stageChoices),
++      note("StageNote", "Stage note"),
++    ],
++  },
++  {
++    key: "auditActivityLog",
++    displayName: "Audit Activity Log",
++    purpose: "Append-only accountability log across edits, stages, comments, documents, checklist, team, and finance.",
++    columns: [
++      text("TrackerEventId", "Tracker event ID", true, true),
++      text("TrackerAssignmentId", "Tracker assignment ID", true, true),
++      text("AssignmentNumber", "Assignment number", true, true),
++      dateColumn("OccurredAt", "Occurred at"),
++      choice("EventType", "Event type", ["field", "stage", "comment", "document", "checklist", "team", "finance", "system"], true),
++      text("ActorName", "Actor name", false, true),
++      text("ActorUsername", "Actor username"),
++      text("Summary", "Summary", true),
++      note("Detail", "Detail"),
++      text("FieldName", "Field name"),
++      note("PreviousValue", "Previous value"),
++      note("NewValue", "New value"),
++      text("SourceList", "Source list"),
++      text("SourceRecordId", "Source record ID"),
++    ],
++  },
++  {
++    key: "trackerUsers",
++    displayName: "Tracker Users",
++    purpose: "Prototype role map to replace with Microsoft 365 identity groups later.",
++    columns: [
++      text("TrackerUsername", "Tracker username", true, true),
++      text("FullName", "Full name", true, true),
++      text("Email", "Email", false, true),
++      choice("Role", "Role", ["Admin", "Audit Manager", "Auditor", "Finance", "Read Only"], true),
++      choice("PermissionGroup", "Permission group", ["Admin", "Audit Manager", "Auditor", "Finance", "Read Only"], true),
++      booleanColumn("Active", "Active"),
++      choice("DefaultVisibility", "Default visibility", ["Role Default", "All Projects", "Assigned Projects", "Finance Records"]),
++    ],
++  },
++];
++
++export function buildMicrosoftListsMigrationPackage(
++  projects: CentralAuditProject[],
++  users: CentralPrototypeUser[],
++  options: { exportedBy: string; exportedAt?: string },
++): MicrosoftListsMigrationPackage {
++  const rows = {
++    auditAssignments: projects.map(projectToAssignmentRow),
++    auditTeamMembers: projects.flatMap(projectToTeamRows),
++    auditComments: projects.flatMap(projectToCommentRows),
++    auditChecklistItems: projects.flatMap(projectToChecklistRows),
++    auditStatusHistory: projects.flatMap(projectToStatusHistoryRows),
++    auditActivityLog: projects.flatMap(projectToActivityLogRows),
++    trackerUsers: users.map(userToRow),
++  };
++  const rowCount = Object.values(rows).reduce((sum, listRows) => sum + listRows.length, 0);
++  return {
++    app: "audit-assignment-tracker",
++    schemaVersion: 2,
++    exportedAt: options.exportedAt ?? new Date().toISOString(),
++    exportedBy: options.exportedBy,
++    storageTarget: "Microsoft Lists / SharePoint",
++    schemas: microsoftListSchemas,
++    graphListCreateRequests: microsoftListSchemas.map(toGraphListCreateRequest),
++    rows,
++    totals: {
++      lists: microsoftListSchemas.length,
++      rows: rowCount,
++      assignments: projects.length,
++      activityLogEvents: rows.auditActivityLog.length,
++    },
++  };
++}
++
++export function toGraphListCreateRequest(schema: MicrosoftListSchema) {
++  return {
++    displayName: schema.displayName,
++    columns: schema.columns.map(toGraphColumnDefinition),
++    list: {
++      template: "genericList",
++    },
++  };
++}
++
++function text(
++  name: string,
++  displayName: string,
++  required = false,
++  indexed = false,
++): MicrosoftListColumn {
++  return { name, displayName, type: "text", required, indexed };
++}
++
++function note(name: string, displayName: string): MicrosoftListColumn {
++  return { name, displayName, type: "note" };
++}
++
++function choice(
++  name: string,
++  displayName: string,
++  choices: string[],
++  required = false,
++): MicrosoftListColumn {
++  return { name, displayName, type: "choice", choices, required };
++}
++
++function currency(name: string, displayName: string): MicrosoftListColumn {
++  return { name, displayName, type: "currency" };
++}
++
++function dateColumn(name: string, displayName: string): MicrosoftListColumn {
++  return { name, displayName, type: "dateTime" };
++}
++
++function booleanColumn(name: string, displayName: string): MicrosoftListColumn {
++  return { name, displayName, type: "boolean" };
++}
++
++function toGraphColumnDefinition(column: MicrosoftListColumn) {
++  const base = {
++    name: column.name,
++    displayName: column.displayName,
++    required: Boolean(column.required),
++    indexed: Boolean(column.indexed),
++  };
++  if (column.type === "note") {
++    return {
++      ...base,
++      text: {
++        allowMultipleLines: true,
++        appendChangesToExistingText: false,
++        linesForEditing: 6,
++      },
++    };
++  }
++  if (column.type === "choice") {
++    return {
++      ...base,
++      choice: {
++        allowTextEntry: false,
++        choices: column.choices ?? [],
++        displayAs: "dropDownMenu",
++      },
++    };
++  }
++  if (column.type === "number") return { ...base, number: {} };
++  if (column.type === "currency") return { ...base, currency: {} };
++  if (column.type === "dateTime") return { ...base, dateTime: {} };
++  if (column.type === "boolean") return { ...base, boolean: {} };
++  return {
++    ...base,
++    text: {
++      allowMultipleLines: false,
++      appendChangesToExistingText: false,
++      linesForEditing: 0,
++      maxLength: 255,
++    },
++  };
++}
++
++function projectToAssignmentRow(project: CentralAuditProject): MicrosoftListSeedRow {
++  return row("auditAssignments", {
++    Title: project.assignmentNumber,
++    TrackerAssignmentId: project.id,
++    AssignmentNumber: project.assignmentNumber,
++    AssignmentSource: project.assignmentSource,
++    AssignmentType: project.assignmentType,
++    AuditEntity: project.auditEntity,
++    ClientCoverholderCode: project.clientCoverholderCode,
++    Broker: project.broker,
++    LeadAuditor: project.assignedAuditor,
++    Reviewer: project.reviewer,
++    CurrentStage: project.currentStage,
++    AssignmentStatus: project.assignmentStatus,
++    QuoteStatus: project.quoteStatus,
++    QuoteAmount: project.quoteAmount,
++    TentativeAuditWeek: project.tentativeAuditWeek,
++    ConfirmedAuditDate: dateOnly(project.confirmedAuditDate),
++    AuditType: project.auditType,
++    BaaReceived: project.baaReceived,
++    EndorsementsReceived: project.endorsementsReceived,
++    PremiumBdxReceived: project.premiumBdxReceived,
++    PreAuditQuestionnaireStatus: project.preAuditQuestionnaireStatus,
++    DocumentRequestStatus: project.documentRequestStatus,
++    DocumentRequestDate: dateOnly(project.documentRequestDate),
++    BrokerLastChasedDate: dateOnly(project.brokerLastChasedDate),
++    BrokerExpectedResponseDate: dateOnly(project.brokerExpectedResponseDate),
++    FileSelectionCompleted: project.fileSelectionCompleted,
++    TestingSheetCompleted: project.testingSheetCompleted,
++    FindingsSentDate: dateOnly(project.findingsSentDate),
++    CoverholderResponseReceivedDate: dateOnly(project.coverholderResponseReceivedDate),
++    ReportStatus: project.reportStatus,
++    InvoiceStatus: project.invoiceStatus,
++    PaymentReceived: project.paymentReceived,
++    DamSubmissionStatus: project.damSubmissionStatus,
++    DueDate: dateOnly(project.dueDate),
++    LastUpdatedDate: dateOnly(project.lastUpdatedDate),
++    Labels: project.labels.join("; "),
++    NextAction: project.nextAction,
++    Blockers: project.blockers,
++  });
++}
++
++function projectToTeamRows(project: CentralAuditProject) {
++  return project.auditTeam.map((member) =>
++    row("auditTeamMembers", {
++      Title: `${project.assignmentNumber} - ${member.person}`,
++      TrackerAssignmentId: project.id,
++      AssignmentNumber: project.assignmentNumber,
++      PersonName: member.person,
++      TeamRole: member.role,
++      ActiveOnAssignment: true,
++    }),
