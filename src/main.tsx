@@ -1,6 +1,17 @@
 import React, { FormEvent, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
+  hasMicrosoftAuthConfig,
+  microsoftAuthScopeLabel,
+  refreshMicrosoftGraphToken,
+  restoreMicrosoftGraphSession,
+  sanitizeMicrosoftAuthConfig,
+  signInWithMicrosoft,
+  signOutOfMicrosoft,
+  type MicrosoftAuthAccount,
+  type MicrosoftAuthConfig,
+} from "./microsoftAuth";
+import {
   buildSyncPackage,
   hasFullMicrosoftListsConfig,
   hasMinimumMicrosoftListsConfig,
@@ -218,6 +229,8 @@ const usersStorageKey = "audit-assignment-tracker-users-v1";
 const lastExportStorageKey = "audit-assignment-tracker-last-export-v1";
 const microsoftListsConfigStorageKey =
   "audit-assignment-tracker-microsoft-lists-config-v1";
+const microsoftAuthConfigStorageKey =
+  "audit-assignment-tracker-microsoft-auth-config-v1";
 const storageModeStorageKey = "audit-assignment-tracker-storage-mode-v1";
 
 const defaultFilters: Filters = {
@@ -1167,6 +1180,27 @@ function saveMicrosoftListsConfig(config: MicrosoftListsConnectionConfig) {
   );
 }
 
+function emptyMicrosoftAuthConfig(): MicrosoftAuthConfig {
+  return { clientId: "", tenantId: "" };
+}
+
+function loadMicrosoftAuthConfig(): MicrosoftAuthConfig {
+  const raw = localStorage.getItem(microsoftAuthConfigStorageKey);
+  if (!raw) return emptyMicrosoftAuthConfig();
+  try {
+    return sanitizeMicrosoftAuthConfig(JSON.parse(raw) as MicrosoftAuthConfig);
+  } catch {
+    return emptyMicrosoftAuthConfig();
+  }
+}
+
+function saveMicrosoftAuthConfig(config: MicrosoftAuthConfig) {
+  localStorage.setItem(
+    microsoftAuthConfigStorageKey,
+    JSON.stringify(sanitizeMicrosoftAuthConfig(config)),
+  );
+}
+
 function microsoftFieldsToProject(
   fields: Record<string, string | number | boolean | null>,
 ): AuditProject {
@@ -1858,7 +1892,14 @@ function App() {
   );
   const [microsoftListsConfig, setMicrosoftListsConfig] =
     useState<MicrosoftListsConnectionConfig>(() => loadMicrosoftListsConfig());
+  const [microsoftAuthConfig, setMicrosoftAuthConfig] =
+    useState<MicrosoftAuthConfig>(() => loadMicrosoftAuthConfig());
+  const [microsoftAccount, setMicrosoftAccount] =
+    useState<MicrosoftAuthAccount | null>(null);
   const [graphAccessToken, setGraphAccessToken] = useState("");
+  const [microsoftAuthStatus, setMicrosoftAuthStatus] = useState(
+    "Add a Microsoft Entra app client ID, then sign in to get a Graph token.",
+  );
   const [storageStatus, setStorageStatus] = useState(
     "Using browser storage until Microsoft Lists is configured.",
   );
@@ -1877,6 +1918,49 @@ function App() {
   const signedInUser =
     users.find((user) => user.active && user.username === currentUsername) ??
     null;
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!hasMicrosoftAuthConfig(microsoftAuthConfig)) {
+      setMicrosoftAccount(null);
+      setGraphAccessToken("");
+      setMicrosoftAuthStatus(
+        "Add a Microsoft Entra app client ID, then sign in to get a Graph token.",
+      );
+      return;
+    }
+    setMicrosoftAuthStatus("Checking saved Microsoft sign-in session...");
+    void restoreMicrosoftGraphSession(microsoftAuthConfig)
+      .then((session) => {
+        if (cancelled) return;
+        if (!session) {
+          setMicrosoftAccount(null);
+          setGraphAccessToken("");
+          setMicrosoftAuthStatus("Microsoft sign-in is configured but not signed in.");
+          return;
+        }
+        setMicrosoftAccount(session.account);
+        setGraphAccessToken(session.accessToken);
+        setMicrosoftAuthStatus(
+          session.accessToken
+            ? `Signed in as ${session.account.username}.`
+            : `Signed in as ${session.account.username}; refresh token before syncing.`,
+        );
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setMicrosoftAccount(null);
+        setGraphAccessToken("");
+        setMicrosoftAuthStatus(
+          error instanceof Error
+            ? error.message
+            : "Could not restore Microsoft sign-in.",
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [microsoftAuthConfig.clientId, microsoftAuthConfig.tenantId]);
   const auditorOptions = users
     .filter((user) => user.active && user.role !== "Finance" && user.role !== "Read Only")
     .map((user) => user.fullName);
@@ -2022,6 +2106,19 @@ function App() {
     setStorageStatus("Microsoft Lists connection settings saved locally.");
   };
 
+  const saveMicrosoftSignInConfig = (config: MicrosoftAuthConfig) => {
+    const cleanConfig = sanitizeMicrosoftAuthConfig(config);
+    setMicrosoftAuthConfig(cleanConfig);
+    saveMicrosoftAuthConfig(cleanConfig);
+    setGraphAccessToken("");
+    setMicrosoftAccount(null);
+    setMicrosoftAuthStatus(
+      hasMicrosoftAuthConfig(cleanConfig)
+        ? "Microsoft sign-in settings saved. Sign in to authorize Graph access."
+        : "Add a Microsoft Entra app client ID, then sign in to get a Graph token.",
+    );
+  };
+
   const switchStorageMode = (mode: StorageMode) => {
     setStorageMode(mode);
     saveStorageMode(mode);
@@ -2032,25 +2129,114 @@ function App() {
     );
   };
 
-  const microsoftListsSession = () => ({
+  const microsoftListsSession = (accessToken = graphAccessToken.trim()) => ({
     ...microsoftListsConfig,
-    accessToken: graphAccessToken.trim(),
+    accessToken,
   });
 
-  const requireGraphSession = () => {
-    if (!graphAccessToken.trim()) {
-      setStorageStatus("Paste a Microsoft Graph access token for this session first.");
-      return null;
-    }
+  const applyMicrosoftGraphSession = (session: {
+    accessToken: string;
+    account: MicrosoftAuthAccount;
+  }) => {
+    setMicrosoftAccount(session.account);
+    setGraphAccessToken(session.accessToken);
+    setMicrosoftAuthStatus(`Signed in as ${session.account.username}.`);
+    return microsoftListsSession(session.accessToken);
+  };
+
+  const requireGraphSession = async () => {
     if (!hasMinimumMicrosoftListsConfig(microsoftListsConfig)) {
       setStorageStatus("Site ID and Audit Assignments list ID are required first.");
       return null;
     }
-    return microsoftListsSession();
+    if (graphAccessToken.trim()) {
+      return microsoftListsSession();
+    }
+    if (!hasMicrosoftAuthConfig(microsoftAuthConfig)) {
+      setStorageStatus("Configure Microsoft sign-in before using Microsoft Lists.");
+      return null;
+    }
+    try {
+      setMicrosoftAuthStatus("Requesting Microsoft Graph access...");
+      return applyMicrosoftGraphSession(
+        await refreshMicrosoftGraphToken(microsoftAuthConfig),
+      );
+    } catch (error) {
+      setMicrosoftAuthStatus(
+        error instanceof Error
+          ? error.message
+          : "Microsoft sign-in failed.",
+      );
+      setStorageStatus("Microsoft Graph access is required before syncing.");
+      return null;
+    }
+  };
+
+  const handleMicrosoftSignIn = async () => {
+    if (!hasMicrosoftAuthConfig(microsoftAuthConfig)) {
+      setMicrosoftAuthStatus("Save a Microsoft Entra app client ID first.");
+      return;
+    }
+    setStorageSyncing(true);
+    try {
+      applyMicrosoftGraphSession(await signInWithMicrosoft(microsoftAuthConfig));
+      setStorageStatus("Microsoft Graph sign-in ready for Lists sync.");
+    } catch (error) {
+      setMicrosoftAuthStatus(
+        error instanceof Error
+          ? error.message
+          : "Microsoft sign-in failed.",
+      );
+    } finally {
+      setStorageSyncing(false);
+    }
+  };
+
+  const handleMicrosoftRefreshToken = async () => {
+    if (!hasMicrosoftAuthConfig(microsoftAuthConfig)) {
+      setMicrosoftAuthStatus("Save a Microsoft Entra app client ID first.");
+      return;
+    }
+    setStorageSyncing(true);
+    try {
+      applyMicrosoftGraphSession(
+        await refreshMicrosoftGraphToken(microsoftAuthConfig),
+      );
+      setStorageStatus("Microsoft Graph token refreshed.");
+    } catch (error) {
+      setMicrosoftAuthStatus(
+        error instanceof Error
+          ? error.message
+          : "Could not refresh Microsoft Graph token.",
+      );
+    } finally {
+      setStorageSyncing(false);
+    }
+  };
+
+  const handleMicrosoftSignOut = async () => {
+    setStorageSyncing(true);
+    try {
+      if (hasMicrosoftAuthConfig(microsoftAuthConfig)) {
+        await signOutOfMicrosoft(microsoftAuthConfig);
+      }
+      setMicrosoftAccount(null);
+      setGraphAccessToken("");
+      setMicrosoftAuthStatus("Signed out of Microsoft.");
+      setStorageStatus("Microsoft Graph sign-in is disconnected.");
+    } catch (error) {
+      setMicrosoftAuthStatus(
+        error instanceof Error
+          ? error.message
+          : "Could not sign out of Microsoft.",
+      );
+    } finally {
+      setStorageSyncing(false);
+    }
   };
 
   const testConnection = async () => {
-    const session = requireGraphSession();
+    const session = await requireGraphSession();
     if (!session) return;
     setStorageSyncing(true);
     try {
@@ -2069,7 +2255,7 @@ function App() {
   };
 
   const syncToMicrosoftLists = async () => {
-    const session = requireGraphSession();
+    const session = await requireGraphSession();
     if (!session) return;
     if (!hasFullMicrosoftListsConfig(microsoftListsConfig)) {
       setStorageStatus(
@@ -2108,7 +2294,7 @@ function App() {
   };
 
   const pullFromMicrosoftLists = async () => {
-    const session = requireGraphSession();
+    const session = await requireGraphSession();
     if (!session) return;
     requestConfirmation({
       title: "Load assignments from Microsoft Lists?",
@@ -2590,13 +2776,19 @@ function App() {
           exportedBy={signedInUser.fullName}
           mode={storageMode}
           config={microsoftListsConfig}
+          authConfig={microsoftAuthConfig}
+          account={microsoftAccount}
           accessToken={graphAccessToken}
+          authStatus={microsoftAuthStatus}
           status={storageStatus}
           syncing={storageSyncing}
           onExport={handleExportMicrosoftListsPackage}
           onModeChange={switchStorageMode}
           onSaveConfig={saveConnectionConfig}
-          onAccessTokenChange={setGraphAccessToken}
+          onSaveAuthConfig={saveMicrosoftSignInConfig}
+          onMicrosoftSignIn={() => void handleMicrosoftSignIn()}
+          onMicrosoftSignOut={() => void handleMicrosoftSignOut()}
+          onMicrosoftRefreshToken={() => void handleMicrosoftRefreshToken()}
           onTestConnection={() => void testConnection()}
           onSyncToLists={() => void syncToMicrosoftLists()}
           onPullFromLists={() => void pullFromMicrosoftLists()}
@@ -2898,13 +3090,19 @@ function CentralStoragePanel({
   exportedBy,
   mode,
   config,
+  authConfig,
+  account,
   accessToken,
+  authStatus,
   status,
   syncing,
   onExport,
   onModeChange,
   onSaveConfig,
-  onAccessTokenChange,
+  onSaveAuthConfig,
+  onMicrosoftSignIn,
+  onMicrosoftSignOut,
+  onMicrosoftRefreshToken,
   onTestConnection,
   onSyncToLists,
   onPullFromLists,
@@ -2914,21 +3112,31 @@ function CentralStoragePanel({
   exportedBy: string;
   mode: StorageMode;
   config: MicrosoftListsConnectionConfig;
+  authConfig: MicrosoftAuthConfig;
+  account: MicrosoftAuthAccount | null;
   accessToken: string;
+  authStatus: string;
   status: string;
   syncing: boolean;
   onExport: () => void;
   onModeChange: (mode: StorageMode) => void;
   onSaveConfig: (config: MicrosoftListsConnectionConfig) => void;
-  onAccessTokenChange: (token: string) => void;
+  onSaveAuthConfig: (config: MicrosoftAuthConfig) => void;
+  onMicrosoftSignIn: () => void;
+  onMicrosoftSignOut: () => void;
+  onMicrosoftRefreshToken: () => void;
   onTestConnection: () => void;
   onSyncToLists: () => void;
   onPullFromLists: () => void;
 }) {
   const [draftConfig, setDraftConfig] = useState(config);
+  const [draftAuthConfig, setDraftAuthConfig] = useState(authConfig);
   useEffect(() => {
     setDraftConfig(config);
   }, [config]);
+  useEffect(() => {
+    setDraftAuthConfig(authConfig);
+  }, [authConfig]);
   const packagePreview = useMemo(
     () =>
       buildMicrosoftListsMigrationPackage(projects, users, {
@@ -2948,6 +3156,8 @@ function CentralStoragePanel({
   };
   const hasMinimumConfig = hasMinimumMicrosoftListsConfig(config);
   const hasFullConfig = hasFullMicrosoftListsConfig(config);
+  const hasAuthConfig = hasMicrosoftAuthConfig(authConfig);
+  const canRequestGraph = hasAuthConfig || Boolean(accessToken.trim());
 
   return (
     <section className="panel central-storage">
@@ -3010,11 +3220,20 @@ function CentralStoragePanel({
           }
         />
         <Input
-          label="Graph access token"
-          type="password"
-          value={accessToken}
-          placeholder="Paste token for this session only"
-          onChange={onAccessTokenChange}
+          label="Microsoft Entra app client ID"
+          value={draftAuthConfig.clientId}
+          placeholder="Application (client) ID"
+          onChange={(value) =>
+            setDraftAuthConfig((current) => ({ ...current, clientId: value }))
+          }
+        />
+        <Input
+          label="Tenant ID or domain"
+          value={draftAuthConfig.tenantId}
+          placeholder="organizations, tenant ID, or domain"
+          onChange={(value) =>
+            setDraftAuthConfig((current) => ({ ...current, tenantId: value }))
+          }
         />
         <div className="storage-list-id-grid">
           {requiredMicrosoftListKeys.map((key) => (
@@ -3028,6 +3247,44 @@ function CentralStoragePanel({
           ))}
         </div>
       </div>
+      <div className="auth-card">
+        <div>
+          <strong>
+            {account ? `Signed in as ${account.name}` : "Microsoft sign-in"}
+          </strong>
+          <span>{authStatus}</span>
+          <small>Requested Graph scopes: {microsoftAuthScopeLabel()}</small>
+        </div>
+        <div className="storage-actions">
+          <button type="button" onClick={() => onSaveAuthConfig(draftAuthConfig)}>
+            Save sign-in
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={syncing || !hasAuthConfig}
+            onClick={onMicrosoftSignIn}
+          >
+            Sign in with Microsoft
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={syncing || !hasAuthConfig}
+            onClick={onMicrosoftRefreshToken}
+          >
+            Refresh token
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={syncing || !account}
+            onClick={onMicrosoftSignOut}
+          >
+            Sign out
+          </button>
+        </div>
+      </div>
       <div className="storage-actions">
         <button type="button" onClick={() => onSaveConfig(draftConfig)}>
           Save connection
@@ -3035,7 +3292,7 @@ function CentralStoragePanel({
         <button
           type="button"
           className="secondary"
-          disabled={syncing || !hasMinimumConfig || !accessToken.trim()}
+          disabled={syncing || !hasMinimumConfig || !canRequestGraph}
           onClick={onTestConnection}
         >
           Test connection
@@ -3043,7 +3300,7 @@ function CentralStoragePanel({
         <button
           type="button"
           className="secondary"
-          disabled={syncing || !hasFullConfig || !accessToken.trim()}
+          disabled={syncing || !hasFullConfig || !canRequestGraph}
           onClick={onSyncToLists}
         >
           Sync to Lists
@@ -3051,7 +3308,7 @@ function CentralStoragePanel({
         <button
           type="button"
           className="secondary"
-          disabled={syncing || !hasMinimumConfig || !accessToken.trim()}
+          disabled={syncing || !hasMinimumConfig || !canRequestGraph}
           onClick={onPullFromLists}
         >
           Load from Lists

@@ -11,6 +11,7 @@
     "test": "tsc -p tsconfig.test.json && node --test test-dist/tests/*.test.js"
   },
   "dependencies": {
+    "@azure/msal-browser": "^5.11.0",
     "react": "latest",
     "react-dom": "latest",
     "typescript": "latest",

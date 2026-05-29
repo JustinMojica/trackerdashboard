@@ -16,10 +16,20 @@ This is the target central-storage structure for the audit assignment tracker. T
 
 ## Live Connection Mode
 
-The live connection panel stores only the SharePoint site ID and list IDs in browser storage. The Microsoft Graph access token is session-only and is not persisted.
+The live connection panel stores the SharePoint site ID, list IDs, Microsoft Entra application client ID, and tenant value in browser storage. Microsoft Graph access tokens come from MSAL Browser and are session-only in React state.
+
+The Microsoft Entra app registration needs:
+
+- Platform type: Single-page application.
+- Redirect URI: the app origin used for testing, such as `http://127.0.0.1:5173`.
+- Delegated Graph permissions: `User.Read` and `Sites.ReadWrite.All`.
+- Admin consent if the tenant requires consent for SharePoint list read/write scopes.
 
 Current supported live actions:
 
+- Sign in with Microsoft.
+- Refresh the Microsoft Graph token.
+- Sign out of the Microsoft session.
 - Test the configured SharePoint site and Audit Assignments list.
 - Push the current migration package to configured Microsoft Lists.
 - Load assignment rows from the configured Audit Assignments list into the browser prototype.
@@ -57,8 +67,9 @@ Each activity row should include:
 4. Import `Tracker Users` only for prototype testing; replace with Microsoft 365 groups before production.
 5. Validate that each child row has a matching `TrackerAssignmentId`.
 6. Connect the app to Microsoft Graph after the list structure is approved.
-7. Replace manual token entry with Microsoft Entra sign-in before production use.
-8. Add Power Automate flows only after live list writes and activity-log entries are stable.
+7. Validate the Microsoft Entra sign-in with a real tenant app registration.
+8. Add a setup health check that tests all seven configured lists.
+9. Add Power Automate flows only after live list writes and activity-log entries are stable.
 
 ## Why This Split Matters
 
