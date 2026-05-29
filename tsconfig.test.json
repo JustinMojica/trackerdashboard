@@ -13,6 +13,7 @@
     "rootDir": "."
   },
   "include": [
+    "src/accessRequests.ts",
     "src/auditLogic.ts",
     "src/microsoftAuth.ts",
     "src/microsoftListsClient.ts",

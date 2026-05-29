@@ -1,6 +1,15 @@
 import React, { FormEvent, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
+  approveAccessRequest,
+  buildAccessRequestUser,
+  canApproveAccessRequest,
+  isValidCompanyEmail,
+  rejectAccessRequest,
+  verifyAccessRequestEmail,
+  type AccountRequestStatus,
+} from "./accessRequests";
+import {
   hasMicrosoftAuthConfig,
   microsoftAuthScopeLabel,
   refreshMicrosoftGraphToken,
@@ -188,6 +197,13 @@ type PrototypeUser = {
   email: string;
   active: boolean;
   defaultVisibility: ProjectVisibility;
+  emailVerified: boolean;
+  accessRequestStatus: AccountRequestStatus;
+  verificationCode: string;
+  requestedAt: string;
+  approvedAt: string;
+  approvedBy: string;
+  rejectionReason: string;
 };
 
 type ConfirmationRequest = {
@@ -311,8 +327,32 @@ const labelOptions: ProjectLabel[] = [
   "Waiting on Broker",
 ];
 
+function approvedPrototypeUser(
+  user: Omit<
+    PrototypeUser,
+    | "emailVerified"
+    | "accessRequestStatus"
+    | "verificationCode"
+    | "requestedAt"
+    | "approvedAt"
+    | "approvedBy"
+    | "rejectionReason"
+  >,
+): PrototypeUser {
+  return {
+    ...user,
+    emailVerified: true,
+    accessRequestStatus: "Approved",
+    verificationCode: "",
+    requestedAt: "2026-05-01T12:00:00.000Z",
+    approvedAt: "2026-05-01T12:00:00.000Z",
+    approvedBy: "System seed",
+    rejectionReason: "",
+  };
+}
+
 const defaultPrototypeUsers: PrototypeUser[] = [
-  {
+  approvedPrototypeUser({
     fullName: "Lorraine Mojica",
     username: "lorraine.mojica",
     password: "password",
@@ -321,8 +361,8 @@ const defaultPrototypeUsers: PrototypeUser[] = [
     email: "lorraine.mojica@[company-domain]",
     active: true,
     defaultVisibility: "Role Default",
-  },
-  {
+  }),
+  approvedPrototypeUser({
     fullName: "Walter Aviles",
     username: "walter.aviles",
     password: "password",
@@ -331,8 +371,8 @@ const defaultPrototypeUsers: PrototypeUser[] = [
     email: "walter.aviles@[company-domain]",
     active: true,
     defaultVisibility: "Role Default",
-  },
-  {
+  }),
+  approvedPrototypeUser({
     fullName: "Leslie Domenech",
     username: "leslie.domenech",
     password: "password",
@@ -341,8 +381,8 @@ const defaultPrototypeUsers: PrototypeUser[] = [
     email: "leslie.domenech@[company-domain]",
     active: true,
     defaultVisibility: "Role Default",
-  },
-  {
+  }),
+  approvedPrototypeUser({
     fullName: "Mark James",
     username: "mark.james",
     password: "password",
@@ -351,8 +391,8 @@ const defaultPrototypeUsers: PrototypeUser[] = [
     email: "mark.james@[company-domain]",
     active: true,
     defaultVisibility: "Role Default",
-  },
-  {
+  }),
+  approvedPrototypeUser({
     fullName: "Justin Mojica",
     username: "justin.mojica",
     password: "password",
@@ -361,8 +401,8 @@ const defaultPrototypeUsers: PrototypeUser[] = [
     email: "justin.mojica@[company-domain]",
     active: true,
     defaultVisibility: "Role Default",
-  },
-  {
+  }),
+  approvedPrototypeUser({
     fullName: "Sheilah Couture",
     username: "sheilah.couture",
     password: "password",
@@ -371,8 +411,8 @@ const defaultPrototypeUsers: PrototypeUser[] = [
     email: "sheilah.couture@[company-domain]",
     active: true,
     defaultVisibility: "Role Default",
-  },
-  {
+  }),
+  approvedPrototypeUser({
     fullName: "Annabelle J. Crawford Mojica",
     username: "annabelle.crawford.mojica",
     password: "password",
@@ -381,8 +421,8 @@ const defaultPrototypeUsers: PrototypeUser[] = [
     email: "annabelle.crawford.mojica@[company-domain]",
     active: true,
     defaultVisibility: "Role Default",
-  },
-  {
+  }),
+  approvedPrototypeUser({
     fullName: "Molly Aviles",
     username: "molly.aviles",
     password: "password",
@@ -391,8 +431,8 @@ const defaultPrototypeUsers: PrototypeUser[] = [
     email: "molly.aviles@[company-domain]",
     active: true,
     defaultVisibility: "Role Default",
-  },
-  {
+  }),
+  approvedPrototypeUser({
     fullName: "Lindsie Guillermo",
     username: "lindsie.guillermo",
     password: "password",
@@ -401,7 +441,7 @@ const defaultPrototypeUsers: PrototypeUser[] = [
     email: "lindsie.guillermo@[company-domain]",
     active: true,
     defaultVisibility: "Role Default",
-  },
+  }),
 ];
 
 export const sampleProjects: AuditProject[] = [
@@ -1297,6 +1337,10 @@ function microsoftFieldsToProject(
 
 function withUserDefaults(user: Partial<PrototypeUser>): PrototypeUser {
   const role = user.role ?? "Auditor";
+  const emailVerified = user.emailVerified ?? Boolean(user.active ?? true);
+  const accessRequestStatus =
+    user.accessRequestStatus ??
+    (user.active === false ? "Pending Approval" : "Approved");
   return {
     fullName: user.fullName?.trim() || "New User",
     username: user.username?.trim().toLowerCase() || "new.user",
@@ -1306,6 +1350,13 @@ function withUserDefaults(user: Partial<PrototypeUser>): PrototypeUser {
     email: user.email?.trim() || "new.user@[company-domain]",
     active: user.active ?? true,
     defaultVisibility: user.defaultVisibility ?? "Role Default",
+    emailVerified,
+    accessRequestStatus,
+    verificationCode: user.verificationCode ?? "",
+    requestedAt: user.requestedAt ?? "",
+    approvedAt: user.approvedAt ?? "",
+    approvedBy: user.approvedBy ?? "",
+    rejectionReason: user.rejectionReason ?? "",
   };
 }
 
@@ -1342,6 +1393,23 @@ function authenticateUser(
         user.password === password,
     ) ?? null
   );
+}
+
+function loginAccessMessage(username: string, users: PrototypeUser[]) {
+  const normalizedUsername = username.trim().toLowerCase();
+  const user = users.find((candidate) => candidate.username === normalizedUsername);
+  if (!user) return "Invalid prototype username or password.";
+  if (!user.emailVerified) {
+    return "Confirm your company email before an admin can approve access.";
+  }
+  if (user.accessRequestStatus === "Pending Approval") {
+    return "Your account request is waiting for admin approval.";
+  }
+  if (user.accessRequestStatus === "Rejected") {
+    return user.rejectionReason || "Your account request was rejected.";
+  }
+  if (!user.active) return "Your account is inactive.";
+  return "Invalid prototype username or password.";
 }
 
 function saveCurrentUsername(username: string) {
@@ -2028,11 +2096,14 @@ function App() {
   const selectedProject =
     visibleProjects.find((project) => project.id === selectedId) ??
     visibleProjects[0];
+  const pendingAccessRequests = users.filter(
+    (user) => user.accessRequestStatus === "Pending Approval",
+  );
 
   const handleLogin = (username: string, password: string) => {
     const user = authenticateUser(username, password, users);
     if (!user) {
-      setMessage("Invalid prototype username or password.");
+      setMessage(loginAccessMessage(username, users));
       return;
     }
     setCurrentUsername(user.username);
@@ -2040,6 +2111,68 @@ function App() {
     setFilters(buildFilters(user.role === "Auditor" ? { auditor: user.fullName } : {}));
     setSelectedId("");
     setMessage("");
+  };
+
+  const requestAccountAccess = ({
+    fullName,
+    email,
+    password,
+  }: {
+    fullName: string;
+    email: string;
+    password: string;
+  }) => {
+    if (!fullName.trim()) {
+      setMessage("Full name is required.");
+      return;
+    }
+    if (!isValidCompanyEmail(email)) {
+      setMessage("Use a valid company email address, not a personal email account.");
+      return;
+    }
+    if (password.trim().length < 6) {
+      setMessage("Password must be at least 6 characters for the request.");
+      return;
+    }
+    const accessRequest = buildAccessRequestUser({
+        fullName,
+        email,
+        password,
+        requestedAt: new Date().toISOString(),
+      });
+    const requestedUser = withUserDefaults({
+      ...accessRequest,
+      role: accessRequest.role as UserRole,
+      permissionGroup: accessRequest.permissionGroup as UserRole,
+      defaultVisibility: accessRequest.defaultVisibility as ProjectVisibility,
+    });
+    if (
+      users.some(
+        (user) =>
+          user.username === requestedUser.username ||
+          user.email.toLowerCase() === requestedUser.email.toLowerCase(),
+      )
+    ) {
+      setMessage("An account already exists or is pending for that email.");
+      return;
+    }
+    const nextUsers = [...users, requestedUser];
+    setUsers(nextUsers);
+    savePrototypeUsers(nextUsers);
+    setMessage(
+      `Verification request created for ${requestedUser.email}. Prototype code: ${requestedUser.verificationCode}`,
+    );
+  };
+
+  const confirmAccountEmail = (email: string, verificationCode: string) => {
+    const result = verifyAccessRequestEmail(users, email, verificationCode);
+    if (!result.matched) {
+      setMessage("Verification code did not match a pending account request.");
+      return;
+    }
+    setUsers(result.users);
+    savePrototypeUsers(result.users);
+    setMessage("Company email confirmed. Your request is now waiting for admin approval.");
   };
 
   const signOut = () => {
@@ -2053,9 +2186,13 @@ function App() {
   if (!signedInUser) {
     return (
       <LoginScreen
-        users={users.filter((user) => user.active)}
+        users={users.filter(
+          (user) => user.active && user.accessRequestStatus === "Approved",
+        )}
         message={message}
         onLogin={handleLogin}
+        onRequestAccess={requestAccountAccess}
+        onVerifyEmail={confirmAccountEmail}
       />
     );
   }
@@ -2701,6 +2838,50 @@ function App() {
     setMessage(`${cleanUser.fullName} saved.`);
   };
 
+  const approveUserRequest = (username: string) => {
+    if (signedInUser.role !== "Admin") {
+      setMessage("Only admins can approve account requests.");
+      return;
+    }
+    const user = users.find((candidate) => candidate.username === username);
+    if (!user || !canApproveAccessRequest(user)) {
+      setMessage("That account request must have a verified email before approval.");
+      return;
+    }
+    const nextUsers = users.map((candidate) =>
+      candidate.username === username
+        ? approveAccessRequest(candidate, signedInUser.fullName, new Date().toISOString())
+        : candidate,
+    );
+    setUsers(nextUsers);
+    savePrototypeUsers(nextUsers);
+    setMessage(`${user.fullName} approved for tracker access.`);
+  };
+
+  const rejectUserRequest = (username: string) => {
+    if (signedInUser.role !== "Admin") {
+      setMessage("Only admins can reject account requests.");
+      return;
+    }
+    const user = users.find((candidate) => candidate.username === username);
+    if (!user) {
+      setMessage("Account request was not found.");
+      return;
+    }
+    const nextUsers = users.map((candidate) =>
+      candidate.username === username
+        ? rejectAccessRequest(
+            candidate,
+            signedInUser.fullName,
+            new Date().toISOString(),
+          )
+        : candidate,
+    );
+    setUsers(nextUsers);
+    savePrototypeUsers(nextUsers);
+    setMessage(`${user.fullName} rejected.`);
+  };
+
   const resetUsers = () => {
     if (signedInUser.role !== "Admin") {
       setMessage("Only admins can reset users.");
@@ -2765,7 +2946,10 @@ function App() {
       {signedInUser.role === "Admin" && (
         <UserManagementPanel
           users={users}
+          pendingRequests={pendingAccessRequests}
           onSaveUser={upsertUser}
+          onApproveRequest={approveUserRequest}
+          onRejectRequest={rejectUserRequest}
           onResetUsers={confirmResetUsers}
         />
       )}
@@ -2952,17 +3136,47 @@ function LoginScreen({
   users,
   message,
   onLogin,
+  onRequestAccess,
+  onVerifyEmail,
 }: {
   users: PrototypeUser[];
   message: string;
   onLogin: (username: string, password: string) => void;
+  onRequestAccess: (request: {
+    fullName: string;
+    email: string;
+    password: string;
+  }) => void;
+  onVerifyEmail: (email: string, verificationCode: string) => void;
 }) {
+  const [mode, setMode] = useState<"sign-in" | "request" | "verify">("sign-in");
   const [username, setUsername] = useState("justin.mojica");
   const [password, setPassword] = useState("password");
+  const [requestFullName, setRequestFullName] = useState("");
+  const [requestEmail, setRequestEmail] = useState("");
+  const [requestPassword, setRequestPassword] = useState("");
+  const [verificationEmail, setVerificationEmail] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
     onLogin(username, password);
+  };
+
+  const submitAccessRequest = (event: FormEvent) => {
+    event.preventDefault();
+    onRequestAccess({
+      fullName: requestFullName,
+      email: requestEmail,
+      password: requestPassword,
+    });
+    setVerificationEmail(requestEmail);
+    setMode("verify");
+  };
+
+  const submitEmailVerification = (event: FormEvent) => {
+    event.preventDefault();
+    onVerifyEmail(verificationEmail, verificationCode);
   };
 
   return (
@@ -2971,45 +3185,113 @@ function LoginScreen({
         <div>
           <p className="eyebrow dark">Prototype access</p>
           <h1>Audit Assignment Tracker</h1>
-          <p>Sign in with a tracker test account.</p>
+          <p>Request tracker access with a company email, then wait for admin approval.</p>
+        </div>
+        <div className="access-mode-toggle" aria-label="Access options">
+          <button
+            type="button"
+            className={mode === "sign-in" ? undefined : "secondary"}
+            onClick={() => setMode("sign-in")}
+          >
+            Sign in
+          </button>
+          <button
+            type="button"
+            className={mode === "request" ? undefined : "secondary"}
+            onClick={() => setMode("request")}
+          >
+            Request account
+          </button>
+          <button
+            type="button"
+            className={mode === "verify" ? undefined : "secondary"}
+            onClick={() => setMode("verify")}
+          >
+            Confirm email
+          </button>
         </div>
         {message && (
           <div className="toast" role="status">
             {message}
           </div>
         )}
-        <form className="login-form" onSubmit={submit}>
-          <Input
-            label="Username"
-            value={username}
-            onChange={setUsername}
-            placeholder="firstname.lastname"
-          />
-          <Input
-            label="Password"
-            value={password}
-            onChange={setPassword}
-            type="password"
-            placeholder="password"
-          />
-          <button type="submit">Sign in</button>
-        </form>
-        <div className="demo-users">
-          {users.map((user) => (
-            <button
-              type="button"
-              className="secondary"
-              key={user.username}
-              onClick={() => {
-                setUsername(user.username);
-                setPassword(user.password);
-              }}
-            >
-              <strong>{user.fullName}</strong>
-              <span>{user.role}</span>
-            </button>
-          ))}
-        </div>
+        {mode === "sign-in" && (
+          <>
+            <form className="login-form" onSubmit={submit}>
+              <Input
+                label="Username"
+                value={username}
+                onChange={setUsername}
+                placeholder="firstname.lastname"
+              />
+              <Input
+                label="Password"
+                value={password}
+                onChange={setPassword}
+                type="password"
+                placeholder="password"
+              />
+              <button type="submit">Sign in</button>
+            </form>
+            <div className="demo-users">
+              {users.map((user) => (
+                <button
+                  type="button"
+                  className="secondary"
+                  key={user.username}
+                  onClick={() => {
+                    setUsername(user.username);
+                    setPassword(user.password);
+                  }}
+                >
+                  <strong>{user.fullName}</strong>
+                  <span>{user.role}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+        {mode === "request" && (
+          <form className="request-access-form" onSubmit={submitAccessRequest}>
+            <Input
+              label="Full name"
+              value={requestFullName}
+              onChange={setRequestFullName}
+              placeholder="First Last"
+            />
+            <Input
+              label="Company email"
+              value={requestEmail}
+              onChange={setRequestEmail}
+              placeholder="firstname.lastname@company.com"
+            />
+            <Input
+              label="Password"
+              value={requestPassword}
+              onChange={setRequestPassword}
+              type="password"
+              placeholder="Create a test password"
+            />
+            <button type="submit">Send verification request</button>
+          </form>
+        )}
+        {mode === "verify" && (
+          <form className="request-access-form" onSubmit={submitEmailVerification}>
+            <Input
+              label="Company email"
+              value={verificationEmail}
+              onChange={setVerificationEmail}
+              placeholder="firstname.lastname@company.com"
+            />
+            <Input
+              label="Verification code"
+              value={verificationCode}
+              onChange={setVerificationCode}
+              placeholder="6-digit code"
+            />
+            <button type="submit">Confirm email</button>
+          </form>
+        )}
       </section>
     </main>
   );
@@ -3328,11 +3610,17 @@ function CentralStoragePanel({
 
 function UserManagementPanel({
   users,
+  pendingRequests,
   onSaveUser,
+  onApproveRequest,
+  onRejectRequest,
   onResetUsers,
 }: {
   users: PrototypeUser[];
+  pendingRequests: PrototypeUser[];
   onSaveUser: (originalUsername: string | null, user: PrototypeUser) => void;
+  onApproveRequest: (username: string) => void;
+  onRejectRequest: (username: string) => void;
   onResetUsers: () => void;
 }) {
   const firstUsername = users[0]?.username ?? "";
@@ -3397,6 +3685,43 @@ function UserManagementPanel({
         </div>
       </div>
       <div className="user-management-grid">
+        {pendingRequests.length > 0 && (
+          <div className="access-request-queue">
+            <div>
+              <h3>Account requests</h3>
+              <span>{pendingRequests.length} waiting for review</span>
+            </div>
+            {pendingRequests.map((user) => (
+              <article className="access-request-card" key={user.username}>
+                <div>
+                  <strong>{user.fullName}</strong>
+                  <span>{user.email}</span>
+                  <small>
+                    {user.emailVerified
+                      ? "Email confirmed"
+                      : "Waiting on email confirmation"}
+                  </small>
+                </div>
+                <div className="storage-actions">
+                  <button
+                    type="button"
+                    disabled={!canApproveAccessRequest(user)}
+                    onClick={() => onApproveRequest(user.username)}
+                  >
+                    Approve
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => onRejectRequest(user.username)}
+                  >
+                    Reject
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
         <div className="user-list" aria-label="Prototype users">
           {users.map((user) => (
             <button
@@ -3412,10 +3737,16 @@ function UserManagementPanel({
                 <span>{user.role}</span>
                 <span
                   className={`user-status-badge ${
-                    user.active ? "active" : "inactive"
+                    user.active && user.accessRequestStatus === "Approved"
+                      ? "active"
+                      : "inactive"
                   }`}
                 >
-                  {user.active ? "Active" : "Inactive"}
+                  {user.accessRequestStatus === "Approved"
+                    ? user.active
+                      ? "Active"
+                      : "Inactive"
+                    : user.accessRequestStatus}
                 </span>
               </span>
             </button>
@@ -3471,6 +3802,11 @@ function UserManagementPanel({
               label="Active user"
               checked={draft.active}
               onChange={(value) => updateDraft("active", value)}
+            />
+            <Check
+              label="Email verified"
+              checked={draft.emailVerified}
+              onChange={(value) => updateDraft("emailVerified", value)}
             />
           </div>
           <div className="modal-actions">

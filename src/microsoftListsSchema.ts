@@ -82,6 +82,12 @@ export type CentralPrototypeUser = {
   email: string;
   active: boolean;
   defaultVisibility: string;
+  emailVerified?: boolean;
+  accessRequestStatus?: string;
+  requestedAt?: string;
+  approvedAt?: string;
+  approvedBy?: string;
+  rejectionReason?: string;
 };
 
 type ColumnType = "text" | "note" | "choice" | "number" | "currency" | "dateTime" | "boolean";
@@ -293,7 +299,13 @@ export const microsoftListSchemas: MicrosoftListSchema[] = [
       choice("Role", "Role", ["Admin", "Audit Manager", "Auditor", "Finance", "Read Only"], true),
       choice("PermissionGroup", "Permission group", ["Admin", "Audit Manager", "Auditor", "Finance", "Read Only"], true),
       booleanColumn("Active", "Active"),
+      booleanColumn("EmailVerified", "Email verified"),
+      choice("AccessRequestStatus", "Access request status", ["Approved", "Pending Approval", "Rejected"], true),
       choice("DefaultVisibility", "Default visibility", ["Role Default", "All Projects", "Assigned Projects", "Finance Records"]),
+      dateColumn("RequestedAt", "Requested at"),
+      dateColumn("ApprovedAt", "Approved at"),
+      text("ApprovedBy", "Approved by"),
+      note("RejectionReason", "Rejection reason"),
     ],
   },
 ];
@@ -610,7 +622,13 @@ function userToRow(user: CentralPrototypeUser): MicrosoftListSeedRow {
     Role: user.role,
     PermissionGroup: user.permissionGroup,
     Active: user.active,
+    EmailVerified: user.emailVerified ?? user.active,
+    AccessRequestStatus: user.accessRequestStatus ?? "Approved",
     DefaultVisibility: user.defaultVisibility,
+    RequestedAt: normalizeDateTime(user.requestedAt ?? ""),
+    ApprovedAt: normalizeDateTime(user.approvedAt ?? ""),
+    ApprovedBy: user.approvedBy ?? "",
+    RejectionReason: user.rejectionReason ?? "",
   });
 }
 

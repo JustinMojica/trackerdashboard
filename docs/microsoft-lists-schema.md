@@ -12,7 +12,7 @@ This is the target central-storage structure for the audit assignment tracker. T
 | Audit Checklist Items | Per-stage checklist state | `TrackerChecklistItemId`, `TrackerAssignmentId`, `ChecklistKey`, `ChecklistStage`, `ChecklistItem`, `Completed` |
 | Audit Status History | Stage movement history | `TrackerHistoryId`, `TrackerAssignmentId`, `ChangedAt`, `ChangedBy`, `FromStage`, `ToStage`, `StageNote` |
 | Audit Activity Log | Append-only accountability log | `TrackerEventId`, `TrackerAssignmentId`, `OccurredAt`, `EventType`, `ActorName`, `Summary`, `Detail`, previous/new values |
-| Tracker Users | Prototype role map | `TrackerUsername`, `FullName`, `Email`, `Role`, `PermissionGroup`, `Active`, `DefaultVisibility` |
+| Tracker Users | Prototype role map and account access gate | `TrackerUsername`, `FullName`, `Email`, `Role`, `PermissionGroup`, `Active`, `EmailVerified`, `AccessRequestStatus`, `DefaultVisibility`, `RequestedAt`, `ApprovedAt`, `ApprovedBy`, `RejectionReason` |
 
 ## Live Connection Mode
 
@@ -33,6 +33,8 @@ Current supported live actions:
 - Test the configured SharePoint site and Audit Assignments list.
 - Push the current migration package to configured Microsoft Lists.
 - Load assignment rows from the configured Audit Assignments list into the browser prototype.
+
+The prototype account gate uses local browser storage for access requests. A new user requests an account with a company email, confirms the generated test verification code, and then waits for an Admin user to approve the request. In production, the verification-code step should become a Microsoft 365 email or Power Automate confirmation link, and the admin approval trail should remain in `Tracker Users`.
 
 The sync client uses stable app keys for upserts:
 
@@ -68,8 +70,9 @@ Each activity row should include:
 5. Validate that each child row has a matching `TrackerAssignmentId`.
 6. Connect the app to Microsoft Graph after the list structure is approved.
 7. Validate the Microsoft Entra sign-in with a real tenant app registration.
-8. Add a setup health check that tests all seven configured lists.
-9. Add Power Automate flows only after live list writes and activity-log entries are stable.
+8. Replace prototype account verification codes with real Microsoft 365 email delivery.
+9. Add a setup health check that tests all seven configured lists.
+10. Add Power Automate flows only after live list writes and activity-log entries are stable.
 
 ## Why This Split Matters
 

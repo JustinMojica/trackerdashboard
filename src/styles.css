@@ -93,6 +93,20 @@ main {
   gap: 0.75rem;
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
+.access-mode-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.request-access-form {
+  align-items: end;
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.request-access-form button {
+  min-height: 47px;
+}
 .demo-users {
   display: grid;
   gap: 0.6rem;
@@ -235,6 +249,43 @@ main {
   display: grid;
   gap: 1rem;
   grid-template-columns: minmax(240px, 0.7fr) minmax(0, 1.6fr);
+}
+.access-request-queue {
+  background: #f8fbff;
+  border: 1px solid #dfe7f2;
+  border-radius: 16px;
+  display: grid;
+  gap: 0.75rem;
+  grid-column: 1 / -1;
+  padding: 1rem;
+}
+.access-request-queue > div:first-child,
+.access-request-card {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+.access-request-queue h3 {
+  margin: 0;
+}
+.access-request-queue span,
+.access-request-card span,
+.access-request-card small {
+  color: #53637a;
+}
+.access-request-card {
+  background: #fff;
+  border: 1px solid #dfe7f2;
+  border-radius: 12px;
+  padding: 0.8rem;
+}
+.access-request-card > div:first-child {
+  display: grid;
+  gap: 0.18rem;
+}
+.access-request-card small {
+  font-weight: 800;
 }
 .user-list {
   display: grid;
@@ -1529,6 +1580,15 @@ td span {
   .user-management-grid,
   .user-editor-grid {
     grid-template-columns: 1fr;
+  }
+  .request-access-form,
+  .login-form {
+    grid-template-columns: 1fr;
+  }
+  .access-request-queue > div:first-child,
+  .access-request-card {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 

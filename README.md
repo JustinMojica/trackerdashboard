@@ -77,6 +77,7 @@ See `docs/microsoft-lists-schema.md` for the target list layout and implementati
 
 | Update size | Version | What changed                                                                                                                                            |
 | ----------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Major       | UX-20   | Add gated account requests: company-email signup, prototype email confirmation codes, and admin approval before tracker access.                         |
 | Major       | UX-19   | Replace the pasted Graph token workflow with Microsoft Entra/MSAL sign-in, token refresh, sign-out, and auth config tests.                              |
 | Major       | UX-18   | Add a live Microsoft Graph connection mode, saved SharePoint/list ID settings, push/pull controls, and Graph sync tests.                                |
 | Major       | UX-17   | Add a Microsoft Lists schema/migration package, central-storage readiness panel, and normalized activity-log export rows.                              |
@@ -108,19 +109,20 @@ Move to Office 365 after the team validates this major UX iteration with realist
 - **Audit Checklist Items** for per-stage checklist completion.
 - **Audit Status History** for timestamped stage and status changes and stage-duration reporting.
 - **Audit Activity Log** for append-only accountability across edits, comments, documents, finance, stage changes, checklist changes, and team changes.
-- **Tracker Users** for the prototype role map until Microsoft 365 identity groups replace it.
+- **Tracker Users** for the prototype role map, access-request status, email-confirmation state, and admin approval trail until Microsoft 365 identity groups replace it.
 
 This split keeps the main assignment row Power BI friendly while letting Power Apps and Power Automate handle related activity, comments, reminders, and approvals.
 
 ### Significant next upgrades
 
-1. **Add a connection health/setup screen** that checks every required Microsoft List, validates permissions, and reports missing list IDs before sync.
-2. **Map prototype users to Microsoft 365 accounts/groups** so the current role model can move away from local test passwords.
-3. **Build a Power Apps front end** for intake, stage movement, document readiness, comments, and reviewer sign-off once the SharePoint list schema is stable.
-4. **Automate the repeatable follow-up work** with Power Automate flows for new intake alerts, quote approval reminders, broker chase reminders, reviewer approvals, stage-history creation, and invoice/payment notifications.
-5. **Add document library integration** so BAA, endorsements, Premium BDX, testing sheets, reports, and invoice artifacts are stored against the assignment record instead of only represented as checkboxes.
-6. **Publish Power BI reporting** from the SharePoint lists for workload, aging, cycle time, overdue items, quote value, document blockers, and closed-audit throughput.
-7. **Define permissions and governance** before launch: auditor/reviewer roles, edit rights by stage, naming rules, required metadata, retention, and environment ownership.
+1. **Replace prototype verification codes with real Microsoft 365 email delivery** so new users receive a confirmation link/code instead of seeing a local test code.
+2. **Add a connection health/setup screen** that checks every required Microsoft List, validates permissions, and reports missing list IDs before sync.
+3. **Map approved users to Microsoft 365 accounts/groups** so the current role model can move away from local test passwords.
+4. **Build a Power Apps front end** for intake, stage movement, document readiness, comments, and reviewer sign-off once the SharePoint list schema is stable.
+5. **Automate the repeatable follow-up work** with Power Automate flows for new intake alerts, quote approval reminders, broker chase reminders, reviewer approvals, stage-history creation, and invoice/payment notifications.
+6. **Add document library integration** so BAA, endorsements, Premium BDX, testing sheets, reports, and invoice artifacts are stored against the assignment record instead of only represented as checkboxes.
+7. **Publish Power BI reporting** from the SharePoint lists for workload, aging, cycle time, overdue items, quote value, document blockers, and closed-audit throughput.
+8. **Define permissions and governance** before launch: auditor/reviewer roles, edit rights by stage, naming rules, required metadata, retention, and environment ownership.
 
 ### Automation candidates
 
