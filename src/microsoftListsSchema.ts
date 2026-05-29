@@ -300,7 +300,7 @@ export const microsoftListSchemas: MicrosoftListSchema[] = [
       choice("PermissionGroup", "Permission group", ["Admin", "Audit Manager", "Auditor", "Finance", "Read Only"], true),
       booleanColumn("Active", "Active"),
       booleanColumn("EmailVerified", "Email verified"),
-      choice("AccessRequestStatus", "Access request status", ["Approved", "Pending Approval", "Rejected"], true),
+      choice("AccessRequestStatus", "Access request status", ["Approved", "Pending Verification", "Pending Approval", "Rejected"], true),
       choice("DefaultVisibility", "Default visibility", ["Role Default", "All Projects", "Assigned Projects", "Finance Records"]),
       dateColumn("RequestedAt", "Requested at"),
       dateColumn("ApprovedAt", "Approved at"),

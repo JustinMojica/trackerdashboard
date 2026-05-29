@@ -1,4 +1,8 @@
-export type AccountRequestStatus = "Approved" | "Pending Approval" | "Rejected";
+export type AccountRequestStatus =
+  | "Approved"
+  | "Pending Verification"
+  | "Pending Approval"
+  | "Rejected";
 
 export type AccessRequestUser = {
   fullName: string;
@@ -81,7 +85,7 @@ export function buildAccessRequestUser({
     active: false,
     defaultVisibility: "Role Default",
     emailVerified: false,
-    accessRequestStatus: "Pending Approval",
+    accessRequestStatus: "Pending Verification",
     verificationCode,
     requestedAt,
     approvedAt: "",
@@ -102,12 +106,17 @@ export function verifyAccessRequestEmail<T extends AccessRequestUser>(
     if (
       user.email.toLowerCase() !== cleanEmail ||
       user.verificationCode !== cleanCode ||
-      user.accessRequestStatus !== "Pending Approval"
+      user.accessRequestStatus !== "Pending Verification"
     ) {
       return user;
     }
     matched = true;
-    return { ...user, emailVerified: true, verificationCode: "" };
+    return {
+      ...user,
+      emailVerified: true,
+      accessRequestStatus: "Pending Approval" as AccountRequestStatus,
+      verificationCode: "",
+    };
   });
   return { users: nextUsers, matched };
 }

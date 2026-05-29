@@ -65,27 +65,165 @@ main {
 
 .login-shell {
   align-items: center;
+  background:
+    radial-gradient(circle at 42% 70%, rgba(232, 250, 247, 0.95), transparent 18rem),
+    radial-gradient(circle at 78% 8%, rgba(244, 239, 250, 0.95), transparent 22rem),
+    linear-gradient(125deg, #f7f6fb 0%, #eef3fb 45%, #fbf8f8 100%);
   display: grid;
   min-height: 100vh;
-  max-width: 1180px;
+  max-width: none;
+  overflow: hidden;
+  position: relative;
 }
-.login-panel {
-  background: #fff;
-  border: 1px solid #dfe7f2;
-  border-radius: 24px;
-  box-shadow: 0 24px 70px rgba(31, 44, 71, 0.12);
+.login-shell::before,
+.login-shell::after {
+  border: 4px solid rgba(192, 218, 253, 0.38);
+  border-radius: 56px;
+  content: "";
+  position: absolute;
+  transform: rotate(-12deg);
+}
+.login-shell::before {
+  height: 760px;
+  left: -180px;
+  top: -180px;
+  width: 760px;
+}
+.login-shell::after {
+  height: 420px;
+  right: -60px;
+  top: -100px;
+  width: 360px;
+}
+.microsoft-login-stack {
   display: grid;
-  gap: 1rem;
-  padding: 1.5rem;
+  gap: 1.35rem;
+  justify-self: center;
+  max-width: 550px;
+  position: relative;
+  width: min(92vw, 550px);
+  z-index: 1;
 }
-.login-panel h1 {
-  font-size: 2.4rem;
-  line-height: 1;
-  margin: 0.25rem 0;
+.microsoft-login-card,
+.signin-options-card {
+  background: #fff;
+  box-shadow: 0 4px 18px rgba(31, 44, 71, 0.18);
 }
-.login-panel p {
-  color: #66748a;
+.microsoft-login-card {
+  display: grid;
+  gap: 1.05rem;
+  min-height: 330px;
+  padding: 2.8rem 3.4rem;
+}
+.microsoft-brand {
+  align-items: center;
+  color: #6a6a6a;
+  display: flex;
+  font-size: 1.35rem;
+  font-weight: 700;
+  gap: 0.55rem;
+}
+.microsoft-mark {
+  display: grid;
+  gap: 2px;
+  grid-template-columns: repeat(2, 11px);
+}
+.microsoft-mark span {
+  display: block;
+  height: 11px;
+  width: 11px;
+}
+.microsoft-mark span:nth-child(1) {
+  background: #f25022;
+}
+.microsoft-mark span:nth-child(2) {
+  background: #7fba00;
+}
+.microsoft-mark span:nth-child(3) {
+  background: #00a4ef;
+}
+.microsoft-mark span:nth-child(4) {
+  background: #ffb900;
+}
+.microsoft-login-card h1 {
+  font-size: 1.85rem;
+  font-weight: 650;
+  line-height: 1.1;
   margin: 0;
+}
+.microsoft-login-card p {
+  color: #444;
+  margin: 0;
+}
+.microsoft-login-copy {
+  border-bottom: 1px solid #777;
+  color: #666 !important;
+  padding-bottom: 0.7rem;
+}
+.microsoft-create-line,
+.microsoft-help-link {
+  font-size: 0.88rem;
+}
+.microsoft-create-line a,
+.microsoft-help-link {
+  color: #0067b8;
+  text-decoration: none;
+}
+.microsoft-login-actions {
+  align-items: center;
+  display: flex;
+  gap: 0.25rem;
+  justify-content: flex-end;
+  margin-top: 0.6rem;
+}
+.microsoft-login-actions button,
+.microsoft-primary-link {
+  border-radius: 0;
+  min-width: 108px;
+  padding: 0.65rem 1rem;
+  text-align: center;
+}
+.microsoft-primary-link {
+  background: #0067b8;
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+}
+.signin-options-card {
+  align-items: center;
+  color: #222;
+  display: flex;
+  gap: 1.3rem;
+  min-height: 58px;
+  padding: 0 3.4rem;
+  text-decoration: none;
+}
+.signin-options-card span {
+  border: 1px solid #333;
+  border-radius: 999px;
+  display: inline-grid;
+  height: 24px;
+  place-items: center;
+  width: 24px;
+}
+.secure-setup-box,
+.verification-form {
+  background: #f8fbff;
+  border: 1px solid #dfe7f2;
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.8rem;
+}
+.secure-setup-box span {
+  color: #53637a;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+.verification-form {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.verification-form p {
+  grid-column: 1 / -1;
 }
 .login-form {
   align-items: end;

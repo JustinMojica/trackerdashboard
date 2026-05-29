@@ -10,6 +10,16 @@ import {
   type AccountRequestStatus,
 } from "./accessRequests";
 import {
+  approveSecureAccessRequest,
+  getSecureAccessState,
+  logoutSecureAccess,
+  rejectSecureAccessRequest,
+  secureAccessUrl,
+  verifySecureAccessCode,
+  type SecureAccessState,
+  type SecureAccessUser,
+} from "./secureAccessClient";
+import {
   hasMicrosoftAuthConfig,
   microsoftAuthScopeLabel,
   refreshMicrosoftGraphToken,
@@ -1379,6 +1389,26 @@ function savePrototypeUsers(users: PrototypeUser[]) {
   localStorage.setItem(usersStorageKey, JSON.stringify(users));
 }
 
+function secureUserToPrototypeUser(user: SecureAccessUser): PrototypeUser {
+  return withUserDefaults({
+    fullName: user.fullName,
+    username: user.username,
+    password: "",
+    role: user.role,
+    permissionGroup: user.permissionGroup,
+    email: user.email,
+    active: user.active,
+    defaultVisibility: user.defaultVisibility,
+    emailVerified: user.emailVerified,
+    accessRequestStatus: user.accessRequestStatus,
+    verificationCode: "",
+    requestedAt: user.requestedAt,
+    approvedAt: user.approvedAt,
+    approvedBy: user.approvedBy,
+    rejectionReason: user.rejectionReason,
+  });
+}
+
 function authenticateUser(
   username: string,
   password: string,
@@ -1946,9 +1976,10 @@ function App() {
   const [users, setUsers] = useState<PrototypeUser[]>(() =>
     loadPrototypeUsers(),
   );
-  const [currentUsername, setCurrentUsername] = useState(
-    () => localStorage.getItem(currentUserStorageKey) ?? "",
+  const [secureAccess, setSecureAccess] = useState<SecureAccessState | null>(
+    null,
   );
+  const [secureAccessLoading, setSecureAccessLoading] = useState(true);
   const [selectedId, setSelectedId] = useState(projects[0]?.id ?? "");
   const [editing, setEditing] = useState<AuditProject | null>(null);
   const [filters, setFilters] = useState<Filters>(defaultFilters);
@@ -1984,8 +2015,36 @@ function App() {
   const [shownZeroLoadAuditors, setShownZeroLoadAuditors] = useState<string[]>([]);
 
   const signedInUser =
-    users.find((user) => user.active && user.username === currentUsername) ??
-    null;
+    secureAccess?.authenticated && secureAccess.user
+      ? secureUserToPrototypeUser(secureAccess.user)
+      : null;
+
+  const refreshSecureAccess = async () => {
+    setSecureAccessLoading(true);
+    try {
+      setSecureAccess(await getSecureAccessState());
+      setMessage("");
+    } catch (error) {
+      setSecureAccess({
+        configured: false,
+        authenticated: false,
+        status: "setup-required",
+        setup: {
+          configured: false,
+          missing: ["secure access server"],
+          redirectUri: "http://127.0.0.1:8787/api/auth/callback",
+          frontendOrigin: window.location.origin,
+        },
+      });
+      setMessage(error instanceof Error ? error.message : "Secure access failed.");
+    } finally {
+      setSecureAccessLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshSecureAccess();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -2096,103 +2155,37 @@ function App() {
   const selectedProject =
     visibleProjects.find((project) => project.id === selectedId) ??
     visibleProjects[0];
-  const pendingAccessRequests = users.filter(
-    (user) => user.accessRequestStatus === "Pending Approval",
-  );
+  const pendingAccessRequests =
+    secureAccess?.pendingRequests?.map(secureUserToPrototypeUser) ?? [];
 
-  const handleLogin = (username: string, password: string) => {
-    const user = authenticateUser(username, password, users);
-    if (!user) {
-      setMessage(loginAccessMessage(username, users));
-      return;
+  const confirmAccountEmail = async (verificationCode: string) => {
+    try {
+      await verifySecureAccessCode(verificationCode);
+      await refreshSecureAccess();
+      setMessage("Email confirmed. Your profile is now waiting for admin approval.");
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Verification code was not accepted.",
+      );
     }
-    setCurrentUsername(user.username);
-    saveCurrentUsername(user.username);
-    setFilters(buildFilters(user.role === "Auditor" ? { auditor: user.fullName } : {}));
-    setSelectedId("");
-    setMessage("");
   };
 
-  const requestAccountAccess = ({
-    fullName,
-    email,
-    password,
-  }: {
-    fullName: string;
-    email: string;
-    password: string;
-  }) => {
-    if (!fullName.trim()) {
-      setMessage("Full name is required.");
-      return;
-    }
-    if (!isValidCompanyEmail(email)) {
-      setMessage("Use a valid company email address, not a personal email account.");
-      return;
-    }
-    if (password.trim().length < 6) {
-      setMessage("Password must be at least 6 characters for the request.");
-      return;
-    }
-    const accessRequest = buildAccessRequestUser({
-        fullName,
-        email,
-        password,
-        requestedAt: new Date().toISOString(),
-      });
-    const requestedUser = withUserDefaults({
-      ...accessRequest,
-      role: accessRequest.role as UserRole,
-      permissionGroup: accessRequest.permissionGroup as UserRole,
-      defaultVisibility: accessRequest.defaultVisibility as ProjectVisibility,
-    });
-    if (
-      users.some(
-        (user) =>
-          user.username === requestedUser.username ||
-          user.email.toLowerCase() === requestedUser.email.toLowerCase(),
-      )
-    ) {
-      setMessage("An account already exists or is pending for that email.");
-      return;
-    }
-    const nextUsers = [...users, requestedUser];
-    setUsers(nextUsers);
-    savePrototypeUsers(nextUsers);
-    setMessage(
-      `Verification request created for ${requestedUser.email}. Prototype code: ${requestedUser.verificationCode}`,
-    );
-  };
-
-  const confirmAccountEmail = (email: string, verificationCode: string) => {
-    const result = verifyAccessRequestEmail(users, email, verificationCode);
-    if (!result.matched) {
-      setMessage("Verification code did not match a pending account request.");
-      return;
-    }
-    setUsers(result.users);
-    savePrototypeUsers(result.users);
-    setMessage("Company email confirmed. Your request is now waiting for admin approval.");
-  };
-
-  const signOut = () => {
-    setCurrentUsername("");
-    saveCurrentUsername("");
+  const signOut = async () => {
+    await logoutSecureAccess();
+    await refreshSecureAccess();
     setEditing(null);
     setSelectedId("");
     setMessage("");
   };
 
-  if (!signedInUser) {
+  if (secureAccessLoading || !signedInUser) {
     return (
       <LoginScreen
-        users={users.filter(
-          (user) => user.active && user.accessRequestStatus === "Approved",
-        )}
+        access={secureAccess}
+        loading={secureAccessLoading}
         message={message}
-        onLogin={handleLogin}
-        onRequestAccess={requestAccountAccess}
         onVerifyEmail={confirmAccountEmail}
+        onRefresh={() => void refreshSecureAccess()}
       />
     );
   }
@@ -2831,55 +2824,49 @@ function App() {
     }
     setUsers(nextUsers);
     savePrototypeUsers(nextUsers);
-    if (originalUsername === signedInUser.username) {
-      setCurrentUsername(cleanUser.username);
-      saveCurrentUsername(cleanUser.username);
-    }
     setMessage(`${cleanUser.fullName} saved.`);
   };
 
-  const approveUserRequest = (username: string) => {
+  const approveUserRequest = async (username: string) => {
     if (signedInUser.role !== "Admin") {
       setMessage("Only admins can approve account requests.");
       return;
     }
-    const user = users.find((candidate) => candidate.username === username);
+    const user = pendingAccessRequests.find(
+      (candidate) => candidate.username === username,
+    );
     if (!user || !canApproveAccessRequest(user)) {
       setMessage("That account request must have a verified email before approval.");
       return;
     }
-    const nextUsers = users.map((candidate) =>
-      candidate.username === username
-        ? approveAccessRequest(candidate, signedInUser.fullName, new Date().toISOString())
-        : candidate,
-    );
-    setUsers(nextUsers);
-    savePrototypeUsers(nextUsers);
-    setMessage(`${user.fullName} approved for tracker access.`);
+    try {
+      await approveSecureAccessRequest(user.email);
+      await refreshSecureAccess();
+      setMessage(`${user.fullName} approved for tracker access.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Approval failed.");
+    }
   };
 
-  const rejectUserRequest = (username: string) => {
+  const rejectUserRequest = async (username: string) => {
     if (signedInUser.role !== "Admin") {
       setMessage("Only admins can reject account requests.");
       return;
     }
-    const user = users.find((candidate) => candidate.username === username);
+    const user = pendingAccessRequests.find(
+      (candidate) => candidate.username === username,
+    );
     if (!user) {
       setMessage("Account request was not found.");
       return;
     }
-    const nextUsers = users.map((candidate) =>
-      candidate.username === username
-        ? rejectAccessRequest(
-            candidate,
-            signedInUser.fullName,
-            new Date().toISOString(),
-          )
-        : candidate,
-    );
-    setUsers(nextUsers);
-    savePrototypeUsers(nextUsers);
-    setMessage(`${user.fullName} rejected.`);
+    try {
+      await rejectSecureAccessRequest(user.email);
+      await refreshSecureAccess();
+      setMessage(`${user.fullName} rejected.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Rejection failed.");
+    }
   };
 
   const resetUsers = () => {
@@ -2889,8 +2876,6 @@ function App() {
     }
     setUsers(defaultPrototypeUsers);
     savePrototypeUsers(defaultPrototypeUsers);
-    setCurrentUsername("justin.mojica");
-    saveCurrentUsername("justin.mojica");
     setMessage("Prototype users reset.");
   };
 
@@ -3133,165 +3118,112 @@ function App() {
 }
 
 function LoginScreen({
-  users,
+  access,
+  loading,
   message,
-  onLogin,
-  onRequestAccess,
   onVerifyEmail,
+  onRefresh,
 }: {
-  users: PrototypeUser[];
+  access: SecureAccessState | null;
+  loading: boolean;
   message: string;
-  onLogin: (username: string, password: string) => void;
-  onRequestAccess: (request: {
-    fullName: string;
-    email: string;
-    password: string;
-  }) => void;
-  onVerifyEmail: (email: string, verificationCode: string) => void;
+  onVerifyEmail: (verificationCode: string) => void | Promise<void>;
+  onRefresh: () => void;
 }) {
-  const [mode, setMode] = useState<"sign-in" | "request" | "verify">("sign-in");
-  const [username, setUsername] = useState("justin.mojica");
-  const [password, setPassword] = useState("password");
-  const [requestFullName, setRequestFullName] = useState("");
-  const [requestEmail, setRequestEmail] = useState("");
-  const [requestPassword, setRequestPassword] = useState("");
-  const [verificationEmail, setVerificationEmail] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    onLogin(username, password);
-  };
-
-  const submitAccessRequest = (event: FormEvent) => {
-    event.preventDefault();
-    onRequestAccess({
-      fullName: requestFullName,
-      email: requestEmail,
-      password: requestPassword,
-    });
-    setVerificationEmail(requestEmail);
-    setMode("verify");
-  };
 
   const submitEmailVerification = (event: FormEvent) => {
     event.preventDefault();
-    onVerifyEmail(verificationEmail, verificationCode);
+    void onVerifyEmail(verificationCode);
   };
+  const signInUrl = access?.signInUrl ?? secureAccessUrl("/api/auth/start?mode=signin");
+  const requestAccessUrl =
+    access?.requestAccessUrl ?? secureAccessUrl("/api/auth/start?mode=request");
+  const pendingVerification =
+    access?.status === "pending-verification" ||
+    access?.user?.accessRequestStatus === "Pending Verification";
+  const pendingApproval =
+    access?.status === "pending-approval" ||
+    access?.user?.accessRequestStatus === "Pending Approval";
+  const rejected =
+    access?.status === "rejected" || access?.user?.accessRequestStatus === "Rejected";
 
   return (
     <main className="login-shell">
-      <section className="login-panel">
-        <div>
-          <p className="eyebrow dark">Prototype access</p>
-          <h1>Audit Assignment Tracker</h1>
-          <p>Request tracker access with a company email, then wait for admin approval.</p>
-        </div>
-        <div className="access-mode-toggle" aria-label="Access options">
-          <button
-            type="button"
-            className={mode === "sign-in" ? undefined : "secondary"}
-            onClick={() => setMode("sign-in")}
-          >
-            Sign in
-          </button>
-          <button
-            type="button"
-            className={mode === "request" ? undefined : "secondary"}
-            onClick={() => setMode("request")}
-          >
-            Request account
-          </button>
-          <button
-            type="button"
-            className={mode === "verify" ? undefined : "secondary"}
-            onClick={() => setMode("verify")}
-          >
-            Confirm email
-          </button>
-        </div>
+      <section className="microsoft-login-stack">
+        <div className="microsoft-login-card">
+          <div className="microsoft-brand">
+            <span className="microsoft-mark" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+              <span />
+            </span>
+            <strong>Microsoft</strong>
+          </div>
+          <h1>Sign in</h1>
+          <p className="microsoft-login-copy">
+            Use your company Microsoft account to access the Audit Assignment Tracker.
+          </p>
+          {loading && <div className="toast">Checking secure access...</div>}
+          {access?.status === "setup-required" && (
+            <div className="secure-setup-box">
+              <strong>Secure access server is not configured.</strong>
+              <span>Missing: {access.setup?.missing.join(", ")}</span>
+              <span>Register redirect URI: {access.setup?.redirectUri}</span>
+            </div>
+          )}
+          {pendingVerification && (
+            <form className="verification-form" onSubmit={submitEmailVerification}>
+              <p>
+                A verification code was sent to {access?.user?.email}. Enter it before
+                admin approval.
+              </p>
+              <Input
+                label="Verification code"
+                value={verificationCode}
+                onChange={setVerificationCode}
+                placeholder="6-digit code"
+              />
+              <button type="submit">Confirm code</button>
+            </form>
+          )}
+          {pendingApproval && (
+            <div className="secure-setup-box">
+              <strong>Email confirmed.</strong>
+              <span>Your profile is waiting for admin approval.</span>
+            </div>
+          )}
+          {rejected && (
+            <div className="secure-setup-box">
+              <strong>Access request rejected.</strong>
+              <span>{access?.user?.rejectionReason || "Contact an admin."}</span>
+            </div>
+          )}
         {message && (
           <div className="toast" role="status">
             {message}
           </div>
         )}
-        {mode === "sign-in" && (
-          <>
-            <form className="login-form" onSubmit={submit}>
-              <Input
-                label="Username"
-                value={username}
-                onChange={setUsername}
-                placeholder="firstname.lastname"
-              />
-              <Input
-                label="Password"
-                value={password}
-                onChange={setPassword}
-                type="password"
-                placeholder="password"
-              />
-              <button type="submit">Sign in</button>
-            </form>
-            <div className="demo-users">
-              {users.map((user) => (
-                <button
-                  type="button"
-                  className="secondary"
-                  key={user.username}
-                  onClick={() => {
-                    setUsername(user.username);
-                    setPassword(user.password);
-                  }}
-                >
-                  <strong>{user.fullName}</strong>
-                  <span>{user.role}</span>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-        {mode === "request" && (
-          <form className="request-access-form" onSubmit={submitAccessRequest}>
-            <Input
-              label="Full name"
-              value={requestFullName}
-              onChange={setRequestFullName}
-              placeholder="First Last"
-            />
-            <Input
-              label="Company email"
-              value={requestEmail}
-              onChange={setRequestEmail}
-              placeholder="firstname.lastname@company.com"
-            />
-            <Input
-              label="Password"
-              value={requestPassword}
-              onChange={setRequestPassword}
-              type="password"
-              placeholder="Create a test password"
-            />
-            <button type="submit">Send verification request</button>
-          </form>
-        )}
-        {mode === "verify" && (
-          <form className="request-access-form" onSubmit={submitEmailVerification}>
-            <Input
-              label="Company email"
-              value={verificationEmail}
-              onChange={setVerificationEmail}
-              placeholder="firstname.lastname@company.com"
-            />
-            <Input
-              label="Verification code"
-              value={verificationCode}
-              onChange={setVerificationCode}
-              placeholder="6-digit code"
-            />
-            <button type="submit">Confirm email</button>
-          </form>
-        )}
+          <div className="microsoft-login-actions">
+            <a className="microsoft-primary-link" href={signInUrl}>
+              Next
+            </a>
+            <button type="button" className="secondary" onClick={onRefresh}>
+              Back
+            </button>
+          </div>
+          <p className="microsoft-create-line">
+            No account? <a href={requestAccessUrl}>Create one!</a>
+          </p>
+          <a className="microsoft-help-link" href={requestAccessUrl}>
+            Request tracker access
+          </a>
+        </div>
+        <a className="signin-options-card" href={signInUrl}>
+          <span aria-hidden="true">⌕</span>
+          Sign-in options
+        </a>
       </section>
     </main>
   );

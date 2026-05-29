@@ -77,6 +77,7 @@ See `docs/microsoft-lists-schema.md` for the target list layout and implementati
 
 | Update size | Version | What changed                                                                                                                                            |
 | ----------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Major       | UX-21   | Replace local prototype login with a backend Microsoft OAuth gate, Graph email verification codes, server-side sessions, and admin approval endpoints. |
 | Major       | UX-20   | Add gated account requests: company-email signup, prototype email confirmation codes, and admin approval before tracker access.                         |
 | Major       | UX-19   | Replace the pasted Graph token workflow with Microsoft Entra/MSAL sign-in, token refresh, sign-out, and auth config tests.                              |
 | Major       | UX-18   | Add a live Microsoft Graph connection mode, saved SharePoint/list ID settings, push/pull controls, and Graph sync tests.                                |
@@ -115,14 +116,34 @@ This split keeps the main assignment row Power BI friendly while letting Power A
 
 ### Significant next upgrades
 
-1. **Replace prototype verification codes with real Microsoft 365 email delivery** so new users receive a confirmation link/code instead of seeing a local test code.
-2. **Add a connection health/setup screen** that checks every required Microsoft List, validates permissions, and reports missing list IDs before sync.
-3. **Map approved users to Microsoft 365 accounts/groups** so the current role model can move away from local test passwords.
-4. **Build a Power Apps front end** for intake, stage movement, document readiness, comments, and reviewer sign-off once the SharePoint list schema is stable.
-5. **Automate the repeatable follow-up work** with Power Automate flows for new intake alerts, quote approval reminders, broker chase reminders, reviewer approvals, stage-history creation, and invoice/payment notifications.
-6. **Add document library integration** so BAA, endorsements, Premium BDX, testing sheets, reports, and invoice artifacts are stored against the assignment record instead of only represented as checkboxes.
-7. **Publish Power BI reporting** from the SharePoint lists for workload, aging, cycle time, overdue items, quote value, document blockers, and closed-audit throughput.
-8. **Define permissions and governance** before launch: auditor/reviewer roles, edit rights by stage, naming rules, required metadata, retention, and environment ownership.
+1. **Configure the Microsoft Entra app registration** for backend OAuth and Graph `Mail.Send`, then enter the values from `server.env.example`.
+2. **Move server approval records into Microsoft Lists or Dataverse** so approvals are durable outside the local server JSON file.
+3. **Add a connection health/setup screen** that checks Microsoft OAuth, Graph email, every required Microsoft List, and admin configuration.
+4. **Map approved users to Microsoft 365 groups** so Admin/Auditor/Finance permissions come from tenant groups instead of app-local role choices.
+5. **Build a Power Apps front end** for intake, stage movement, document readiness, comments, and reviewer sign-off once the SharePoint list schema is stable.
+6. **Automate the repeatable follow-up work** with Power Automate flows for new intake alerts, quote approval reminders, broker chase reminders, reviewer approvals, stage-history creation, and invoice/payment notifications.
+7. **Add document library integration** so BAA, endorsements, Premium BDX, testing sheets, reports, and invoice artifacts are stored against the assignment record instead of only represented as checkboxes.
+8. **Publish Power BI reporting** from the SharePoint lists for workload, aging, cycle time, overdue items, quote value, document blockers, and closed-audit throughput.
+9. **Define permissions and governance** before launch: auditor/reviewer roles, edit rights by stage, naming rules, required metadata, retention, and environment ownership.
+
+### Secure access setup
+
+Tracker access is now enforced by `server/secureAccessServer.mjs`, not by browser storage. The React app calls the backend to check the current Microsoft-authenticated session before rendering the tracker.
+
+Required Microsoft setup:
+
+- Register a Microsoft Entra web application.
+- Add redirect URI `http://127.0.0.1:8787/api/auth/callback` for local testing.
+- Create a client secret.
+- Grant Microsoft Graph application permission `Mail.Send` and apply admin consent.
+- Use a real mailbox for `MICROSOFT_MAIL_FROM`.
+- Copy `server.env.example` values into your local environment before running `npm run server`.
+
+Local run model:
+
+- `npm run dev` serves the React UI at `http://127.0.0.1:5173`.
+- `npm run server` serves the secure backend at `http://127.0.0.1:8787`.
+- `npm run secure` builds the app and serves the production bundle through the secure backend.
 
 ### Automation candidates
 

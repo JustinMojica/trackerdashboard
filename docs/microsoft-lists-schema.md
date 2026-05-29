@@ -34,7 +34,7 @@ Current supported live actions:
 - Push the current migration package to configured Microsoft Lists.
 - Load assignment rows from the configured Audit Assignments list into the browser prototype.
 
-The prototype account gate uses local browser storage for access requests. A new user requests an account with a company email, confirms the generated test verification code, and then waits for an Admin user to approve the request. In production, the verification-code step should become a Microsoft 365 email or Power Automate confirmation link, and the admin approval trail should remain in `Tracker Users`.
+The secure account gate now uses the backend server for Microsoft OAuth, Graph email verification codes, signed HTTP-only sessions, and admin approval endpoints. A new user starts with Microsoft-hosted sign-in, requests access with that Microsoft identity, receives a verification code by email, confirms the code in the tracker, and then waits for an Admin user to approve the profile. The current backend persists approval records in `server/data/access-users.json`; the next production step is moving that store into Microsoft Lists or Dataverse.
 
 The sync client uses stable app keys for upserts:
 
@@ -70,8 +70,8 @@ Each activity row should include:
 5. Validate that each child row has a matching `TrackerAssignmentId`.
 6. Connect the app to Microsoft Graph after the list structure is approved.
 7. Validate the Microsoft Entra sign-in with a real tenant app registration.
-8. Replace prototype account verification codes with real Microsoft 365 email delivery.
-9. Add a setup health check that tests all seven configured lists.
+8. Move backend approval records from local server JSON into Microsoft Lists or Dataverse.
+9. Add a setup health check that tests Microsoft OAuth, Graph email delivery, and all seven configured lists.
 10. Add Power Automate flows only after live list writes and activity-log entries are stable.
 
 ## Why This Split Matters
