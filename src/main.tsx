@@ -1,5 +1,9 @@
 import React, { FormEvent, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
+import {
+  buildMicrosoftListsMigrationPackage,
+  microsoftListSchemas,
+} from "./microsoftListsSchema";
 import "./styles.css";
 
 export type AssignmentSource = "Email" | "DAM";
@@ -1605,13 +1609,34 @@ function exportProjectsToJson(projects: AuditProject[]) {
     version: 1,
     projects,
   };
+  downloadJsonFile(
+    payload,
+    `audit-assignments-${new Date().toISOString().slice(0, 10)}.json`,
+  );
+}
+
+function exportMicrosoftListsPackage(
+  projects: AuditProject[],
+  users: PrototypeUser[],
+  exportedBy: string,
+) {
+  const payload = buildMicrosoftListsMigrationPackage(projects, users, {
+    exportedBy,
+  });
+  downloadJsonFile(
+    payload,
+    `audit-microsoft-lists-package-${new Date().toISOString().slice(0, 10)}.json`,
+  );
+}
+
+function downloadJsonFile(payload: unknown, filename: string) {
   const blob = new Blob([JSON.stringify(payload, null, 2)], {
     type: "application/json;charset=utf-8",
   });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `audit-assignments-${new Date().toISOString().slice(0, 10)}.json`;
+  link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -1781,6 +1806,19 @@ function App() {
   const handleExportJson = () => {
     exportProjectsToJson(visibleProjects);
     recordExport("JSON backup");
+  };
+
+  const handleExportMicrosoftListsPackage = () => {
+    if (!hasFullProjectAccess(signedInUser)) {
+      setMessage("Only admins and audit managers can export the Microsoft Lists package.");
+      return;
+    }
+    exportMicrosoftListsPackage(
+      visibleProjects,
+      signedInUser.role === "Admin" ? users : [],
+      signedInUser.fullName,
+    );
+    recordExport("Microsoft Lists package");
   };
 
   const resetSampleProjects = () => {
@@ -2221,6 +2259,14 @@ function App() {
           onResetUsers={confirmResetUsers}
         />
       )}
+      {hasFullProjectAccess(signedInUser) && (
+        <CentralStoragePanel
+          projects={visibleProjects}
+          users={signedInUser.role === "Admin" ? users : []}
+          exportedBy={signedInUser.fullName}
+          onExport={handleExportMicrosoftListsPackage}
+        />
+      )}
       <Dashboard projects={visibleProjects} />
       <TodaysWork projects={visibleProjects} onSelect={setSelectedId} />
       <CycleTimeDashboard
@@ -2294,6 +2340,13 @@ function App() {
           onClick={handleExportJson}
         >
           Export JSON backup
+        </button>
+        <button
+          className="secondary"
+          disabled={!hasFullProjectAccess(signedInUser)}
+          onClick={handleExportMicrosoftListsPackage}
+        >
+          Export Lists package
         </button>
         <span className="last-export">
           Last export: {formatDateTime(lastExportedAt)}
@@ -2500,6 +2553,64 @@ function AccessBanner({
         </div>
       </div>
       <strong>{visibleProjectMessage(user)}</strong>
+    </section>
+  );
+}
+
+function CentralStoragePanel({
+  projects,
+  users,
+  exportedBy,
+  onExport,
+}: {
+  projects: AuditProject[];
+  users: PrototypeUser[];
+  exportedBy: string;
+  onExport: () => void;
+}) {
+  const packagePreview = useMemo(
+    () =>
+      buildMicrosoftListsMigrationPackage(projects, users, {
+        exportedBy,
+        exportedAt: "preview",
+      }),
+    [projects, users, exportedBy],
+  );
+  return (
+    <section className="panel central-storage">
+      <div className="section-title">
+        <div>
+          <p className="eyebrow dark">Central storage</p>
+          <h2>Microsoft Lists foundation</h2>
+          <span>Browser storage active; SharePoint-ready schema and activity log prepared.</span>
+        </div>
+        <button type="button" onClick={onExport}>
+          Export Lists package
+        </button>
+      </div>
+      <div className="storage-stats">
+        <span>
+          <strong>{packagePreview.totals.lists}</strong>
+          Lists
+        </span>
+        <span>
+          <strong>{packagePreview.totals.assignments}</strong>
+          Assignments
+        </span>
+        <span>
+          <strong>{packagePreview.totals.activityLogEvents}</strong>
+          Activity events
+        </span>
+        <span>
+          <strong>{packagePreview.totals.rows}</strong>
+          Seed rows
+        </span>
+      </div>
+      <div className="storage-list-chips" aria-label="Microsoft Lists schema">
+        {microsoftListSchemas.map((schema) => (
+          <span key={schema.key}>{schema.displayName}</span>
+        ))}
+      </div>
     </section>
   );
 }

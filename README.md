@@ -63,10 +63,19 @@ The `AuditProject` shape in `src/main.tsx` is intentionally flat and list-friend
 
 A future SharePoint implementation should use an **Audit Assignments** list for the main project record and an **Audit Assignment Status History** child list for the stage movement audit trail. Power Automate flows can enforce the same gate rules used in this prototype before advancing stages. The newer card comments and status history timestamps should map to child lists so users can keep a Trello-style activity trail without bloating the main assignment row.
 
+The prototype now includes a concrete Microsoft Lists migration layer in `src/microsoftListsSchema.ts`. Admin and Audit Manager users can export a **Microsoft Lists package** from the app. That package contains:
+
+- Graph-style list creation payloads for the target SharePoint/Microsoft Lists structure.
+- Flattened seed rows for assignments, teams, comments, checklist rows, status history, the append-only activity log, and prototype users.
+- Totals for list count, assignment count, activity-log events, and seed rows so the export can be checked before import.
+
+See `docs/microsoft-lists-schema.md` for the target list layout and implementation order.
+
 ## Update log
 
 | Update size | Version | What changed                                                                                                                                            |
 | ----------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Major       | UX-17   | Add a Microsoft Lists schema/migration package, central-storage readiness panel, and normalized activity-log export rows.                              |
 | Medium      | UX-16   | Add Today's Work priority queues, role-based saved filter views, a clearer Clear filters action, Kanban stage counts, and due-today card badges.        |
 | Medium      | UX-15   | Add reusable email/document template previews and searchable project audit trails.                                                                       |
 | Minor       | UX-14   | Add confirmation prompts for reset/import actions, clearer role-based empty states, user status badges, and a last-export timestamp.                    |
@@ -90,17 +99,18 @@ A future SharePoint implementation should use an **Audit Assignments** list for 
 Move to Office 365 after the team validates this major UX iteration with realistic assignments. Recommended target lists:
 
 - **Audit Assignments** for the main flat assignment record.
-- **Audit Assignment Comments** for Trello-style card comments.
-- **Audit Assignment Checklist Items** for per-stage checklist completion.
-- **Audit Assignment Status History** for timestamped stage and status changes and stage-duration reporting.
-- **Auditors / Reviewers** for active users, lead/supporting audit team roles, role-based workload reporting.
-- **Documents Requested / Received** for BAA, endorsements, Premium BDX, and audit support tracking.
+- **Audit Team Members** for lead/supporting assignment rows.
+- **Audit Comments** for Trello-style card comments.
+- **Audit Checklist Items** for per-stage checklist completion.
+- **Audit Status History** for timestamped stage and status changes and stage-duration reporting.
+- **Audit Activity Log** for append-only accountability across edits, comments, documents, finance, stage changes, checklist changes, and team changes.
+- **Tracker Users** for the prototype role map until Microsoft 365 identity groups replace it.
 
 This split keeps the main assignment row Power BI friendly while letting Power Apps and Power Automate handle related activity, comments, reminders, and approvals.
 
 ### Significant next upgrades
 
-1. **Replace prototype login and local state with Microsoft 365 identity plus SharePoint/Microsoft Lists** so users, assignment records, audit teams, comments, status history, and document requests persist centrally instead of in browser local storage.
+1. **Connect the schema to live Microsoft 365 identity and SharePoint/Microsoft Lists** so users, assignment records, audit teams, comments, status history, and activity log entries persist centrally instead of only exporting from browser local storage.
 2. **Build a Power Apps front end** for intake, stage movement, document readiness, comments, and reviewer sign-off once the SharePoint list schema is stable.
 3. **Automate the repeatable follow-up work** with Power Automate flows for new intake alerts, quote approval reminders, broker chase reminders, reviewer approvals, stage-history creation, and invoice/payment notifications.
 4. **Add document library integration** so BAA, endorsements, Premium BDX, testing sheets, reports, and invoice artifacts are stored against the assignment record instead of only represented as checkboxes.
