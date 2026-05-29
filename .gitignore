@@ -3,5 +3,6 @@ dist/
 *.tsbuildinfo
 .env
 .env.*
+server.env
 test-dist/
 server/data/

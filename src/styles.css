@@ -189,6 +189,15 @@ main {
   font-weight: 700;
   text-decoration: none;
 }
+.microsoft-primary-link.is-disabled,
+.signin-options-card.is-disabled,
+.disabled-link {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.microsoft-primary-link.is-disabled {
+  border: 0;
+}
 .signin-options-card {
   align-items: center;
   color: #222;

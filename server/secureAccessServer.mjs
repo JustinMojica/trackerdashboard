@@ -1,5 +1,5 @@
 import { createHmac, createHash, randomBytes } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join, normalize, resolve } from "node:path";
@@ -13,6 +13,8 @@ const distDir = resolve(rootDir, "dist");
 const oauthStates = new Map();
 const cookieName = "tracker_session";
 const oauthCookieName = "tracker_oauth_state";
+
+loadLocalEnvironment();
 
 const config = {
   port: Number(process.env.TRACKER_SERVER_PORT || 8787),
@@ -31,7 +33,7 @@ const config = {
 
 const redirectUri = `${config.publicOrigin}/api/auth/callback`;
 const authority = `https://login.microsoftonline.com/${config.tenantId}/oauth2/v2.0`;
-const jwks = config.tenantId
+const jwks = hasConfiguredValue(config.tenantId)
   ? createRemoteJWKSet(
       new URL(`https://login.microsoftonline.com/${config.tenantId}/discovery/v2.0/keys`),
     )
@@ -100,7 +102,7 @@ function accessConfigStatus() {
     TRACKER_ALLOWED_EMAIL_DOMAINS: config.allowedDomains.join(","),
     TRACKER_ADMIN_EMAILS: config.adminEmails.join(","),
   })) {
-    if (!value) missing.push(key);
+    if (!hasConfiguredValue(value)) missing.push(key);
   }
   return {
     configured: missing.length === 0,
@@ -108,6 +110,41 @@ function accessConfigStatus() {
     redirectUri,
     frontendOrigin: config.frontendOrigin,
   };
+}
+
+function loadLocalEnvironment() {
+  for (const filename of [".env", ".env.local", "server.env"]) {
+    const envPath = resolve(rootDir, filename);
+    if (!existsSync(envPath)) continue;
+    const contents = readFileSync(envPath, "utf8");
+    for (const rawLine of contents.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith("#")) continue;
+      const separatorIndex = line.indexOf("=");
+      if (separatorIndex < 1) continue;
+      const key = line.slice(0, separatorIndex).trim();
+      let value = line.slice(separatorIndex + 1).trim();
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.slice(1, -1);
+      }
+      if (!process.env[key]) process.env[key] = value;
+    }
+  }
+}
+
+function hasConfiguredValue(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) return false;
+  if (normalized === "00000000-0000-0000-0000-000000000000") return false;
+  if (normalized.startsWith("replace-with-")) return false;
+  return ![
+    "tracker-mailbox@yourcompany.com",
+    "yourcompany.com",
+    "your.email@yourcompany.com",
+  ].includes(normalized);
 }
 
 async function currentAccessState(request) {

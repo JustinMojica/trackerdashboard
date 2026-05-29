@@ -137,7 +137,7 @@ Required Microsoft setup:
 - Create a client secret.
 - Grant Microsoft Graph application permission `Mail.Send` and apply admin consent.
 - Use a real mailbox for `MICROSOFT_MAIL_FROM`.
-- Copy `server.env.example` values into your local environment before running `npm run server`.
+- Copy `server.env.example` to `server.env`, replace every placeholder with real Microsoft tenant values, then restart `npm run server`.
 
 Local run model:
 

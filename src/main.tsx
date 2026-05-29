@@ -1726,8 +1726,8 @@ export function activityTimeline(project: AuditProject): ActivityItem[] {
     id: `stage-${item.id}`,
     timestamp: item.changedAt,
     type: "stage",
-    title: `${item.fromStage} → ${item.toStage}`,
-    detail: `${item.note} · ${item.changedBy}`,
+    title: `${item.fromStage} â†’ ${item.toStage}`,
+    detail: `${item.note} Â· ${item.changedBy}`,
     tone: "ok",
   }));
   const commentItems: ActivityItem[] = project.comments.map((comment) => ({
@@ -1770,7 +1770,7 @@ export function activityTimeline(project: AuditProject): ActivityItem[] {
       timestamp: event.createdAt,
       type: event.type === "field" ? "stage" : event.type,
       title: event.title,
-      detail: `${event.detail} · ${event.actor}`,
+      detail: `${event.detail} Â· ${event.actor}`,
       tone:
         event.type === "document"
           ? "warning"
@@ -2555,7 +2555,7 @@ function App() {
         ...(project.activityEvents ?? []),
         createActivityEvent(
           "stage",
-          `${project.currentStage} → ${targetStage}`,
+          `${project.currentStage} â†’ ${targetStage}`,
           "Stage changed in tracker.",
           signedInUser.fullName,
         ),
@@ -3147,6 +3147,7 @@ function LoginScreen({
     access?.user?.accessRequestStatus === "Pending Approval";
   const rejected =
     access?.status === "rejected" || access?.user?.accessRequestStatus === "Rejected";
+  const setupRequired = access?.status === "setup-required";
 
   return (
     <main className="login-shell">
@@ -3169,6 +3170,10 @@ function LoginScreen({
           {access?.status === "setup-required" && (
             <div className="secure-setup-box">
               <strong>Secure access server is not configured.</strong>
+              <span>
+                Sign-in will be enabled after Microsoft Entra and Graph email
+                settings are saved in server.env and the secure server is restarted.
+              </span>
               <span>Missing: {access.setup?.missing.join(", ")}</span>
               <span>Register redirect URI: {access.setup?.redirectUri}</span>
             </div>
@@ -3206,24 +3211,48 @@ function LoginScreen({
           </div>
         )}
           <div className="microsoft-login-actions">
-            <a className="microsoft-primary-link" href={signInUrl}>
-              Next
-            </a>
+            {setupRequired ? (
+              <button type="button" className="microsoft-primary-link is-disabled" disabled>
+                Next
+              </button>
+            ) : (
+              <a className="microsoft-primary-link" href={signInUrl}>
+                Next
+              </a>
+            )}
             <button type="button" className="secondary" onClick={onRefresh}>
               Back
             </button>
           </div>
           <p className="microsoft-create-line">
-            No account? <a href={requestAccessUrl}>Create one!</a>
+            No account?{" "}
+            {setupRequired ? (
+              <span className="disabled-link">Create one!</span>
+            ) : (
+              <a href={requestAccessUrl}>Create one!</a>
+            )}
           </p>
-          <a className="microsoft-help-link" href={requestAccessUrl}>
-            Request tracker access
-          </a>
+          {setupRequired ? (
+            <span className="microsoft-help-link disabled-link">
+              Request tracker access
+            </span>
+          ) : (
+            <a className="microsoft-help-link" href={requestAccessUrl}>
+              Request tracker access
+            </a>
+          )}
         </div>
-        <a className="signin-options-card" href={signInUrl}>
-          <span aria-hidden="true">⌕</span>
-          Sign-in options
-        </a>
+        {setupRequired ? (
+          <div className="signin-options-card is-disabled">
+            <span aria-hidden="true">?</span>
+            Sign-in options
+          </div>
+        ) : (
+          <a className="signin-options-card" href={signInUrl}>
+            <span aria-hidden="true">?</span>
+            Sign-in options
+          </a>
+        )}
       </section>
     </main>
   );
@@ -3289,7 +3318,7 @@ function AccessBanner({
           <p className="eyebrow dark">Signed in</p>
           <h2>{user.fullName}</h2>
           <span>
-            {user.username} · {user.permissionGroup} · {visibleCount} visible projects
+            {user.username} Â· {user.permissionGroup} Â· {visibleCount} visible projects
           </span>
         </div>
       </div>
@@ -4046,7 +4075,7 @@ function WorkloadCounts({
           <strong>{totalOpen}</strong>
           <span>open auditor assignments</span>
           <small>
-            {visibleAuditors.length} active · {hiddenAuditors.length} minimized
+            {visibleAuditors.length} active Â· {hiddenAuditors.length} minimized
           </small>
         </div>
       </div>
@@ -4082,7 +4111,7 @@ function WorkloadCounts({
               <div>
                 <strong>{row.auditor}</strong>
                 <small>
-                  {row.openCount} open · {row.leadCount} lead · {row.supportCount} support ·{" "}
+                  {row.openCount} open Â· {row.leadCount} lead Â· {row.supportCount} support Â·{" "}
                   {row.blockedCount} blocked
                 </small>
               </div>
@@ -4165,7 +4194,7 @@ function ProjectTable({
                     <span>{project.clientCoverholderCode}</span>
                   </td>
                   <td>{project.assignmentType}</td>
-                  <td>{project.auditEntity || "—"}</td>
+                  <td>{project.auditEntity || "â€”"}</td>
                   <td>{formatAuditTeam(project)}</td>
                   <td>{project.currentStage}</td>
                   <td>{project.assignmentSource}</td>
@@ -4175,7 +4204,7 @@ function ProjectTable({
                   </td>
                   <td>{project.paymentReceived ? "Yes" : "No"}</td>
                   <td>{project.nextAction}</td>
-                  <td>{blockers.length ? blockers.join("; ") : "—"}</td>
+                  <td>{blockers.length ? blockers.join("; ") : "â€”"}</td>
                 </tr>
               );
             })}
@@ -4340,7 +4369,7 @@ function Kanban({
     <section className="panel">
       <div className="section-title">
         <h2>Lifecycle board</h2>
-        <span>{projects.length} visible · drag cards between stages</span>
+        <span>{projects.length} visible Â· drag cards between stages</span>
       </div>
       <div className="kanban">
         {stages.map((stage) => {
@@ -4377,7 +4406,7 @@ function Kanban({
                   >
                     <strong>{project.assignmentNumber}</strong>
                     <span>
-                      {project.clientCoverholderCode} ·{" "}
+                      {project.clientCoverholderCode} Â·{" "}
                       {formatAuditTeam(project)}
                     </span>
                     <span className="pill muted">{project.assignmentType}</span>
@@ -4458,7 +4487,7 @@ function LabelChip({
           onClick={onRemove}
           onMouseDown={(event) => event.stopPropagation()}
         >
-          ×
+          Ã—
         </button>
       )}
     </span>
@@ -4534,11 +4563,11 @@ function ProjectDetail({
           <Meta label="Status" value={project.assignmentStatus} />
           <Meta
             label="Quote"
-            value={`${project.quoteStatus} · ${project.quoteAmount.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })}`}
+            value={`${project.quoteStatus} Â· ${project.quoteAmount.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })}`}
           />
           <Meta
             label="Audit timing"
-            value={`${project.tentativeAuditWeek || "No week"} · ${project.confirmedAuditDate || "No date"}`}
+            value={`${project.tentativeAuditWeek || "No week"} Â· ${project.confirmedAuditDate || "No date"}`}
           />
           <Meta label="Audit type" value={project.auditType} />
           <Meta
@@ -5180,10 +5209,10 @@ function History({ project }: { project: AuditProject }) {
           .map((item) => (
             <div key={item.id}>
               <strong>
-                {item.fromStage} → {item.toStage}
+                {item.fromStage} â†’ {item.toStage}
               </strong>
               <span>
-                {item.changedAt} · {item.changedBy}
+                {item.changedAt} Â· {item.changedBy}
               </span>
               <p>{item.note}</p>
             </div>
@@ -5393,7 +5422,7 @@ function ProjectForm({
                   className={selected ? "team-option selected" : "team-option"}
                   onClick={() => toggleSupportingAuditor(auditor)}
                 >
-                  {selected ? "✓ " : "+ "}
+                  {selected ? "âœ“ " : "+ "}
                   {auditor}
                 </button>
               );
@@ -5548,7 +5577,7 @@ function ProjectForm({
         <Meta label="Assignment" value={draft.assignmentNumber} />
         <Meta
           label="Source / type"
-          value={`${draft.assignmentSource} · ${draft.assignmentType}`}
+          value={`${draft.assignmentSource} Â· ${draft.assignmentType}`}
         />
         <Meta label="Audit Entity" value={draft.auditEntity || "Not set"} />
         <Meta label="Audit team" value={formatAuditTeam(draft)} />
@@ -5556,7 +5585,7 @@ function ProjectForm({
         <Meta label="Due date" value={draft.dueDate || "Not set"} />
         <Meta
           label="Quote"
-          value={`${draft.quoteStatus} · ${draft.quoteAmount || 0}`}
+          value={`${draft.quoteStatus} Â· ${draft.quoteAmount || 0}`}
         />
         <Meta
           label="Labels"
