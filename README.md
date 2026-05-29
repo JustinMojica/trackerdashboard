@@ -63,11 +63,12 @@ The `AuditProject` shape in `src/main.tsx` is intentionally flat and list-friend
 
 A future SharePoint implementation should use an **Audit Assignments** list for the main project record and an **Audit Assignment Status History** child list for the stage movement audit trail. Power Automate flows can enforce the same gate rules used in this prototype before advancing stages. The newer card comments and status history timestamps should map to child lists so users can keep a Trello-style activity trail without bloating the main assignment row.
 
-The prototype now includes a concrete Microsoft Lists migration layer in `src/microsoftListsSchema.ts`. Admin and Audit Manager users can export a **Microsoft Lists package** from the app. That package contains:
+The prototype now includes a concrete Microsoft Lists migration layer in `src/microsoftListsSchema.ts` and a live Graph client in `src/microsoftListsClient.ts`. Admin and Audit Manager users can export a **Microsoft Lists package** from the app, or configure SharePoint site/list IDs and a session-only Microsoft Graph access token to test, sync, and load assignment rows.
 
 - Graph-style list creation payloads for the target SharePoint/Microsoft Lists structure.
 - Flattened seed rows for assignments, teams, comments, checklist rows, status history, the append-only activity log, and prototype users.
 - Totals for list count, assignment count, activity-log events, and seed rows so the export can be checked before import.
+- Live sync controls for testing the Audit Assignments list, pushing configured list rows, and loading assignment rows back into the browser prototype.
 
 See `docs/microsoft-lists-schema.md` for the target list layout and implementation order.
 
@@ -75,6 +76,7 @@ See `docs/microsoft-lists-schema.md` for the target list layout and implementati
 
 | Update size | Version | What changed                                                                                                                                            |
 | ----------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Major       | UX-18   | Add a live Microsoft Graph connection mode, saved SharePoint/list ID settings, push/pull controls, and Graph sync tests.                                |
 | Major       | UX-17   | Add a Microsoft Lists schema/migration package, central-storage readiness panel, and normalized activity-log export rows.                              |
 | Medium      | UX-16   | Add Today's Work priority queues, role-based saved filter views, a clearer Clear filters action, Kanban stage counts, and due-today card badges.        |
 | Medium      | UX-15   | Add reusable email/document template previews and searchable project audit trails.                                                                       |
@@ -91,7 +93,7 @@ See `docs/microsoft-lists-schema.md` for the target list layout and implementati
 | Major       | UX-4    | Add activity event tracking, post-intake support additions, cycle-time reporting ranges, and simplified role-based workload counts.                    |
 | Major       | UX-3    | Add lead/supporting audit teams, count shared assignments in workload, and clarify document readiness status colors.                                    |
 | Major       | UX-2    | Add audit trail, document readiness workflow actions, zero-load workload minimization, and a Node test suite for workflow logic.                  |
-| Major       | UX-1    | Redesign workload as a dashboard, add guided intake, Trello-style labels, Today’s Work, interactive checklists, and stronger Office 365 data readiness. |
+| Major       | UX-1    | Redesign workload as a dashboard, add guided intake, Trello-style labels, Today's Work, interactive checklists, and stronger Office 365 data readiness. |
 | Small       | Patch   | Copy changes, option-list tweaks, and small field additions that do not change the primary workflow.                                                    |
 
 ## Office 365 migration readiness
@@ -110,7 +112,7 @@ This split keeps the main assignment row Power BI friendly while letting Power A
 
 ### Significant next upgrades
 
-1. **Connect the schema to live Microsoft 365 identity and SharePoint/Microsoft Lists** so users, assignment records, audit teams, comments, status history, and activity log entries persist centrally instead of only exporting from browser local storage.
+1. **Replace pasted Graph tokens with Microsoft Entra sign-in** so the live Lists mode can authenticate safely without manual token handling.
 2. **Build a Power Apps front end** for intake, stage movement, document readiness, comments, and reviewer sign-off once the SharePoint list schema is stable.
 3. **Automate the repeatable follow-up work** with Power Automate flows for new intake alerts, quote approval reminders, broker chase reminders, reviewer approvals, stage-history creation, and invoice/payment notifications.
 4. **Add document library integration** so BAA, endorsements, Premium BDX, testing sheets, reports, and invoice artifacts are stored against the assignment record instead of only represented as checkboxes.

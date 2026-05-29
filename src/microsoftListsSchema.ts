@@ -116,7 +116,7 @@ export type MicrosoftListSeedRow = {
 
 export type MicrosoftListsMigrationPackage = {
   app: "audit-assignment-tracker";
-  schemaVersion: 2;
+  schemaVersion: 3;
   exportedAt: string;
   exportedBy: string;
   storageTarget: "Microsoft Lists / SharePoint";
@@ -211,6 +211,7 @@ export const microsoftListSchemas: MicrosoftListSchema[] = [
     displayName: "Audit Team Members",
     purpose: "One row per assignment team member for lead/support workload reporting.",
     columns: [
+      text("TeamMemberKey", "Team member key", true, true),
       text("TrackerAssignmentId", "Tracker assignment ID", true, true),
       text("AssignmentNumber", "Assignment number", true, true),
       text("PersonName", "Person name", true, true),
@@ -236,6 +237,7 @@ export const microsoftListSchemas: MicrosoftListSchema[] = [
     displayName: "Audit Checklist Items",
     purpose: "One row per completed or reopened checklist item.",
     columns: [
+      text("TrackerChecklistItemId", "Tracker checklist item ID", true, true),
       text("TrackerAssignmentId", "Tracker assignment ID", true, true),
       text("AssignmentNumber", "Assignment number", true, true),
       text("ChecklistKey", "Checklist key", true, true),
@@ -313,7 +315,7 @@ export function buildMicrosoftListsMigrationPackage(
   const rowCount = Object.values(rows).reduce((sum, listRows) => sum + listRows.length, 0);
   return {
     app: "audit-assignment-tracker",
-    schemaVersion: 2,
+    schemaVersion: 3,
     exportedAt: options.exportedAt ?? new Date().toISOString(),
     exportedBy: options.exportedBy,
     storageTarget: "Microsoft Lists / SharePoint",
@@ -462,6 +464,7 @@ function projectToTeamRows(project: CentralAuditProject) {
   return project.auditTeam.map((member) =>
     row("auditTeamMembers", {
       Title: `${project.assignmentNumber} - ${member.person}`,
+      TeamMemberKey: `${project.id}|${member.role}|${member.person}`,
       TrackerAssignmentId: project.id,
       AssignmentNumber: project.assignmentNumber,
       PersonName: member.person,
@@ -491,6 +494,7 @@ function projectToChecklistRows(project: CentralAuditProject) {
     const item = itemParts.join(":") || key;
     return row("auditChecklistItems", {
       Title: `${project.assignmentNumber} - ${item}`,
+      TrackerChecklistItemId: `${project.id}|${key}`,
       TrackerAssignmentId: project.id,
       AssignmentNumber: project.assignmentNumber,
       ChecklistKey: key,

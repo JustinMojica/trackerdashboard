@@ -1,5 +1,19 @@
-import React, { FormEvent, useMemo, useState } from "react";
+import React, { FormEvent, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
+import {
+  buildSyncPackage,
+  hasFullMicrosoftListsConfig,
+  hasMinimumMicrosoftListsConfig,
+  microsoftListLabels,
+  missingMicrosoftListLabels,
+  pullAssignmentRowsFromMicrosoftLists,
+  pushMigrationPackageToMicrosoftLists,
+  requiredMicrosoftListKeys,
+  sanitizeMicrosoftListsConfig,
+  testMicrosoftListsConnection,
+  type MicrosoftListKey,
+  type MicrosoftListsConnectionConfig,
+} from "./microsoftListsClient";
 import {
   buildMicrosoftListsMigrationPackage,
   microsoftListSchemas,
@@ -146,6 +160,7 @@ type FilterPreset = {
 };
 
 type ViewMode = "kanban" | "table";
+type StorageMode = "local" | "microsoft-lists";
 type UserRole = "Admin" | "Audit Manager" | "Auditor" | "Finance" | "Read Only";
 type ProjectVisibility =
   | "Role Default"
@@ -201,6 +216,9 @@ const storageKey = "audit-assignment-tracker-projects-v1";
 const currentUserStorageKey = "audit-assignment-tracker-current-user-v1";
 const usersStorageKey = "audit-assignment-tracker-users-v1";
 const lastExportStorageKey = "audit-assignment-tracker-last-export-v1";
+const microsoftListsConfigStorageKey =
+  "audit-assignment-tracker-microsoft-lists-config-v1";
+const storageModeStorageKey = "audit-assignment-tracker-storage-mode-v1";
 
 const defaultFilters: Filters = {
   auditor: "",
@@ -232,6 +250,45 @@ const assignmentTypeOptions: AssignmentType[] = [
   "CH",
   "MGA",
   "Company Contract",
+];
+
+const assignmentStatusOptions: AssignmentStatus[] = [
+  "New",
+  "In Progress",
+  "Blocked",
+  "On Hold",
+  "Completed",
+];
+const quoteStatusOptions: QuoteStatus[] = [
+  "Not Started",
+  "Drafting",
+  "Sent",
+  "Accepted",
+  "Rejected",
+];
+const progressStatusOptions: ProgressStatus[] = [
+  "Not Started",
+  "In Progress",
+  "Complete",
+  "Not Required",
+];
+const reportStatusOptions: ReportStatus[] = [
+  "Not Started",
+  "Drafting",
+  "Review",
+  "Issued",
+];
+const invoiceStatusOptions: InvoiceStatus[] = [
+  "Not Started",
+  "Prepared",
+  "Sent",
+  "Paid",
+];
+const damSubmissionStatusOptions: DamSubmissionStatus[] = [
+  "Not Required",
+  "Not Started",
+  "Submitted",
+  "Accepted",
 ];
 
 const labelOptions: ProjectLabel[] = [
@@ -1077,6 +1134,133 @@ function saveProjects(projects: AuditProject[]) {
   localStorage.setItem(storageKey, JSON.stringify(projects));
 }
 
+function loadStorageMode(): StorageMode {
+  return localStorage.getItem(storageModeStorageKey) === "microsoft-lists"
+    ? "microsoft-lists"
+    : "local";
+}
+
+function saveStorageMode(mode: StorageMode) {
+  localStorage.setItem(storageModeStorageKey, mode);
+}
+
+function emptyMicrosoftListsConfig(): MicrosoftListsConnectionConfig {
+  return { siteId: "", listIds: {} };
+}
+
+function loadMicrosoftListsConfig(): MicrosoftListsConnectionConfig {
+  const raw = localStorage.getItem(microsoftListsConfigStorageKey);
+  if (!raw) return emptyMicrosoftListsConfig();
+  try {
+    return sanitizeMicrosoftListsConfig(
+      JSON.parse(raw) as MicrosoftListsConnectionConfig,
+    );
+  } catch {
+    return emptyMicrosoftListsConfig();
+  }
+}
+
+function saveMicrosoftListsConfig(config: MicrosoftListsConnectionConfig) {
+  localStorage.setItem(
+    microsoftListsConfigStorageKey,
+    JSON.stringify(sanitizeMicrosoftListsConfig(config)),
+  );
+}
+
+function microsoftFieldsToProject(
+  fields: Record<string, string | number | boolean | null>,
+): AuditProject {
+  const project = blankProject();
+  const textValue = (key: string) => String(fields[key] ?? "");
+  const numberValue = (key: string) => Number(fields[key] ?? 0) || 0;
+  const booleanValue = (key: string) => fields[key] === true;
+  const labels = textValue("Labels")
+    .split(";")
+    .map((label) => label.trim())
+    .filter((label): label is ProjectLabel =>
+      labelOptions.includes(label as ProjectLabel),
+    );
+
+  return withProjectDefaults({
+    ...project,
+    id: textValue("TrackerAssignmentId") || project.id,
+    assignmentNumber: textValue("AssignmentNumber") || project.assignmentNumber,
+    assignmentSource:
+      textValue("AssignmentSource") === "DAM" ? "DAM" : "Email",
+    assignmentType: assignmentTypeOptions.includes(
+      textValue("AssignmentType") as AssignmentType,
+    )
+      ? (textValue("AssignmentType") as AssignmentType)
+      : "CH",
+    auditEntity: textValue("AuditEntity"),
+    clientCoverholderCode: textValue("ClientCoverholderCode"),
+    broker: textValue("Broker"),
+    assignedAuditor: textValue("LeadAuditor"),
+    auditTeam: textValue("LeadAuditor")
+      ? [{ person: textValue("LeadAuditor"), role: "Lead Auditor" }]
+      : [],
+    reviewer: textValue("Reviewer"),
+    currentStage: stages.includes(textValue("CurrentStage") as Stage)
+      ? (textValue("CurrentStage") as Stage)
+      : "Intake",
+    assignmentStatus: assignmentStatusOptions.includes(
+      textValue("AssignmentStatus") as AssignmentStatus,
+    )
+      ? (textValue("AssignmentStatus") as AssignmentStatus)
+      : "New",
+    quoteStatus: quoteStatusOptions.includes(
+      textValue("QuoteStatus") as QuoteStatus,
+    )
+      ? (textValue("QuoteStatus") as QuoteStatus)
+      : "Not Started",
+    quoteAmount: numberValue("QuoteAmount"),
+    tentativeAuditWeek: textValue("TentativeAuditWeek"),
+    confirmedAuditDate: textValue("ConfirmedAuditDate").slice(0, 10),
+    auditType: textValue("AuditType") === "Onsite" ? "Onsite" : "Remote",
+    baaReceived: booleanValue("BaaReceived"),
+    endorsementsReceived: booleanValue("EndorsementsReceived"),
+    premiumBdxReceived: booleanValue("PremiumBdxReceived"),
+    preAuditQuestionnaireStatus: progressStatusOptions.includes(
+      textValue("PreAuditQuestionnaireStatus") as ProgressStatus,
+    )
+      ? (textValue("PreAuditQuestionnaireStatus") as ProgressStatus)
+      : "Not Started",
+    documentRequestStatus: progressStatusOptions.includes(
+      textValue("DocumentRequestStatus") as ProgressStatus,
+    )
+      ? (textValue("DocumentRequestStatus") as ProgressStatus)
+      : "Not Started",
+    documentRequestDate: textValue("DocumentRequestDate").slice(0, 10),
+    brokerLastChasedDate: textValue("BrokerLastChasedDate").slice(0, 10),
+    brokerExpectedResponseDate: textValue("BrokerExpectedResponseDate").slice(0, 10),
+    fileSelectionCompleted: booleanValue("FileSelectionCompleted"),
+    testingSheetCompleted: booleanValue("TestingSheetCompleted"),
+    findingsSentDate: textValue("FindingsSentDate").slice(0, 10),
+    coverholderResponseReceivedDate: textValue("CoverholderResponseReceivedDate").slice(0, 10),
+    reportStatus: reportStatusOptions.includes(
+      textValue("ReportStatus") as ReportStatus,
+    )
+      ? (textValue("ReportStatus") as ReportStatus)
+      : "Not Started",
+    invoiceStatus: invoiceStatusOptions.includes(
+      textValue("InvoiceStatus") as InvoiceStatus,
+    )
+      ? (textValue("InvoiceStatus") as InvoiceStatus)
+      : "Not Started",
+    paymentReceived: booleanValue("PaymentReceived"),
+    damSubmissionStatus: damSubmissionStatusOptions.includes(
+      textValue("DamSubmissionStatus") as DamSubmissionStatus,
+    )
+      ? (textValue("DamSubmissionStatus") as DamSubmissionStatus)
+      : "Not Required",
+    nextAction: textValue("NextAction"),
+    blockers: textValue("Blockers"),
+    dueDate: textValue("DueDate").slice(0, 10),
+    lastUpdatedDate: textValue("LastUpdatedDate").slice(0, 10) || todayIso(),
+    labels,
+  });
+}
+
 function withUserDefaults(user: Partial<PrototypeUser>): PrototypeUser {
   const role = user.role ?? "Auditor";
   return {
@@ -1669,6 +1853,16 @@ function App() {
   const [message, setMessage] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
   const [durationRange, setDurationRange] = useState<DurationRange>("ytd");
+  const [storageMode, setStorageMode] = useState<StorageMode>(() =>
+    loadStorageMode(),
+  );
+  const [microsoftListsConfig, setMicrosoftListsConfig] =
+    useState<MicrosoftListsConnectionConfig>(() => loadMicrosoftListsConfig());
+  const [graphAccessToken, setGraphAccessToken] = useState("");
+  const [storageStatus, setStorageStatus] = useState(
+    "Using browser storage until Microsoft Lists is configured.",
+  );
+  const [storageSyncing, setStorageSyncing] = useState(false);
   const [lastExportedAt, setLastExportedAt] = useState(
     () => localStorage.getItem(lastExportStorageKey) ?? "",
   );
@@ -1819,6 +2013,136 @@ function App() {
       signedInUser.fullName,
     );
     recordExport("Microsoft Lists package");
+  };
+
+  const saveConnectionConfig = (config: MicrosoftListsConnectionConfig) => {
+    const cleanConfig = sanitizeMicrosoftListsConfig(config);
+    setMicrosoftListsConfig(cleanConfig);
+    saveMicrosoftListsConfig(cleanConfig);
+    setStorageStatus("Microsoft Lists connection settings saved locally.");
+  };
+
+  const switchStorageMode = (mode: StorageMode) => {
+    setStorageMode(mode);
+    saveStorageMode(mode);
+    setStorageStatus(
+      mode === "microsoft-lists"
+        ? "Microsoft Lists mode selected. Test the connection before syncing records."
+        : "Browser storage mode selected. Records save in this browser only.",
+    );
+  };
+
+  const microsoftListsSession = () => ({
+    ...microsoftListsConfig,
+    accessToken: graphAccessToken.trim(),
+  });
+
+  const requireGraphSession = () => {
+    if (!graphAccessToken.trim()) {
+      setStorageStatus("Paste a Microsoft Graph access token for this session first.");
+      return null;
+    }
+    if (!hasMinimumMicrosoftListsConfig(microsoftListsConfig)) {
+      setStorageStatus("Site ID and Audit Assignments list ID are required first.");
+      return null;
+    }
+    return microsoftListsSession();
+  };
+
+  const testConnection = async () => {
+    const session = requireGraphSession();
+    if (!session) return;
+    setStorageSyncing(true);
+    try {
+      await testMicrosoftListsConnection(session);
+      setStorageStatus("Microsoft Lists connection verified.");
+      switchStorageMode("microsoft-lists");
+    } catch (error) {
+      setStorageStatus(
+        error instanceof Error
+          ? error.message
+          : "Microsoft Lists connection failed.",
+      );
+    } finally {
+      setStorageSyncing(false);
+    }
+  };
+
+  const syncToMicrosoftLists = async () => {
+    const session = requireGraphSession();
+    if (!session) return;
+    if (!hasFullMicrosoftListsConfig(microsoftListsConfig)) {
+      setStorageStatus(
+        `Missing list IDs: ${missingMicrosoftListLabels(microsoftListsConfig).join(", ")}.`,
+      );
+      return;
+    }
+    setStorageSyncing(true);
+    try {
+      const syncPackage = buildSyncPackage(
+        visibleProjects,
+        signedInUser.role === "Admin" ? users : [],
+        signedInUser.fullName,
+      );
+      const summary = await pushMigrationPackageToMicrosoftLists(
+        session,
+        syncPackage,
+      );
+      const problemText = summary.errors.length
+        ? ` ${summary.errors.length} issues need review.`
+        : "";
+      setStorageStatus(
+        `Synced to Microsoft Lists: ${summary.created} created, ${summary.updated} updated, ${summary.skipped} skipped.${problemText}`,
+      );
+      setStorageMode("microsoft-lists");
+      saveStorageMode("microsoft-lists");
+    } catch (error) {
+      setStorageStatus(
+        error instanceof Error
+          ? error.message
+          : "Microsoft Lists sync failed.",
+      );
+    } finally {
+      setStorageSyncing(false);
+    }
+  };
+
+  const pullFromMicrosoftLists = async () => {
+    const session = requireGraphSession();
+    if (!session) return;
+    requestConfirmation({
+      title: "Load assignments from Microsoft Lists?",
+      message:
+        "This replaces the project records in this browser with rows from the configured Audit Assignments list.",
+      confirmLabel: "Load from Lists",
+      tone: "danger",
+      onConfirm: async () => {
+        setStorageSyncing(true);
+        try {
+          const rows = await pullAssignmentRowsFromMicrosoftLists(session);
+          const nextProjects = rows.map(microsoftFieldsToProject);
+          if (nextProjects.length === 0) {
+            setStorageStatus("Microsoft Lists returned no assignment rows.");
+            return;
+          }
+          persist(nextProjects);
+          setSelectedId(nextProjects[0].id);
+          setStorageMode("microsoft-lists");
+          saveStorageMode("microsoft-lists");
+          setStorageStatus(
+            `${nextProjects.length} assignments loaded from Microsoft Lists.`,
+          );
+        } catch (error) {
+          setStorageStatus(
+            error instanceof Error
+              ? error.message
+              : "Could not load assignments from Microsoft Lists.",
+          );
+        } finally {
+          setStorageSyncing(false);
+        }
+      },
+    });
   };
 
   const resetSampleProjects = () => {
@@ -2264,7 +2588,18 @@ function App() {
           projects={visibleProjects}
           users={signedInUser.role === "Admin" ? users : []}
           exportedBy={signedInUser.fullName}
+          mode={storageMode}
+          config={microsoftListsConfig}
+          accessToken={graphAccessToken}
+          status={storageStatus}
+          syncing={storageSyncing}
           onExport={handleExportMicrosoftListsPackage}
+          onModeChange={switchStorageMode}
+          onSaveConfig={saveConnectionConfig}
+          onAccessTokenChange={setGraphAccessToken}
+          onTestConnection={() => void testConnection()}
+          onSyncToLists={() => void syncToMicrosoftLists()}
+          onPullFromLists={() => void pullFromMicrosoftLists()}
         />
       )}
       <Dashboard projects={visibleProjects} />
@@ -2561,13 +2896,39 @@ function CentralStoragePanel({
   projects,
   users,
   exportedBy,
+  mode,
+  config,
+  accessToken,
+  status,
+  syncing,
   onExport,
+  onModeChange,
+  onSaveConfig,
+  onAccessTokenChange,
+  onTestConnection,
+  onSyncToLists,
+  onPullFromLists,
 }: {
   projects: AuditProject[];
   users: PrototypeUser[];
   exportedBy: string;
+  mode: StorageMode;
+  config: MicrosoftListsConnectionConfig;
+  accessToken: string;
+  status: string;
+  syncing: boolean;
   onExport: () => void;
+  onModeChange: (mode: StorageMode) => void;
+  onSaveConfig: (config: MicrosoftListsConnectionConfig) => void;
+  onAccessTokenChange: (token: string) => void;
+  onTestConnection: () => void;
+  onSyncToLists: () => void;
+  onPullFromLists: () => void;
 }) {
+  const [draftConfig, setDraftConfig] = useState(config);
+  useEffect(() => {
+    setDraftConfig(config);
+  }, [config]);
   const packagePreview = useMemo(
     () =>
       buildMicrosoftListsMigrationPackage(projects, users, {
@@ -2576,17 +2937,50 @@ function CentralStoragePanel({
       }),
     [projects, users, exportedBy],
   );
+  const updateListId = (key: MicrosoftListKey, value: string) => {
+    setDraftConfig((current) => ({
+      ...current,
+      listIds: {
+        ...current.listIds,
+        [key]: value,
+      },
+    }));
+  };
+  const hasMinimumConfig = hasMinimumMicrosoftListsConfig(config);
+  const hasFullConfig = hasFullMicrosoftListsConfig(config);
+
   return (
     <section className="panel central-storage">
       <div className="section-title">
         <div>
           <p className="eyebrow dark">Central storage</p>
           <h2>Microsoft Lists foundation</h2>
-          <span>Browser storage active; SharePoint-ready schema and activity log prepared.</span>
+          <span>
+            {mode === "microsoft-lists"
+              ? "Microsoft Lists mode selected; sync actions use the configured Graph connection."
+              : "Browser storage active; Microsoft Lists connection is ready to configure."}
+          </span>
         </div>
-        <button type="button" onClick={onExport}>
-          Export Lists package
-        </button>
+        <div className="storage-mode-toggle">
+          <button
+            type="button"
+            className={mode === "local" ? "active" : "secondary"}
+            onClick={() => onModeChange("local")}
+          >
+            Browser
+          </button>
+          <button
+            type="button"
+            className={mode === "microsoft-lists" ? "active" : "secondary"}
+            onClick={() => onModeChange("microsoft-lists")}
+          >
+            Microsoft Lists
+          </button>
+        </div>
+      </div>
+      <div className={`storage-status ${mode === "microsoft-lists" ? "connected" : ""}`}>
+        <strong>{mode === "microsoft-lists" ? "Microsoft Lists mode" : "Browser storage mode"}</strong>
+        <span>{status}</span>
       </div>
       <div className="storage-stats">
         <span>
@@ -2605,6 +2999,66 @@ function CentralStoragePanel({
           <strong>{packagePreview.totals.rows}</strong>
           Seed rows
         </span>
+      </div>
+      <div className="storage-config">
+        <Input
+          label="SharePoint site ID"
+          value={draftConfig.siteId}
+          placeholder="contoso.sharepoint.com,site-id,web-id"
+          onChange={(value) =>
+            setDraftConfig((current) => ({ ...current, siteId: value }))
+          }
+        />
+        <Input
+          label="Graph access token"
+          type="password"
+          value={accessToken}
+          placeholder="Paste token for this session only"
+          onChange={onAccessTokenChange}
+        />
+        <div className="storage-list-id-grid">
+          {requiredMicrosoftListKeys.map((key) => (
+            <Input
+              key={key}
+              label={`${microsoftListLabels[key]} list ID`}
+              value={draftConfig.listIds[key] ?? ""}
+              placeholder="SharePoint list ID"
+              onChange={(value) => updateListId(key, value)}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="storage-actions">
+        <button type="button" onClick={() => onSaveConfig(draftConfig)}>
+          Save connection
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          disabled={syncing || !hasMinimumConfig || !accessToken.trim()}
+          onClick={onTestConnection}
+        >
+          Test connection
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          disabled={syncing || !hasFullConfig || !accessToken.trim()}
+          onClick={onSyncToLists}
+        >
+          Sync to Lists
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          disabled={syncing || !hasMinimumConfig || !accessToken.trim()}
+          onClick={onPullFromLists}
+        >
+          Load from Lists
+        </button>
+        <button type="button" className="secondary" onClick={onExport}>
+          Export Lists package
+        </button>
       </div>
       <div className="storage-list-chips" aria-label="Microsoft Lists schema">
         {microsoftListSchemas.map((schema) => (

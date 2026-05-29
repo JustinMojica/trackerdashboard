@@ -164,6 +164,47 @@ main {
   font-weight: 800;
   padding: 0.35rem 0.65rem;
 }
+.storage-mode-toggle,
+.storage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+.storage-mode-toggle button {
+  min-width: 120px;
+}
+.storage-mode-toggle button.active {
+  background: #1358db;
+  color: #fff;
+}
+.storage-status {
+  background: #f7f1df;
+  border: 1px solid #e1c777;
+  border-radius: 14px;
+  color: #55420a;
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.85rem 1rem;
+}
+.storage-status.connected {
+  background: #e7f7ed;
+  border-color: #9fd7b3;
+  color: #0e5a2b;
+}
+.storage-status span {
+  color: inherit;
+}
+.storage-config {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+}
+.storage-list-id-grid {
+  display: grid;
+  gap: 0.85rem;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+}
 .user-management {
   display: grid;
   gap: 1rem;
@@ -932,7 +973,9 @@ textarea {
   .filters,
   .form-grid,
   .meta-grid,
-  .storage-stats {
+  .storage-stats,
+  .storage-config,
+  .storage-list-id-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .hero {
@@ -954,7 +997,9 @@ textarea {
   .document-dates,
   .finance-grid,
   .login-form,
-  .storage-stats {
+  .storage-stats,
+  .storage-config,
+  .storage-list-id-grid {
     grid-template-columns: 1fr;
   }
   .modal-backdrop {
