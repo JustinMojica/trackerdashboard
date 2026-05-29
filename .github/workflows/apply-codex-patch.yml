@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'codex-patches/trackerdashboard-ux13-16.patchpart.*'
+      - 'codex-patches/*.patch.gz.b64'
       - '.github/workflows/apply-codex-patch.yml'
 
 permissions:
@@ -18,17 +19,23 @@ jobs:
       - uses: actions/checkout@v4
       - name: Apply Codex patch
         run: |
-          cat codex-patches/trackerdashboard-ux13-16.patchpart.* > /tmp/trackerdashboard-ux13-16.patch
-          python - <<'PY'
+          shopt -s nullglob
+          gzip_patches=(codex-patches/*.patch.gz.b64)
+          if [ ${#gzip_patches[@]} -gt 0 ]; then
+            base64 -d "${gzip_patches[0]}" | gzip -dc > /tmp/trackerdashboard-codex.patch
+          else
+            cat codex-patches/trackerdashboard-ux13-16.patchpart.* > /tmp/trackerdashboard-codex.patch
+            python - <<'PY'
           from pathlib import Path
-          patch = Path('/tmp/trackerdashboard-ux13-16.patch')
+          patch = Path('/tmp/trackerdashboard-codex.patch')
           data = patch.read_bytes()
           data = data.replace(bytes([0xc3, 0xa2, 0xe2, 0x80, 0xa0, 0xe2, 0x80, 0x99]), bytes([0xe2, 0x86, 0x92]))
           data = data.replace(bytes([0xc3, 0x82, 0xc2, 0xb7]), bytes([0xc2, 0xb7]))
           patch.write_bytes(data)
           PY
-          git apply --whitespace=fix /tmp/trackerdashboard-ux13-16.patch
-          rm codex-patches/trackerdashboard-ux13-16.patchpart.*
+          fi
+          git apply --whitespace=fix /tmp/trackerdashboard-codex.patch
+          rm -f codex-patches/trackerdashboard-ux13-16.patchpart.* codex-patches/*.patch.gz.b64
           rmdir codex-patches 2>/dev/null || true
           git config user.name "codex-app"
           git config user.email "codex-app@users.noreply.github.com"
