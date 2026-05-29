@@ -1,0 +1,350 @@
++  );
++}
++
++function projectToCommentRows(project: CentralAuditProject) {
++  return project.comments.map((comment) =>
++    row("auditComments", {
++      Title: `${project.assignmentNumber} comment`,
++      TrackerCommentId: comment.id,
++      TrackerAssignmentId: project.id,
++      AssignmentNumber: project.assignmentNumber,
++      CommentCreatedAt: normalizeDateTime(comment.createdAt),
++      CommentAuthor: comment.author,
++      CommentBody: comment.body,
++    }),
++  );
++}
++
++function projectToChecklistRows(project: CentralAuditProject) {
++  return Object.entries(project.checklistCompletions).map(([key, completed]) => {
++    const [stage, ...itemParts] = key.split(":");
++    const item = itemParts.join(":") || key;
++    return row("auditChecklistItems", {
++      Title: `${project.assignmentNumber} - ${item}`,
++      TrackerAssignmentId: project.id,
++      AssignmentNumber: project.assignmentNumber,
++      ChecklistKey: key,
++      ChecklistStage: stage,
++      ChecklistItem: item,
++      Completed: completed,
++    });
++  });
++}
++
++function projectToStatusHistoryRows(project: CentralAuditProject) {
++  return project.statusHistory.map((history) =>
++    row("auditStatusHistory", {
++      Title: `${project.assignmentNumber} ${history.fromStage} to ${history.toStage}`,
++      TrackerHistoryId: history.id,
++      TrackerAssignmentId: project.id,
++      AssignmentNumber: project.assignmentNumber,
++      ChangedAt: normalizeDateTime(history.changedAt),
++      ChangedBy: history.changedBy,
++      FromStage: history.fromStage,
++      ToStage: history.toStage,
++      StageNote: history.note,
++    }),
++  );
++}
++
++function projectToActivityLogRows(project: CentralAuditProject) {
++  const fromEvents = project.activityEvents.map((event) =>
++    activityRow(project, {
++      id: event.id,
++      occurredAt: event.createdAt,
++      eventType: normalizeEventType(event.type),
++      actorName: event.actor,
++      summary: event.title,
++      detail: event.detail,
++      sourceList: "Audit Assignments",
++      sourceRecordId: project.id,
++    }),
++  );
++  const fromStatusHistory = project.statusHistory.map((history) =>
++    activityRow(project, {
++      id: `activity-${history.id}`,
++      occurredAt: history.changedAt,
++      eventType: "stage",
++      actorName: history.changedBy,
++      summary: `${history.fromStage} to ${history.toStage}`,
++      detail: history.note,
++      fieldName: "CurrentStage",
++      previousValue: history.fromStage,
++      newValue: history.toStage,
++      sourceList: "Audit Status History",
++      sourceRecordId: history.id,
++    }),
++  );
++  const fromComments = project.comments.map((comment) =>
++    activityRow(project, {
++      id: `activity-${comment.id}`,
++      occurredAt: comment.createdAt,
++      eventType: "comment",
++      actorName: comment.author,
++      summary: "Comment added",
++      detail: comment.body,
++      sourceList: "Audit Comments",
++      sourceRecordId: comment.id,
++    }),
++  );
++  return [...fromEvents, ...fromStatusHistory, ...fromComments].sort((a, b) =>
++    String(a.fields.OccurredAt).localeCompare(String(b.fields.OccurredAt)),
++  );
++}
++
++function activityRow(
++  project: CentralAuditProject,
++  event: {
++    id: string;
++    occurredAt: string;
++    eventType: string;
++    actorName: string;
++    summary: string;
++    detail: string;
++    fieldName?: string;
++    previousValue?: string;
++    newValue?: string;
++    sourceList: string;
++    sourceRecordId: string;
++  },
++) {
++  return row("auditActivityLog", {
++    Title: `${project.assignmentNumber} - ${event.summary}`,
++    TrackerEventId: event.id,
++    TrackerAssignmentId: project.id,
++    AssignmentNumber: project.assignmentNumber,
++    OccurredAt: normalizeDateTime(event.occurredAt),
++    EventType: event.eventType,
++    ActorName: event.actorName,
++    ActorUsername: usernameFromName(event.actorName),
++    Summary: event.summary,
++    Detail: event.detail,
++    FieldName: event.fieldName ?? "",
++    PreviousValue: event.previousValue ?? "",
++    NewValue: event.newValue ?? "",
++    SourceList: event.sourceList,
++    SourceRecordId: event.sourceRecordId,
++  });
++}
++
++function userToRow(user: CentralPrototypeUser): MicrosoftListSeedRow {
++  return row("trackerUsers", {
++    Title: user.fullName,
++    TrackerUsername: user.username,
++    FullName: user.fullName,
++    Email: user.email,
++    Role: user.role,
++    PermissionGroup: user.permissionGroup,
++    Active: user.active,
++    DefaultVisibility: user.defaultVisibility,
++  });
++}
++
++function row(
++  listKey: MicrosoftListSchema["key"],
++  fields: Record<string, string | number | boolean>,
++): MicrosoftListSeedRow {
++  return { listKey, fields };
++}
++
++function normalizeEventType(type: string) {
++  if (type === "field" || type === "stage" || type === "document" || type === "checklist" || type === "team") {
++    return type;
++  }
++  return "system";
++}
++
++function usernameFromName(name: string) {
++  const normalized = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, ".");
++  return normalized.replace(/^\.+|\.+$/g, "");
++}
++
++function dateOnly(value: string) {
++  if (!value) return "";
++  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
++  return normalizeDateTime(value).slice(0, 10);
++}
++
++function normalizeDateTime(value: string) {
++  if (!value) return "";
++  const parsed = Date.parse(value);
++  if (!Number.isNaN(parsed)) return new Date(parsed).toISOString();
++  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return `${value}T12:00:00.000Z`;
++  return value;
++}
+--- /dev/null
++++ b/tests/microsoftListsSchema.test.ts
+@@ -0,0 +1,130 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import {
++  buildMicrosoftListsMigrationPackage,
++  microsoftListSchemas,
++  toGraphListCreateRequest,
++  type CentralAuditProject,
++  type CentralPrototypeUser,
++} from "../src/microsoftListsSchema.js";
++
++const project: CentralAuditProject = {
++  id: "project-1",
++  assignmentNumber: "A-100",
++  assignmentSource: "Email",
++  assignmentType: "CH",
++  auditEntity: "Example Coverholder",
++  clientCoverholderCode: "CH-001",
++  broker: "Example Broker",
++  assignedAuditor: "Lorraine Mojica",
++  auditTeam: [
++    { person: "Lorraine Mojica", role: "Lead Auditor" },
++    { person: "Leslie Domenech", role: "Supporting Auditor" },
++  ],
++  reviewer: "Justin Mojica",
++  currentStage: "Quote",
++  assignmentStatus: "In Progress",
++  quoteStatus: "Sent",
++  quoteAmount: 12500,
++  tentativeAuditWeek: "2026-W22",
++  confirmedAuditDate: "",
++  auditType: "Remote",
++  baaReceived: true,
++  endorsementsReceived: false,
++  premiumBdxReceived: false,
++  preAuditQuestionnaireStatus: "In Progress",
++  documentRequestStatus: "In Progress",
++  documentRequestDate: "2026-05-01",
++  brokerLastChasedDate: "2026-05-03",
++  brokerExpectedResponseDate: "2026-05-07",
++  fileSelectionCompleted: false,
++  testingSheetCompleted: false,
++  findingsSentDate: "",
++  coverholderResponseReceivedDate: "",
++  reportStatus: "Not Started",
++  invoiceStatus: "Not Started",
++  paymentReceived: false,
++  damSubmissionStatus: "Not Required",
++  nextAction: "Confirm quote acceptance.",
++  blockers: "",
++  dueDate: "2026-05-10",
++  lastUpdatedDate: "2026-05-05",
++  labels: ["Medium Priority"],
++  checklistCompletions: {
++    "Quote:Quote drafted": true,
++    "Quote:Quote accepted": false,
++  },
++  statusHistory: [
++    {
++      id: "history-1",
++      changedAt: "2026-05-02T14:00:00.000Z",
++      changedBy: "Justin Mojica",
++      fromStage: "Registration",
++      toStage: "Quote",
++      note: "Quote work started.",
++    },
++  ],
++  comments: [
++    {
++      id: "comment-1",
++      createdAt: "2026-05-04T13:00:00.000Z",
++      author: "Lorraine Mojica",
++      body: "Waiting on broker confirmation.",
++    },
++  ],
++  activityEvents: [
++    {
++      id: "event-1",
++      createdAt: "2026-05-03T15:00:00.000Z",
++      actor: "Justin Mojica",
++      type: "document",
++      title: "Broker chase recorded",
++      detail: "Broker chase recorded",
++    },
++  ],
++};
++
++const user: CentralPrototypeUser = {
++  fullName: "Justin Mojica",
++  username: "justin.mojica",
++  password: "password",
++  role: "Admin",
++  permissionGroup: "Admin",
++  email: "justin.mojica@example.com",
++  active: true,
++  defaultVisibility: "All Projects",
++};
++
++test("Microsoft Lists schema can produce Graph list create payloads", () => {
++  const assignmentSchema = microsoftListSchemas.find(
++    (schema) => schema.key === "auditAssignments",
++  );
++  if (!assignmentSchema) throw new Error("Audit Assignments schema missing");
++
++  const request = toGraphListCreateRequest(assignmentSchema);
++  assert.equal(request.displayName, "Audit Assignments");
++  assert.equal((request.list as { template: string }).template, "genericList");
++  assert.ok(
++    (request.columns as Array<{ name: string }>).some(
++      (column) => column.name === "TrackerAssignmentId",
++    ),
++  );
++});
++
++test("migration package flattens prototype data into central list rows", () => {
++  const migrationPackage = buildMicrosoftListsMigrationPackage([project], [user], {
++    exportedAt: "2026-05-10T12:00:00.000Z",
++    exportedBy: "Justin Mojica",
++  });
++
++  assert.equal(migrationPackage.totals.lists, 7);
++  assert.equal(migrationPackage.totals.assignments, 1);
++  assert.equal(migrationPackage.rows.auditAssignments.length, 1);
++  assert.equal(migrationPackage.rows.auditTeamMembers.length, 2);
++  assert.equal(migrationPackage.rows.auditChecklistItems.length, 2);
++  assert.equal(migrationPackage.rows.auditActivityLog.length, 3);
++  assert.equal(
++    migrationPackage.rows.auditActivityLog[0].fields.TrackerAssignmentId,
++    "project-1",
++  );
++});
+--- /dev/null
++++ b/docs/microsoft-lists-schema.md
+@@ -0,0 +1,45 @@
++# Microsoft Lists Storage Schema
++
++This is the target central-storage structure for the audit assignment tracker. The current app still runs from browser storage, but Admin and Audit Manager users can export a Microsoft Lists package containing the list schemas, Graph-style list creation payloads, and seed rows.
++
++## Target Lists
++
++| List | Purpose | Key fields |
++| ---- | ------- | ---------- |
++| Audit Assignments | Main assignment record | `TrackerAssignmentId`, `AssignmentNumber`, `CurrentStage`, `AssignmentStatus`, document flags, finance fields, due dates |
++| Audit Team Members | Lead/support workload rows | `TrackerAssignmentId`, `PersonName`, `TeamRole`, `ActiveOnAssignment` |
++| Audit Comments | Card comments | `TrackerCommentId`, `TrackerAssignmentId`, `CommentCreatedAt`, `CommentAuthor`, `CommentBody` |
++| Audit Checklist Items | Per-stage checklist state | `TrackerAssignmentId`, `ChecklistKey`, `ChecklistStage`, `ChecklistItem`, `Completed` |
++| Audit Status History | Stage movement history | `TrackerHistoryId`, `TrackerAssignmentId`, `ChangedAt`, `ChangedBy`, `FromStage`, `ToStage`, `StageNote` |
++| Audit Activity Log | Append-only accountability log | `TrackerEventId`, `TrackerAssignmentId`, `OccurredAt`, `EventType`, `ActorName`, `Summary`, `Detail`, previous/new values |
++| Tracker Users | Prototype role map | `TrackerUsername`, `FullName`, `Email`, `Role`, `PermissionGroup`, `Active`, `DefaultVisibility` |
++
++## Activity Log Rules
++
++The activity log is intentionally separate from comments and status history. Comments and status history are operational child lists; the activity log is the accountability ledger.
++
++Each activity row should include:
++
++- `TrackerEventId`: stable event ID from the app.
++- `TrackerAssignmentId`: stable assignment link key.
++- `AssignmentNumber`: human-readable assignment number for quick filtering.
++- `OccurredAt`: timestamp normalized for SharePoint date/time columns.
++- `EventType`: one of `field`, `stage`, `comment`, `document`, `checklist`, `team`, `finance`, or `system`.
++- `ActorName` and `ActorUsername`: who took the action.
++- `Summary` and `Detail`: readable action text.
++- `FieldName`, `PreviousValue`, `NewValue`: populated when the action is a field/stage change.
++- `SourceList` and `SourceRecordId`: link back to the operational child row when applicable.
++
++## Implementation Order
++
++1. Create the lists from the exported `graphListCreateRequests`.
++2. Import `Audit Assignments` first.
++3. Import child rows in this order: team members, checklist items, comments, status history, activity log.
++4. Import `Tracker Users` only for prototype testing; replace with Microsoft 365 groups before production.
++5. Validate that each child row has a matching `TrackerAssignmentId`.
++6. Connect the app to Microsoft Graph after the list structure is approved.
