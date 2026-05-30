@@ -99,6 +99,9 @@ async function route(request, response) {
   if (url.pathname === "/api/admin/access-requests") {
     return listAccessRequests(request, response);
   }
+  if (url.pathname === "/api/admin/system-health") {
+    return systemHealth(request, response);
+  }
   const approvalMatch = url.pathname.match(
     /^\/api\/admin\/access-requests\/([^/]+)\/(approve|reject)$/,
   );
@@ -399,6 +402,14 @@ async function decideAccessRequest(request, response, encodedEmail, decision) {
         message: "The user must confirm the email code before approval.",
       });
     }
+    const role = normalizeRole(body.role, "Auditor");
+    const defaultVisibility = normalizeVisibility(
+      body.defaultVisibility,
+      role === "Finance" ? "Finance Records" : "Role Default",
+    );
+    user.role = role;
+    user.permissionGroup = role;
+    user.defaultVisibility = defaultVisibility;
     user.active = true;
     user.accessRequestStatus = "Approved";
     user.approvedAt = new Date().toISOString();
@@ -413,6 +424,105 @@ async function decideAccessRequest(request, response, encodedEmail, decision) {
   }
   await saveUserStore(store);
   return sendJson(request, response, 200, { ok: true, user: publicUser(user) });
+}
+
+async function systemHealth(request, response) {
+  const admin = await requireAdmin(request, response);
+  if (!admin) return;
+  const setup = accessConfigStatus();
+  const graphApp = await graphAppHealth();
+  const approvalStore = {
+    mode: userStoreStatus.mode,
+    configured: userStoreStatus.configured,
+    missing: userStoreStatus.missing,
+    durable: userStoreStatus.mode === "microsoft-lists",
+    status:
+      userStoreStatus.mode === "microsoft-lists"
+        ? "Approval records will be stored in Microsoft Lists."
+        : "Approval records are still stored on this local server.",
+  };
+  return sendJson(request, response, 200, {
+    generatedAt: new Date().toISOString(),
+    server: {
+      configured: setup.configured,
+      missing: setup.missing,
+      redirectUri: setup.redirectUri,
+      frontendOrigin: setup.frontendOrigin,
+      publicOrigin: config.publicOrigin,
+    },
+    graphApp,
+    mail: {
+      configured: hasConfiguredValue(config.mailFrom),
+      from: config.mailFrom,
+      permissionGranted: graphApp.roles.includes("Mail.Send"),
+    },
+    sharePoint: {
+      permissionGranted: graphApp.roles.includes("Sites.ReadWrite.All"),
+      siteIdConfigured: hasConfiguredValue(config.userStoreSiteId),
+      trackerUsersListIdConfigured: hasConfiguredValue(config.userStoreListId),
+    },
+    approvalStore,
+    recommendations: healthRecommendations(setup, graphApp, approvalStore),
+  });
+}
+
+async function graphAppHealth() {
+  if (
+    !hasConfiguredValue(config.tenantId) ||
+    !hasConfiguredValue(config.clientId) ||
+    !hasConfiguredValue(config.clientSecret)
+  ) {
+    return {
+      tokenAvailable: false,
+      roles: [],
+      missingRoles: ["Mail.Send", "Sites.ReadWrite.All"],
+      error: "Microsoft tenant ID, client ID, or client secret is missing.",
+    };
+  }
+  try {
+    const token = await getGraphAppToken();
+    const payload = decodeJwtPayload(token);
+    const roles = Array.isArray(payload.roles) ? payload.roles.map(String) : [];
+    return {
+      tokenAvailable: true,
+      roles,
+      missingRoles: ["Mail.Send", "Sites.ReadWrite.All"].filter(
+        (role) => !roles.includes(role),
+      ),
+      appDisplayName: String(payload.app_displayname || ""),
+    };
+  } catch (error) {
+    return {
+      tokenAvailable: false,
+      roles: [],
+      missingRoles: ["Mail.Send", "Sites.ReadWrite.All"],
+      error: error instanceof Error ? error.message : "Graph app token failed.",
+    };
+  }
+}
+
+function healthRecommendations(setup, graphApp, approvalStore) {
+  const recommendations = [];
+  if (!setup.configured) {
+    recommendations.push(`Complete missing server configuration: ${setup.missing.join(", ")}.`);
+  }
+  if (graphApp.missingRoles.length > 0) {
+    recommendations.push(
+      `Grant admin consent for Microsoft Graph application permissions: ${graphApp.missingRoles.join(", ")}.`,
+    );
+  }
+  if (!graphApp.tokenAvailable) {
+    recommendations.push("Verify the Microsoft client secret is current and has not expired.");
+  }
+  if (!approvalStore.durable) {
+    recommendations.push(
+      "Switch TRACKER_USER_STORE to microsoft-lists after admin consent and Tracker Users list IDs are ready.",
+    );
+  }
+  if (recommendations.length === 0) {
+    recommendations.push("Secure access, mail, and Microsoft Lists approval storage are ready.");
+  }
+  return recommendations;
 }
 
 async function requireAdmin(request, response) {
@@ -685,6 +795,25 @@ function randomCode() {
 
 function base64Url(input) {
   return Buffer.from(input).toString("base64url");
+}
+
+function decodeJwtPayload(token) {
+  try {
+    const [, payload] = String(token).split(".");
+    return JSON.parse(Buffer.from(payload || "", "base64url").toString("utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function normalizeRole(value, fallback) {
+  const allowed = ["Admin", "Audit Manager", "Auditor", "Finance", "Read Only"];
+  return allowed.includes(value) ? value : fallback;
+}
+
+function normalizeVisibility(value, fallback) {
+  const allowed = ["Role Default", "All Projects", "Assigned Projects", "Finance Records"];
+  return allowed.includes(value) ? value : fallback;
 }
 
 function splitCsv(value) {
