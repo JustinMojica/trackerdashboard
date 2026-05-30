@@ -45,7 +45,53 @@ export type SecureAccessState = {
     missing: string[];
     redirectUri: string;
     frontendOrigin: string;
+    userStore?: {
+      mode: "local" | "microsoft-lists";
+      configured: boolean;
+      missing: string[];
+    };
   };
+};
+
+export type SecureSystemHealth = {
+  generatedAt: string;
+  server: {
+    configured: boolean;
+    missing: string[];
+    redirectUri: string;
+    frontendOrigin: string;
+    publicOrigin: string;
+  };
+  graphApp: {
+    tokenAvailable: boolean;
+    roles: string[];
+    missingRoles: string[];
+    appDisplayName?: string;
+    error?: string;
+  };
+  mail: {
+    configured: boolean;
+    from: string;
+    permissionGranted: boolean;
+  };
+  sharePoint: {
+    permissionGranted: boolean;
+    siteIdConfigured: boolean;
+    trackerUsersListIdConfigured: boolean;
+  };
+  approvalStore: {
+    mode: "local" | "microsoft-lists";
+    configured: boolean;
+    missing: string[];
+    durable: boolean;
+    status: string;
+  };
+  recommendations: string[];
+};
+
+export type AccessApprovalUpdate = {
+  role?: SecureAccessUser["role"];
+  defaultVisibility?: SecureAccessUser["defaultVisibility"];
 };
 
 export function secureAccessApiBase() {
@@ -83,8 +129,11 @@ export async function verifySecureAccessCode(code: string) {
   return response.json();
 }
 
-export async function approveSecureAccessRequest(email: string) {
-  return decideSecureAccessRequest(email, "approve");
+export async function approveSecureAccessRequest(
+  email: string,
+  update: AccessApprovalUpdate = {},
+) {
+  return decideSecureAccessRequest(email, "approve", update);
 }
 
 export async function rejectSecureAccessRequest(email: string) {
@@ -98,7 +147,22 @@ export async function logoutSecureAccess() {
   });
 }
 
-async function decideSecureAccessRequest(email: string, decision: "approve" | "reject") {
+export async function getSecureSystemHealth(): Promise<SecureSystemHealth> {
+  const response = await fetch(secureAccessUrl("/api/admin/system-health"), {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.message || payload.error || "System health check failed.");
+  }
+  return response.json();
+}
+
+async function decideSecureAccessRequest(
+  email: string,
+  decision: "approve" | "reject",
+  update: AccessApprovalUpdate = {},
+) {
   const response = await fetch(
     secureAccessUrl(
       `/api/admin/access-requests/${encodeURIComponent(email)}/${decision}`,
@@ -107,7 +171,7 @@ async function decideSecureAccessRequest(email: string, decision: "approve" | "r
       method: "POST",
       credentials: "include",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({}),
+      body: JSON.stringify(update),
     },
   );
   if (!response.ok) {
