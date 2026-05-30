@@ -88,6 +88,8 @@ export type CentralPrototypeUser = {
   approvedAt?: string;
   approvedBy?: string;
   rejectionReason?: string;
+  verificationCodeHash?: string;
+  verificationSentAt?: string;
 };
 
 type ColumnType = "text" | "note" | "choice" | "number" | "currency" | "dateTime" | "boolean";
@@ -306,6 +308,8 @@ export const microsoftListSchemas: MicrosoftListSchema[] = [
       dateColumn("ApprovedAt", "Approved at"),
       text("ApprovedBy", "Approved by"),
       note("RejectionReason", "Rejection reason"),
+      note("VerificationCodeHash", "Verification code hash"),
+      dateColumn("VerificationSentAt", "Verification sent at"),
     ],
   },
 ];
@@ -629,6 +633,8 @@ function userToRow(user: CentralPrototypeUser): MicrosoftListSeedRow {
     ApprovedAt: normalizeDateTime(user.approvedAt ?? ""),
     ApprovedBy: user.approvedBy ?? "",
     RejectionReason: user.rejectionReason ?? "",
+    VerificationCodeHash: user.verificationCodeHash ?? "",
+    VerificationSentAt: normalizeDateTime(user.verificationSentAt ?? ""),
   });
 }
 
