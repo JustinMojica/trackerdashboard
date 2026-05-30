@@ -18,8 +18,8 @@ loadLocalEnvironment();
 
 const config = {
   port: Number(process.env.TRACKER_SERVER_PORT || 8787),
-  frontendOrigin: process.env.TRACKER_FRONTEND_ORIGIN || "http://127.0.0.1:5173",
-  publicOrigin: process.env.TRACKER_PUBLIC_ORIGIN || "http://127.0.0.1:8787",
+  frontendOrigin: process.env.TRACKER_FRONTEND_ORIGIN || "http://localhost:5173",
+  publicOrigin: process.env.TRACKER_PUBLIC_ORIGIN || "http://localhost:8787",
   tenantId: process.env.MICROSOFT_TENANT_ID || "",
   clientId: process.env.MICROSOFT_CLIENT_ID || "",
   clientSecret: process.env.MICROSOFT_CLIENT_SECRET || "",
@@ -271,6 +271,10 @@ async function finishMicrosoftAuth(request, response, url) {
   if (oauthState.mode === "request") {
     user = await createOrRefreshAccessRequest(store, email, name);
     await saveUserStore(store);
+    if (user.accessRequestStatus === "Approved" && user.active) {
+      setSession(response, { email, status: "approved" });
+      return redirect(response, `${config.frontendOrigin}/?auth=success`);
+    }
     setSession(response, { email, status: "pending" });
     return redirect(response, `${config.frontendOrigin}/?auth=code-sent`);
   }
