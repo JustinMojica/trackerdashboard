@@ -135,9 +135,10 @@ Required Microsoft setup:
 - Register a Microsoft Entra web application.
 - Add redirect URI `http://localhost:8787/api/auth/callback` for local testing.
 - Create a client secret.
-- Grant Microsoft Graph application permission `Mail.Send` and apply admin consent.
+- Grant Microsoft Graph application permissions `Mail.Send` and `Sites.ReadWrite.All`, then apply admin consent.
 - Use a real mailbox for `MICROSOFT_MAIL_FROM`.
 - Copy `server.env.example` to `server.env`, replace every placeholder with real Microsoft tenant values, then restart `npm run server`.
+- Leave `TRACKER_USER_STORE=local` for single-machine testing. Set `TRACKER_USER_STORE=microsoft-lists` plus `TRACKER_USERS_SITE_ID` and `TRACKER_USERS_LIST_ID` to store access approvals in the `Tracker Users` Microsoft List.
 
 Local run model:
 
