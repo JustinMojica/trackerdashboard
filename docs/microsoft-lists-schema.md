@@ -12,7 +12,7 @@ This is the target central-storage structure for the audit assignment tracker. T
 | Audit Checklist Items | Per-stage checklist state | `TrackerChecklistItemId`, `TrackerAssignmentId`, `ChecklistKey`, `ChecklistStage`, `ChecklistItem`, `Completed` |
 | Audit Status History | Stage movement history | `TrackerHistoryId`, `TrackerAssignmentId`, `ChangedAt`, `ChangedBy`, `FromStage`, `ToStage`, `StageNote` |
 | Audit Activity Log | Append-only accountability log | `TrackerEventId`, `TrackerAssignmentId`, `OccurredAt`, `EventType`, `ActorName`, `Summary`, `Detail`, previous/new values |
-| Tracker Users | Prototype role map and account access gate | `TrackerUsername`, `FullName`, `Email`, `Role`, `PermissionGroup`, `Active`, `EmailVerified`, `AccessRequestStatus`, `DefaultVisibility`, `RequestedAt`, `ApprovedAt`, `ApprovedBy`, `RejectionReason` |
+| Tracker Users | Prototype role map and account access gate | `TrackerUsername`, `FullName`, `Email`, `Role`, `PermissionGroup`, `Active`, `EmailVerified`, `AccessRequestStatus`, `DefaultVisibility`, `RequestedAt`, `ApprovedAt`, `ApprovedBy`, `RejectionReason`, `VerificationCodeHash`, `VerificationSentAt` |
 
 ## Live Connection Mode
 
@@ -22,7 +22,8 @@ The Microsoft Entra app registration needs:
 
 - Platform type: Single-page application.
 - Redirect URI: the app origin used for testing, such as `http://127.0.0.1:5173`.
-- Delegated Graph permissions: `User.Read` and `Sites.ReadWrite.All`.
+- Delegated Graph permissions for browser sync: `User.Read` and `Sites.ReadWrite.All`.
+- Application Graph permissions for the secure backend: `Mail.Send` for verification email and `Sites.ReadWrite.All` when `Tracker Users` is stored in Microsoft Lists.
 - Admin consent if the tenant requires consent for SharePoint list read/write scopes.
 
 Current supported live actions:
@@ -34,7 +35,7 @@ Current supported live actions:
 - Push the current migration package to configured Microsoft Lists.
 - Load assignment rows from the configured Audit Assignments list into the browser prototype.
 
-The secure account gate now uses the backend server for Microsoft OAuth, Graph email verification codes, signed HTTP-only sessions, and admin approval endpoints. A new user starts with Microsoft-hosted sign-in, requests access with that Microsoft identity, receives a verification code by email, confirms the code in the tracker, and then waits for an Admin user to approve the profile. The current backend persists approval records in `server/data/access-users.json`; the next production step is moving that store into Microsoft Lists or Dataverse.
+The secure account gate now uses the backend server for Microsoft OAuth, Graph email verification codes, signed HTTP-only sessions, and admin approval endpoints. A new user starts with Microsoft-hosted sign-in, requests access with that Microsoft identity, receives a verification code by email, confirms the code in the tracker, and then waits for an Admin user to approve the profile. The backend can persist approval records in `server/data/access-users.json` for local testing or in the `Tracker Users` Microsoft List when `TRACKER_USER_STORE=microsoft-lists`, `TRACKER_USERS_SITE_ID`, and `TRACKER_USERS_LIST_ID` are configured.
 
 The sync client uses stable app keys for upserts:
 
@@ -66,7 +67,7 @@ Each activity row should include:
 1. Create the lists from the exported `graphListCreateRequests`.
 2. Import `Audit Assignments` first.
 3. Import child rows in this order: team members, checklist items, comments, status history, activity log.
-4. Import `Tracker Users` only for prototype testing; replace with Microsoft 365 groups before production.
+4. Import or configure `Tracker Users` for prototype testing; replace app-local roles with Microsoft 365 groups before production.
 5. Validate that each child row has a matching `TrackerAssignmentId`.
 6. Connect the app to Microsoft Graph after the list structure is approved.
 7. Validate the Microsoft Entra sign-in with a real tenant app registration.
