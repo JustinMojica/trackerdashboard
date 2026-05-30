@@ -133,7 +133,7 @@ Tracker access is now enforced by `server/secureAccessServer.mjs`, not by browse
 Required Microsoft setup:
 
 - Register a Microsoft Entra web application.
-- Add redirect URI `http://127.0.0.1:8787/api/auth/callback` for local testing.
+- Add redirect URI `http://localhost:8787/api/auth/callback` for local testing.
 - Create a client secret.
 - Grant Microsoft Graph application permission `Mail.Send` and apply admin consent.
 - Use a real mailbox for `MICROSOFT_MAIL_FROM`.
@@ -141,8 +141,8 @@ Required Microsoft setup:
 
 Local run model:
 
-- `npm run dev` serves the React UI at `http://127.0.0.1:5173`.
-- `npm run server` serves the secure backend at `http://127.0.0.1:8787`.
+- `npm run dev` serves the React UI at `http://localhost:5173`.
+- `npm run server` serves the secure backend at `http://localhost:8787`.
 - `npm run secure` builds the app and serves the production bundle through the secure backend.
 
 ### Automation candidates
