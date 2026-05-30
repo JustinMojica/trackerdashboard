@@ -1,10 +1,14 @@
 import { createHmac, createHash, randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import {
+  accessUserStoreStatus,
+  createAccessUserStore,
+} from "./accessUserStore.mjs";
 
 const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const dataDir = resolve(rootDir, "server", "data");
@@ -29,10 +33,23 @@ const config = {
     email.toLowerCase(),
   ),
   mailFrom: process.env.MICROSOFT_MAIL_FROM || "",
+  userStoreMode: process.env.TRACKER_USER_STORE || "local",
+  userStoreSiteId: process.env.TRACKER_USERS_SITE_ID || "",
+  userStoreListId: process.env.TRACKER_USERS_LIST_ID || "",
 };
 
 const redirectUri = `${config.publicOrigin}/api/auth/callback`;
 const authority = `https://login.microsoftonline.com/${config.tenantId}/oauth2/v2.0`;
+const userStoreStatus = accessUserStoreStatus(config);
+const accessUserStore = createAccessUserStore({
+  mode: userStoreStatus.mode,
+  usersFile,
+  graph: {
+    siteId: config.userStoreSiteId,
+    listId: config.userStoreListId,
+    getAccessToken: getGraphAppToken,
+  },
+});
 const jwks = hasConfiguredValue(config.tenantId)
   ? createRemoteJWKSet(
       new URL(`https://login.microsoftonline.com/${config.tenantId}/discovery/v2.0/keys`),
@@ -104,11 +121,13 @@ function accessConfigStatus() {
   })) {
     if (!hasConfiguredValue(value)) missing.push(key);
   }
+  missing.push(...userStoreStatus.missing);
   return {
     configured: missing.length === 0,
     missing,
     redirectUri,
     frontendOrigin: config.frontendOrigin,
+    userStore: userStoreStatus,
   };
 }
 
@@ -517,25 +536,20 @@ async function getGraphAppToken() {
 }
 
 async function loadUserStore() {
-  await mkdir(dataDir, { recursive: true });
-  if (!existsSync(usersFile)) {
-    const store = { users: [] };
-    seedAdmins(store);
-    await saveUserStore(store);
-    return store;
-  }
-  const store = JSON.parse(await readFile(usersFile, "utf8"));
+  const store = await accessUserStore.load();
   if (!Array.isArray(store.users)) store.users = [];
-  seedAdmins(store);
+  if (seedAdmins(store)) {
+    await saveUserStore(store);
+  }
   return store;
 }
 
 async function saveUserStore(store) {
-  await mkdir(dataDir, { recursive: true });
-  await writeFile(usersFile, `${JSON.stringify(store, null, 2)}\n`);
+  await accessUserStore.save(store);
 }
 
 function seedAdmins(store) {
+  let changed = false;
   for (const email of config.adminEmails) {
     if (!email || findUser(store, email)) continue;
     store.users.push({
@@ -555,7 +569,9 @@ function seedAdmins(store) {
       verificationCodeHash: "",
       verificationSentAt: "",
     });
+    changed = true;
   }
+  return changed;
 }
 
 async function serveStatic(request, response, url) {
