@@ -2,14 +2,58 @@
 
 Use this when the tracker needs a public test URL instead of `localhost`.
 
+## GitHub Source
+
+Repository path:
+
+```text
+JustinMojica/trackerdashboard
+```
+
+Repository URL:
+
+```text
+https://github.com/JustinMojica/trackerdashboard
+```
+
+Use this GitHub path when Azure asks for the source repository. For the current
+prototype, the deployment ZIP in `deploy-artifacts` is still the safest way to
+publish the exact local version because the latest large React file has local
+changes that are ahead of GitHub.
+
 ## Recommended Host
 
-Use one Azure App Service Node.js app for the test deployment. This app already serves both:
+Use one Azure App Service Node.js app for the test deployment. This moves the
+tracker off the local machine and gives coworkers a real HTTPS URL.
+
+The app already serves both:
 
 - the built React frontend from `dist`
 - the secure Node API from `server/secureAccessServer.mjs`
 
 That keeps Microsoft OAuth callbacks, cookies, and API calls on one public origin.
+
+Do not use GitHub Pages for this version. GitHub Pages can host static files,
+but this tracker needs the Node server for Microsoft sign-in, verification-code
+email, admin approvals, and secure sessions.
+
+## Azure Portal Path
+
+1. Go to `https://portal.azure.com`.
+2. Create an **App Service**.
+3. Choose:
+   - Publish: Code
+   - Runtime stack: Node LTS
+   - Operating system: Linux
+   - Pricing plan: Free or Basic for testing
+4. After Azure creates it, copy the app URL:
+
+```text
+https://<app-name>.azurewebsites.net
+```
+
+That URL is what you send to a coworker after the environment variables and
+redirect URI are configured.
 
 ## Required App Settings
 
@@ -47,20 +91,20 @@ http://localhost:8787/api/auth/callback
 
 ## Build And Start
 
-Azure should run:
+Azure should run this startup command from `package.json`:
 
 ```text
-npm install
-npm run build
 npm start
 ```
 
-The server now honors the platform `PORT` environment variable. If no public
-origin is configured but Azure provides `WEBSITE_HOSTNAME`, the server infers:
+For ZIP deployments, enable build automation with:
 
 ```text
-https://<WEBSITE_HOSTNAME>
+SCM_DO_BUILD_DURING_DEPLOYMENT=true
 ```
+
+The server honors the platform `PORT` environment variable through
+`server/productionStart.mjs`.
 
 ## Coworker Test Flow
 
