@@ -49,7 +49,7 @@ export type SecureAccessState = {
 };
 
 export function secureAccessApiBase() {
-  if (window.location.port === "5173") return "http://127.0.0.1:8787";
+  if (window.location.port === "5173") return "http://localhost:8787";
   return "";
 }
 
