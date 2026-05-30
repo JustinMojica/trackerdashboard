@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "server": "node server/secureAccessServer.mjs",
+    "start": "node server/secureAccessServer.mjs",
     "secure": "npm run build && node server/secureAccessServer.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
