@@ -37,3 +37,36 @@ Keep these app settings configured in Azure:
 - `WEBSITE_NODE_DEFAULT_VERSION=22`
 
 Use `TRACKER_PROJECT_STORE=local` until the Audit Assignments Microsoft List has the `TrackerProjectJson` column and the list ID is configured.
+
+## Verification
+
+After deployment, check:
+
+```text
+https://mosaic-audit-tracker-live.azurewebsites.net/
+https://mosaic-audit-tracker-live.azurewebsites.net/api/auth/config
+```
+
+The homepage can return `200` while sign-in is still unavailable. The auth config endpoint must show `configured: true` before Microsoft sign-in and access requests will work.
+
+If `/api/auth/config` lists missing values, restore those values in Azure App Service > Settings > Environment variables, then restart the app.
+
+## Troubleshooting
+
+GitHub Actions deploy failure:
+
+- Check **Actions > Deploy Azure App Service**.
+- If tests fail, fix the test/server issue first; deployment is intentionally blocked until checks pass.
+- If deployment fails at the Azure deploy step, replace `AZURE_WEBAPP_PUBLISH_PROFILE` with a fresh publish profile.
+
+Azure site loads but sign-in fails:
+
+- Open `/api/auth/config`.
+- Add any missing settings shown there to the Azure App Service environment variables.
+- Confirm the Entra redirect URI matches the live callback URL.
+- Restart the App Service.
+
+Security rotation:
+
+- If a publish profile is pasted into chat or a ticket, regenerate it in Azure and replace the GitHub secret.
+- If a Microsoft client secret is exposed, create a new secret in Entra, update Azure, and delete the old secret.

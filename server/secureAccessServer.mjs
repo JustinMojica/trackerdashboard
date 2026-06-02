@@ -161,14 +161,16 @@ function accessConfigStatus(request) {
     MICROSOFT_CLIENT_ID: config.clientId,
     MICROSOFT_CLIENT_SECRET: config.clientSecret,
     MICROSOFT_MAIL_FROM: config.mailFrom,
-    TRACKER_SESSION_SECRET: hasValidSessionSecret(config.sessionSecret) ? config.sessionSecret : "",
+    TRACKER_SESSION_SECRET: config.sessionSecret,
     TRACKER_ALLOWED_EMAIL_DOMAINS: config.allowedDomains.join(","),
     TRACKER_ADMIN_EMAILS: config.adminEmails.join(","),
   })) {
     if (!hasConfiguredValue(value)) missing.push(key);
   }
   const sessionSecretStatus = validateSessionSecret(config.sessionSecret);
-  if (sessionSecretStatus === "missing") missing.push("TRACKER_SESSION_SECRET");
+  if (sessionSecretStatus === "missing" && !missing.includes("TRACKER_SESSION_SECRET")) {
+    missing.push("TRACKER_SESSION_SECRET");
+  }
   if (sessionSecretStatus === "invalid") invalid.push("TRACKER_SESSION_SECRET");
   missing.push(...userStoreStatus.missing);
   return {
@@ -180,6 +182,13 @@ function accessConfigStatus(request) {
     userStore: userStoreStatus,
     projectStore: currentProjectStoreStatus,
   };
+}
+
+function sendSetupRequired(request, response) {
+  const setup = accessConfigStatus(request);
+  if (setup.configured) return false;
+  sendJson(request, response, 503, { error: "setup-required", setup });
+  return true;
 }
 
 function loadLocalEnvironment() {
@@ -200,7 +209,7 @@ function loadLocalEnvironment() {
       ) {
         value = value.slice(1, -1);
       }
-      if (!process.env[key]) process.env[key] = value;
+      if (process.env[key] === undefined) process.env[key] = value;
     }
   }
 }
@@ -225,6 +234,12 @@ function hasValidSessionSecret(value) {
     secret.length >= sessionSecretMinLength &&
     !weakSessionSecrets.has(normalized)
   );
+}
+
+function validateSessionSecret(value) {
+  const secret = String(value ?? "").trim();
+  if (!hasConfiguredValue(secret)) return "missing";
+  return hasValidSessionSecret(secret) ? "valid" : "invalid";
 }
 
 async function currentAccessState(request) {

@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { spawn } from "node:child_process";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
-const serverPath = new URL("../server/secureAccessServer.mjs", import.meta.url);
+const serverPath = fileURLToPath(new URL("../server/secureAccessServer.mjs", import.meta.url));
 
 function base64Url(value) {
   return Buffer.from(value).toString("base64url");
@@ -28,7 +29,7 @@ function envFor(port, sessionSecret) {
     TRACKER_USER_STORE: "local",
   };
   if (sessionSecret === undefined) {
-    delete env.TRACKER_SESSION_SECRET;
+    env.TRACKER_SESSION_SECRET = "";
   } else {
     env.TRACKER_SESSION_SECRET = sessionSecret;
   }
@@ -37,7 +38,7 @@ function envFor(port, sessionSecret) {
 
 async function withServer(sessionSecret, run) {
   const port = 19000 + Math.floor(Math.random() * 1000);
-  const server = spawn(process.execPath, [serverPath.pathname], {
+  const server = spawn(process.execPath, [serverPath], {
     env: envFor(port, sessionSecret),
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -64,8 +65,19 @@ async function withServer(sessionSecret, run) {
     });
     await run(`http://127.0.0.1:${port}`);
   } finally {
-    server.kill();
-    await new Promise((resolve) => server.once("exit", resolve));
+    if (server.exitCode === null) {
+      server.kill();
+      await new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          server.kill("SIGKILL");
+          resolve();
+        }, 1000);
+        server.once("exit", () => {
+          clearTimeout(timeout);
+          resolve();
+        });
+      });
+    }
   }
 }
 
@@ -79,7 +91,7 @@ test("missing session secret is not accepted for signed admin cookies", async ()
     const adminResponse = await fetch(`${origin}/api/admin/access-requests`, {
       headers: { cookie: forgedSessionCookie("dev") },
     });
-    assert.equal(adminResponse.status, 401);
+    assert.equal(adminResponse.status, 503);
   });
 });
 
@@ -93,6 +105,6 @@ test("placeholder session secret is not accepted for signed admin cookies", asyn
     const adminResponse = await fetch(`${origin}/api/admin/access-requests`, {
       headers: { cookie: forgedSessionCookie("replace-with-a-long-random-secret") },
     });
-    assert.equal(adminResponse.status, 401);
+    assert.equal(adminResponse.status, 503);
   });
 });
