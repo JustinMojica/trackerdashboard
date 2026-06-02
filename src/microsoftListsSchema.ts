@@ -38,7 +38,6 @@ export type CentralAuditProject = {
   broker: string;
   assignedAuditor: string;
   auditTeam: CentralAuditTeamMember[];
-  reviewer: string;
   currentStage: string;
   assignmentStatus: string;
   quoteStatus: string;
@@ -76,7 +75,6 @@ export type CentralAuditProject = {
 export type CentralPrototypeUser = {
   fullName: string;
   username: string;
-  password: string;
   role: string;
   permissionGroup: string;
   email: string;
@@ -183,7 +181,6 @@ export const microsoftListSchemas: MicrosoftListSchema[] = [
       text("ClientCoverholderCode", "Client / coverholder code", false, true),
       text("Broker", "Broker"),
       text("LeadAuditor", "Lead auditor"),
-      text("Reviewer", "Reviewer"),
       choice("CurrentStage", "Current stage", stageChoices, true),
       choice("AssignmentStatus", "Assignment status", assignmentStatusChoices, true),
       choice("QuoteStatus", "Quote status", quoteStatusChoices),
@@ -444,7 +441,6 @@ function projectToAssignmentRow(project: CentralAuditProject): MicrosoftListSeed
     ClientCoverholderCode: project.clientCoverholderCode,
     Broker: project.broker,
     LeadAuditor: project.assignedAuditor,
-    Reviewer: project.reviewer,
     CurrentStage: project.currentStage,
     AssignmentStatus: project.assignmentStatus,
     QuoteStatus: project.quoteStatus,

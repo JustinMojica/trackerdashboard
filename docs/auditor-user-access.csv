@@ -1,10 +1,10 @@
-Full Name,Username,Test Password,Work Email,Role,Permission Group,Tracker Access,SharePoint Access,Notes
-Lorraine Mojica,lorraine.mojica,password,lorraine.mojica@[company-domain],Auditor,Auditor,Edit assigned rows,Assigned client folders,Lead auditor on seeded dashboard projects
-Walter Aviles,walter.aviles,password,walter.aviles@[company-domain],Auditor,Auditor,Edit assigned rows,Assigned client folders,Lead/supporting auditor on seeded dashboard projects
-Leslie Domenech,leslie.domenech,password,leslie.domenech@[company-domain],Auditor,Auditor,Edit assigned rows,Assigned client folders,Supporting auditor on seeded dashboard projects
-Mark James,mark.james,password,mark.james@[company-domain],Auditor,Auditor,Edit assigned rows,Assigned client folders,In dashboard auditor list
-Justin Mojica,justin.mojica,password,justin.mojica@[company-domain],Auditor / Admin,Admin,Full edit,Full control,Lead auditor on seeded dashboard project and likely system owner
-Sheilah Couture,sheilah.couture,password,sheilah.couture@[company-domain],Auditor,Auditor,Edit assigned rows,Assigned client folders,In dashboard auditor list
-Annabelle J. Crawford Mojica,annabelle.crawford.mojica,password,annabelle.crawford.mojica@[company-domain],Auditor,Auditor,Edit assigned rows,Assigned client folders,In dashboard auditor list; confirm preferred username/email format
-Molly Aviles,molly.aviles,password,molly.aviles@[company-domain],Auditor,Auditor,Edit assigned rows,Assigned client folders,In dashboard auditor list
-Lindsie Guillermo,lindsie.guillermo,password,lindsie.guillermo@[company-domain],Auditor,Auditor,Edit assigned rows,Assigned client folders,In dashboard auditor list
+Full Name,Username,Work Email,Role,Permission Group,Tracker Access,SharePoint Access,Notes
+Lorraine Mojica,lorraine.mojica,lorraine.mojica@[company-domain],Auditor,Auditor,Edit assigned rows,Assigned client folders,Default auditor directory record
+Walter Aviles,walter.aviles,walter.aviles@[company-domain],Auditor,Auditor,Edit assigned rows,Assigned client folders,Default auditor directory record
+Leslie Domenech,leslie.domenech,leslie.domenech@[company-domain],Auditor,Auditor,Edit assigned rows,Assigned client folders,Default auditor directory record
+Mark James,mark.james,mark.james@[company-domain],Audit Manager,Audit Manager,Edit all audit rows,All audit folders,Manager directory record
+Justin Mojica,justin.mojica,justin.mojica@[company-domain],Auditor / Admin,Admin,Full edit,Full control,System owner
+Sheilah Couture,sheilah.couture,sheilah.couture@[company-domain],Finance,Finance,Edit invoice/payment fields,Invoice folders,Finance directory record
+Annabelle J. Crawford Mojica,annabelle.crawford.mojica,annabelle.crawford.mojica@[company-domain],Read Only,Read Only,View only,View only,Read-only directory record; confirm preferred username/email format
+Molly Aviles,molly.aviles,molly.aviles@[company-domain],Auditor,Auditor,Edit assigned rows,Assigned client folders,In dashboard auditor list
+Lindsie Guillermo,lindsie.guillermo,lindsie.guillermo@[company-domain],Auditor,Auditor,Edit assigned rows,Assigned client folders,In dashboard auditor list

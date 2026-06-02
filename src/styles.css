@@ -325,6 +325,19 @@ main {
   font-weight: 800;
   padding: 0.35rem 0.65rem;
 }
+.storage-schema-groups {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+}
+.storage-schema-groups article {
+  background: #f8fbff;
+  border: 1px solid #dfe7f2;
+  border-radius: 14px;
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.9rem 1rem;
+}
 .storage-mode-toggle,
 .storage-actions {
   display: flex;
@@ -458,12 +471,31 @@ main {
   display: grid;
   gap: 1rem;
 }
+.user-admin-summary {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+}
+.user-admin-summary span {
+  background: #f8fbff;
+  border: 1px solid #dfe7f2;
+  border-radius: 14px;
+  color: #40506a;
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.8rem;
+}
+.user-admin-summary strong {
+  color: #172033;
+  font-size: 1.35rem;
+}
 .user-management-grid {
   display: grid;
   gap: 1rem;
   grid-template-columns: minmax(240px, 0.7fr) minmax(0, 1.6fr);
 }
-.access-request-queue {
+.access-request-queue,
+.access-account-list {
   background: #f8fbff;
   border: 1px solid #dfe7f2;
   border-radius: 16px;
@@ -481,6 +513,18 @@ main {
 }
 .access-request-queue h3 {
   margin: 0;
+}
+.section-subhead {
+  align-items: start;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.section-subhead h3 {
+  margin: 0 0 0.15rem;
+}
+.section-subhead span {
+  color: #53637a;
 }
 .access-request-queue span,
 .access-request-card span,
@@ -506,6 +550,30 @@ main {
 }
 .access-request-card small {
   font-weight: 800;
+}
+.account-list-grid {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+.account-row-card {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #dfe7f2;
+  border-radius: 12px;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  padding: 0.8rem;
+}
+.account-row-card div {
+  display: grid;
+  gap: 0.2rem;
+}
+.account-row-card span:not(.user-status-badge) {
+  color: #53637a;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
 }
 .user-list {
   display: grid;
@@ -546,10 +614,35 @@ main {
   background: #eef1f6;
   color: #66748a;
 }
+.user-status-badge.visibility {
+  background: #eef4ff;
+  color: #174ea6;
+}
 .user-list button.selected .user-status-badge {
   background: rgba(255, 255, 255, 0.18);
   border-color: rgba(255, 255, 255, 0.42);
   color: #fff;
+}
+.approved-directory-list button {
+  min-height: 92px;
+}
+.selected-account-summary {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #dfe7f2;
+  border-radius: 14px;
+  display: flex;
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+  padding: 0.9rem;
+}
+.selected-account-summary > div {
+  display: grid;
+  gap: 0.25rem;
+}
+.selected-account-summary span:not(.avatar):not(.user-status-badge) {
+  color: #53637a;
+  overflow-wrap: anywhere;
 }
 .user-editor {
   background: #f8fbff;
@@ -601,6 +694,10 @@ main {
   border-radius: 14px;
   margin-bottom: 1rem;
   padding: 0.85rem 1rem;
+}
+.toast.subtle {
+  background: #edf5ff;
+  border-color: #b8d8ff;
 }
 
 .summary-grid {
@@ -1269,6 +1366,8 @@ textarea {
   .storage-stats,
   .readiness-grid,
   .storage-roadmap,
+  .storage-schema-groups,
+  .user-admin-summary,
   .storage-config,
   .storage-list-id-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1299,6 +1398,8 @@ textarea {
   .storage-stats,
   .readiness-grid,
   .storage-roadmap,
+  .storage-schema-groups,
+  .user-admin-summary,
   .approval-controls,
   .access-request-card,
   .storage-config,

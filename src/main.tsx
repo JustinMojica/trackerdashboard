@@ -1,53 +1,30 @@
 import React, { FormEvent, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  approveAccessRequest,
-  buildAccessRequestUser,
   canApproveAccessRequest,
-  isValidCompanyEmail,
-  rejectAccessRequest,
-  verifyAccessRequestEmail,
   type AccountRequestStatus,
 } from "./accessRequests";
 import {
   approveSecureAccessRequest,
   getSecureAccessState,
+  getSecureSystemHealth,
   logoutSecureAccess,
   rejectSecureAccessRequest,
   secureAccessUrl,
+  updateSecureAccessUser,
   verifySecureAccessCode,
+  type AccessApprovalUpdate,
   type SecureAccessState,
   type SecureAccessUser,
+  type SecureSystemHealth,
 } from "./secureAccessClient";
 import {
-  hasMicrosoftAuthConfig,
-  microsoftAuthScopeLabel,
-  refreshMicrosoftGraphToken,
-  restoreMicrosoftGraphSession,
-  sanitizeMicrosoftAuthConfig,
-  signInWithMicrosoft,
-  signOutOfMicrosoft,
-  type MicrosoftAuthAccount,
-  type MicrosoftAuthConfig,
-} from "./microsoftAuth";
-import {
-  buildSyncPackage,
-  hasFullMicrosoftListsConfig,
-  hasMinimumMicrosoftListsConfig,
-  microsoftListLabels,
-  missingMicrosoftListLabels,
-  pullAssignmentRowsFromMicrosoftLists,
-  pushMigrationPackageToMicrosoftLists,
-  requiredMicrosoftListKeys,
-  sanitizeMicrosoftListsConfig,
-  testMicrosoftListsConnection,
-  type MicrosoftListKey,
-  type MicrosoftListsConnectionConfig,
-} from "./microsoftListsClient";
-import {
   buildMicrosoftListsMigrationPackage,
-  microsoftListSchemas,
 } from "./microsoftListsSchema";
+import {
+  getServerProjects,
+  saveServerProjects,
+} from "./projectDataClient";
 import "./styles.css";
 
 export type AssignmentSource = "Email" | "DAM";
@@ -138,7 +115,6 @@ export type AuditProject = {
   broker: string;
   assignedAuditor: string;
   auditTeam: AuditTeamMember[];
-  reviewer: string;
   currentStage: Stage;
   assignmentStatus: AssignmentStatus;
   quoteStatus: QuoteStatus;
@@ -190,7 +166,6 @@ type FilterPreset = {
 };
 
 type ViewMode = "kanban" | "table";
-type StorageMode = "local" | "microsoft-lists";
 type UserRole = "Admin" | "Audit Manager" | "Auditor" | "Finance" | "Read Only";
 type ProjectVisibility =
   | "Role Default"
@@ -201,7 +176,6 @@ type ProjectVisibility =
 type PrototypeUser = {
   fullName: string;
   username: string;
-  password: string;
   role: UserRole;
   permissionGroup: UserRole;
   email: string;
@@ -250,14 +224,8 @@ export const stages: Stage[] = [
 
 const today = new Date("2026-05-05T12:00:00Z");
 const storageKey = "audit-assignment-tracker-projects-v1";
-const currentUserStorageKey = "audit-assignment-tracker-current-user-v1";
 const usersStorageKey = "audit-assignment-tracker-users-v1";
 const lastExportStorageKey = "audit-assignment-tracker-last-export-v1";
-const microsoftListsConfigStorageKey =
-  "audit-assignment-tracker-microsoft-lists-config-v1";
-const microsoftAuthConfigStorageKey =
-  "audit-assignment-tracker-microsoft-auth-config-v1";
-const storageModeStorageKey = "audit-assignment-tracker-storage-mode-v1";
 
 const defaultFilters: Filters = {
   auditor: "",
@@ -365,7 +333,6 @@ const defaultPrototypeUsers: PrototypeUser[] = [
   approvedPrototypeUser({
     fullName: "Lorraine Mojica",
     username: "lorraine.mojica",
-    password: "password",
     role: "Auditor",
     permissionGroup: "Auditor",
     email: "lorraine.mojica@[company-domain]",
@@ -375,7 +342,6 @@ const defaultPrototypeUsers: PrototypeUser[] = [
   approvedPrototypeUser({
     fullName: "Walter Aviles",
     username: "walter.aviles",
-    password: "password",
     role: "Auditor",
     permissionGroup: "Auditor",
     email: "walter.aviles@[company-domain]",
@@ -385,7 +351,6 @@ const defaultPrototypeUsers: PrototypeUser[] = [
   approvedPrototypeUser({
     fullName: "Leslie Domenech",
     username: "leslie.domenech",
-    password: "password",
     role: "Auditor",
     permissionGroup: "Auditor",
     email: "leslie.domenech@[company-domain]",
@@ -395,7 +360,6 @@ const defaultPrototypeUsers: PrototypeUser[] = [
   approvedPrototypeUser({
     fullName: "Mark James",
     username: "mark.james",
-    password: "password",
     role: "Audit Manager",
     permissionGroup: "Audit Manager",
     email: "mark.james@[company-domain]",
@@ -405,7 +369,6 @@ const defaultPrototypeUsers: PrototypeUser[] = [
   approvedPrototypeUser({
     fullName: "Justin Mojica",
     username: "justin.mojica",
-    password: "password",
     role: "Admin",
     permissionGroup: "Admin",
     email: "justin.mojica@[company-domain]",
@@ -415,7 +378,6 @@ const defaultPrototypeUsers: PrototypeUser[] = [
   approvedPrototypeUser({
     fullName: "Sheilah Couture",
     username: "sheilah.couture",
-    password: "password",
     role: "Finance",
     permissionGroup: "Finance",
     email: "sheilah.couture@[company-domain]",
@@ -425,7 +387,6 @@ const defaultPrototypeUsers: PrototypeUser[] = [
   approvedPrototypeUser({
     fullName: "Annabelle J. Crawford Mojica",
     username: "annabelle.crawford.mojica",
-    password: "password",
     role: "Read Only",
     permissionGroup: "Read Only",
     email: "annabelle.crawford.mojica@[company-domain]",
@@ -435,7 +396,6 @@ const defaultPrototypeUsers: PrototypeUser[] = [
   approvedPrototypeUser({
     fullName: "Molly Aviles",
     username: "molly.aviles",
-    password: "password",
     role: "Auditor",
     permissionGroup: "Auditor",
     email: "molly.aviles@[company-domain]",
@@ -445,7 +405,6 @@ const defaultPrototypeUsers: PrototypeUser[] = [
   approvedPrototypeUser({
     fullName: "Lindsie Guillermo",
     username: "lindsie.guillermo",
-    password: "password",
     role: "Auditor",
     permissionGroup: "Auditor",
     email: "lindsie.guillermo@[company-domain]",
@@ -454,280 +413,12 @@ const defaultPrototypeUsers: PrototypeUser[] = [
   }),
 ];
 
-export const sampleProjects: AuditProject[] = [
-  {
-    id: "audit-001",
-    assignmentNumber: "AA-2026-0142",
-    assignmentSource: "DAM",
-    assignmentType: "CH",
-    auditEntity: "Northbridge Coverholder Operations",
-    clientCoverholderCode: "CH-1048",
-    broker: "Northbridge Market Services",
-    assignedAuditor: "Lorraine Mojica",
-    auditTeam: [
-      { person: "Lorraine Mojica", role: "Lead Auditor" },
-      { person: "Walter Aviles", role: "Supporting Auditor" },
-    ],
-    reviewer: "Owen Price",
-    currentStage: "Quote",
-    assignmentStatus: "Blocked",
-    quoteStatus: "Sent",
-    quoteAmount: 12800,
-    tentativeAuditWeek: "2026-W20",
-    confirmedAuditDate: "",
-    auditType: "Remote",
-    baaReceived: true,
-    endorsementsReceived: false,
-    premiumBdxReceived: false,
-    preAuditQuestionnaireStatus: "Not Started",
-    documentRequestStatus: "In Progress",
-    documentRequestDate: "2026-04-28",
-    brokerLastChasedDate: "2026-05-01",
-    brokerExpectedResponseDate: "2026-05-08",
-    fileSelectionCompleted: false,
-    testingSheetCompleted: false,
-    findingsSentDate: "",
-    coverholderResponseReceivedDate: "",
-    reportStatus: "Not Started",
-    invoiceStatus: "Not Started",
-    paymentReceived: false,
-    damSubmissionStatus: "Not Started",
-    nextAction: "Follow up on DAM quote approval and endorsements.",
-    blockers: "",
-    dueDate: "2026-05-03",
-    lastUpdatedDate: "2026-05-01",
-    labels: ["Waiting on Broker", "High Priority"],
-    checklistCompletions: {},
-    statusHistory: [
-      {
-        id: "h-001",
-        changedAt: "2026-04-25",
-        changedBy: "System seed",
-        fromStage: "Intake",
-        toStage: "Registration",
-        note: "Assignment registered from DAM intake.",
-      },
-      {
-        id: "h-002",
-        changedAt: "2026-04-28",
-        changedBy: "Maya Chen",
-        fromStage: "Registration",
-        toStage: "Quote",
-        note: "Quote prepared and sent in DAM.",
-      },
-    ],
-    comments: [
-      {
-        id: "c-001",
-        createdAt: "2026-05-01 09:15 AM",
-        author: "Prototype user",
-        body: "Waiting on remaining intake support before moving forward.",
-      },
-    ],
-    activityEvents: [],
-  },
-  {
-    id: "audit-002",
-    assignmentNumber: "AA-2026-0148",
-    assignmentSource: "Email",
-    assignmentType: "MGA",
-    auditEntity: "Harbor Specialty Program",
-    clientCoverholderCode: "CH-2217",
-    broker: "Harbor Underwriting Group",
-    assignedAuditor: "Walter Aviles",
-    auditTeam: [
-      { person: "Walter Aviles", role: "Lead Auditor" },
-      { person: "Leslie Domenech", role: "Supporting Auditor" },
-    ],
-    reviewer: "Priya Shah",
-    currentStage: "Pre-Audit",
-    assignmentStatus: "In Progress",
-    quoteStatus: "Accepted",
-    quoteAmount: 9300,
-    tentativeAuditWeek: "2026-W19",
-    confirmedAuditDate: "2026-05-08",
-    auditType: "Onsite",
-    baaReceived: true,
-    endorsementsReceived: true,
-    premiumBdxReceived: false,
-    preAuditQuestionnaireStatus: "Complete",
-    documentRequestStatus: "In Progress",
-    documentRequestDate: "2026-04-25",
-    brokerLastChasedDate: "2026-05-04",
-    brokerExpectedResponseDate: "2026-05-07",
-    fileSelectionCompleted: false,
-    testingSheetCompleted: false,
-    findingsSentDate: "",
-    coverholderResponseReceivedDate: "",
-    reportStatus: "Not Started",
-    invoiceStatus: "Not Started",
-    paymentReceived: false,
-    damSubmissionStatus: "Not Required",
-    nextAction: "Receive premium bordereau before file selection.",
-    blockers: "",
-    dueDate: "2026-05-07",
-    lastUpdatedDate: "2026-05-04",
-    labels: ["Waiting on Broker"],
-    checklistCompletions: {},
-    statusHistory: [
-      {
-        id: "h-003",
-        changedAt: "2026-04-20",
-        changedBy: "System seed",
-        fromStage: "Intake",
-        toStage: "Registration",
-        note: "Email intake logged.",
-      },
-      {
-        id: "h-004",
-        changedAt: "2026-04-22",
-        changedBy: "Lena Ortiz",
-        fromStage: "Registration",
-        toStage: "Quote",
-        note: "Email quote template sent.",
-      },
-      {
-        id: "h-005",
-        changedAt: "2026-04-29",
-        changedBy: "Lena Ortiz",
-        fromStage: "Quote",
-        toStage: "Pre-Audit",
-        note: "Quote accepted and audit date confirmed.",
-      },
-    ],
-    comments: [],
-    activityEvents: [],
-  },
-  {
-    id: "audit-003",
-    assignmentNumber: "AA-2026-0155",
-    assignmentSource: "DAM",
-    assignmentType: "DCA",
-    auditEntity: "Summit Claims Administration",
-    clientCoverholderCode: "CH-3094",
-    broker: "Summit Specialty Brokers",
-    assignedAuditor: "Lorraine Mojica",
-    auditTeam: [{ person: "Lorraine Mojica", role: "Lead Auditor" }],
-    reviewer: "Noah Reed",
-    currentStage: "Findings",
-    assignmentStatus: "Blocked",
-    quoteStatus: "Accepted",
-    quoteAmount: 15750,
-    tentativeAuditWeek: "2026-W17",
-    confirmedAuditDate: "2026-04-23",
-    auditType: "Remote",
-    baaReceived: true,
-    endorsementsReceived: true,
-    premiumBdxReceived: true,
-    preAuditQuestionnaireStatus: "Complete",
-    documentRequestStatus: "Complete",
-    documentRequestDate: "2026-04-08",
-    brokerLastChasedDate: "2026-04-18",
-    brokerExpectedResponseDate: "2026-04-22",
-    fileSelectionCompleted: true,
-    testingSheetCompleted: true,
-    findingsSentDate: "2026-04-30",
-    coverholderResponseReceivedDate: "",
-    reportStatus: "Not Started",
-    invoiceStatus: "Not Started",
-    paymentReceived: false,
-    damSubmissionStatus: "Not Started",
-    nextAction: "Chase coverholder response to findings.",
-    blockers: "",
-    dueDate: "2026-05-10",
-    lastUpdatedDate: "2026-05-04",
-    labels: ["High Priority"],
-    checklistCompletions: {},
-    statusHistory: [
-      {
-        id: "h-006",
-        changedAt: "2026-04-05",
-        changedBy: "System seed",
-        fromStage: "Intake",
-        toStage: "Quote",
-        note: "Fast-tracked DAM assignment.",
-      },
-      {
-        id: "h-007",
-        changedAt: "2026-04-24",
-        changedBy: "Maya Chen",
-        fromStage: "Audit Fieldwork",
-        toStage: "Findings",
-        note: "Testing completed; findings sent.",
-      },
-    ],
-    comments: [
-      {
-        id: "c-002",
-        createdAt: "2026-05-04 02:30 PM",
-        author: "Prototype user",
-        body: "Findings sent; response is the next gating item.",
-      },
-    ],
-    activityEvents: [],
-  },
-  {
-    id: "audit-004",
-    assignmentNumber: "AA-2026-0161",
-    assignmentSource: "Email",
-    assignmentType: "Company Contract",
-    auditEntity: "Cedar Binding Authority",
-    clientCoverholderCode: "CH-4175",
-    broker: "Cedar Risk Partners",
-    assignedAuditor: "Justin Mojica",
-    auditTeam: [{ person: "Justin Mojica", role: "Lead Auditor" }],
-    reviewer: "Priya Shah",
-    currentStage: "Final Submission",
-    assignmentStatus: "In Progress",
-    quoteStatus: "Accepted",
-    quoteAmount: 11200,
-    tentativeAuditWeek: "2026-W15",
-    confirmedAuditDate: "2026-04-10",
-    auditType: "Onsite",
-    baaReceived: true,
-    endorsementsReceived: true,
-    premiumBdxReceived: true,
-    preAuditQuestionnaireStatus: "Complete",
-    documentRequestStatus: "Complete",
-    documentRequestDate: "2026-04-01",
-    brokerLastChasedDate: "2026-04-08",
-    brokerExpectedResponseDate: "2026-04-12",
-    fileSelectionCompleted: true,
-    testingSheetCompleted: true,
-    findingsSentDate: "2026-04-16",
-    coverholderResponseReceivedDate: "2026-04-22",
-    reportStatus: "Issued",
-    invoiceStatus: "Prepared",
-    paymentReceived: false,
-    damSubmissionStatus: "Not Required",
-    nextAction: "Send final report package and invoice by email.",
-    blockers: "",
-    dueDate: "2026-05-06",
-    lastUpdatedDate: "2026-05-04",
-    labels: ["Medium Priority"],
-    checklistCompletions: {},
-    statusHistory: [
-      {
-        id: "h-008",
-        changedAt: "2026-04-01",
-        changedBy: "Jon Bell",
-        fromStage: "Quote",
-        toStage: "Scheduling",
-        note: "Quote accepted.",
-      },
-      {
-        id: "h-009",
-        changedAt: "2026-05-01",
-        changedBy: "Reviewer",
-        fromStage: "Report Drafting",
-        toStage: "Final Submission",
-        note: "Report approved for final issue.",
-      },
-    ],
-    comments: [],
-    activityEvents: [],
-  },
-];
+const legacySampleProjectIds = new Set([
+  "audit-001",
+  "audit-002",
+  "audit-003",
+  "audit-004",
+]);
 
 const blankProject = (): AuditProject => ({
   id: `audit-${Date.now()}`,
@@ -739,7 +430,6 @@ const blankProject = (): AuditProject => ({
   broker: "",
   assignedAuditor: "",
   auditTeam: [],
-  reviewer: "",
   currentStage: "Intake",
   assignmentStatus: "New",
   quoteStatus: "Not Started",
@@ -789,7 +479,7 @@ const checklistByStage: Record<Stage, string[]> = {
   Registration: [
     "Validate assignment details",
     "Create SharePoint-ready item record",
-    "Confirm reviewer",
+    "Confirm audit owner",
   ],
   Quote: [
     "Prepare base quote",
@@ -823,8 +513,8 @@ const checklistByStage: Record<Stage, string[]> = {
   ],
   "Report Drafting": [
     "Draft report",
-    "Reviewer quality check",
-    "Resolve review comments",
+    "Complete quality check",
+    "Resolve report comments",
   ],
   "Final Submission": [
     "Prepare final report package",
@@ -948,10 +638,7 @@ function canViewProject(user: PrototypeUser, project: AuditProject) {
   const visibility = effectiveVisibility(user);
   if (visibility === "All Projects") return true;
   if (visibility === "Finance Records") return isFinanceProject(project);
-  return (
-    projectHasAuditor(project, user.fullName) ||
-    project.reviewer === user.fullName
-  );
+  return projectHasAuditor(project, user.fullName);
 }
 
 function canEditProject(user: PrototypeUser, project: AuditProject) {
@@ -1069,7 +756,7 @@ function emptyProjectState(user: PrototypeUser) {
     return {
       title: "No assignments are assigned to you",
       message:
-        "Assigned work appears here when your name is listed as lead, support, or reviewer on an active project.",
+        "Assigned work appears here when your name is listed as lead or support on an active project.",
     };
   }
   if (user.role === "Read Only") {
@@ -1082,7 +769,7 @@ function emptyProjectState(user: PrototypeUser) {
   return {
     title: "No projects in the tracker",
     message:
-      "Create a project or import a JSON backup to start working from this browser.",
+      "Create a project or import a JSON backup to start working from shared tracker storage.",
   };
 }
 
@@ -1183,166 +870,25 @@ export function withProjectDefaults(project: AuditProject): AuditProject {
 function loadProjects(): AuditProject[] {
   const raw = localStorage.getItem(storageKey);
   if (!raw) {
-    localStorage.setItem(storageKey, JSON.stringify(sampleProjects));
-    return sampleProjects;
+    localStorage.setItem(storageKey, JSON.stringify([]));
+    return [];
   }
   try {
-    return (JSON.parse(raw) as AuditProject[]).map(withProjectDefaults);
+    const projects = (JSON.parse(raw) as AuditProject[]).map(withProjectDefaults);
+    const realProjects = projects.filter(
+      (project) => !legacySampleProjectIds.has(project.id),
+    );
+    if (realProjects.length !== projects.length) {
+      localStorage.setItem(storageKey, JSON.stringify(realProjects));
+    }
+    return realProjects;
   } catch {
-    return sampleProjects;
+    return [];
   }
 }
 
 function saveProjects(projects: AuditProject[]) {
   localStorage.setItem(storageKey, JSON.stringify(projects));
-}
-
-function loadStorageMode(): StorageMode {
-  return localStorage.getItem(storageModeStorageKey) === "microsoft-lists"
-    ? "microsoft-lists"
-    : "local";
-}
-
-function saveStorageMode(mode: StorageMode) {
-  localStorage.setItem(storageModeStorageKey, mode);
-}
-
-function emptyMicrosoftListsConfig(): MicrosoftListsConnectionConfig {
-  return { siteId: "", listIds: {} };
-}
-
-function loadMicrosoftListsConfig(): MicrosoftListsConnectionConfig {
-  const raw = localStorage.getItem(microsoftListsConfigStorageKey);
-  if (!raw) return emptyMicrosoftListsConfig();
-  try {
-    return sanitizeMicrosoftListsConfig(
-      JSON.parse(raw) as MicrosoftListsConnectionConfig,
-    );
-  } catch {
-    return emptyMicrosoftListsConfig();
-  }
-}
-
-function saveMicrosoftListsConfig(config: MicrosoftListsConnectionConfig) {
-  localStorage.setItem(
-    microsoftListsConfigStorageKey,
-    JSON.stringify(sanitizeMicrosoftListsConfig(config)),
-  );
-}
-
-function emptyMicrosoftAuthConfig(): MicrosoftAuthConfig {
-  return { clientId: "", tenantId: "" };
-}
-
-function loadMicrosoftAuthConfig(): MicrosoftAuthConfig {
-  const raw = localStorage.getItem(microsoftAuthConfigStorageKey);
-  if (!raw) return emptyMicrosoftAuthConfig();
-  try {
-    return sanitizeMicrosoftAuthConfig(JSON.parse(raw) as MicrosoftAuthConfig);
-  } catch {
-    return emptyMicrosoftAuthConfig();
-  }
-}
-
-function saveMicrosoftAuthConfig(config: MicrosoftAuthConfig) {
-  localStorage.setItem(
-    microsoftAuthConfigStorageKey,
-    JSON.stringify(sanitizeMicrosoftAuthConfig(config)),
-  );
-}
-
-function microsoftFieldsToProject(
-  fields: Record<string, string | number | boolean | null>,
-): AuditProject {
-  const project = blankProject();
-  const textValue = (key: string) => String(fields[key] ?? "");
-  const numberValue = (key: string) => Number(fields[key] ?? 0) || 0;
-  const booleanValue = (key: string) => fields[key] === true;
-  const labels = textValue("Labels")
-    .split(";")
-    .map((label) => label.trim())
-    .filter((label): label is ProjectLabel =>
-      labelOptions.includes(label as ProjectLabel),
-    );
-
-  return withProjectDefaults({
-    ...project,
-    id: textValue("TrackerAssignmentId") || project.id,
-    assignmentNumber: textValue("AssignmentNumber") || project.assignmentNumber,
-    assignmentSource:
-      textValue("AssignmentSource") === "DAM" ? "DAM" : "Email",
-    assignmentType: assignmentTypeOptions.includes(
-      textValue("AssignmentType") as AssignmentType,
-    )
-      ? (textValue("AssignmentType") as AssignmentType)
-      : "CH",
-    auditEntity: textValue("AuditEntity"),
-    clientCoverholderCode: textValue("ClientCoverholderCode"),
-    broker: textValue("Broker"),
-    assignedAuditor: textValue("LeadAuditor"),
-    auditTeam: textValue("LeadAuditor")
-      ? [{ person: textValue("LeadAuditor"), role: "Lead Auditor" }]
-      : [],
-    reviewer: textValue("Reviewer"),
-    currentStage: stages.includes(textValue("CurrentStage") as Stage)
-      ? (textValue("CurrentStage") as Stage)
-      : "Intake",
-    assignmentStatus: assignmentStatusOptions.includes(
-      textValue("AssignmentStatus") as AssignmentStatus,
-    )
-      ? (textValue("AssignmentStatus") as AssignmentStatus)
-      : "New",
-    quoteStatus: quoteStatusOptions.includes(
-      textValue("QuoteStatus") as QuoteStatus,
-    )
-      ? (textValue("QuoteStatus") as QuoteStatus)
-      : "Not Started",
-    quoteAmount: numberValue("QuoteAmount"),
-    tentativeAuditWeek: textValue("TentativeAuditWeek"),
-    confirmedAuditDate: textValue("ConfirmedAuditDate").slice(0, 10),
-    auditType: textValue("AuditType") === "Onsite" ? "Onsite" : "Remote",
-    baaReceived: booleanValue("BaaReceived"),
-    endorsementsReceived: booleanValue("EndorsementsReceived"),
-    premiumBdxReceived: booleanValue("PremiumBdxReceived"),
-    preAuditQuestionnaireStatus: progressStatusOptions.includes(
-      textValue("PreAuditQuestionnaireStatus") as ProgressStatus,
-    )
-      ? (textValue("PreAuditQuestionnaireStatus") as ProgressStatus)
-      : "Not Started",
-    documentRequestStatus: progressStatusOptions.includes(
-      textValue("DocumentRequestStatus") as ProgressStatus,
-    )
-      ? (textValue("DocumentRequestStatus") as ProgressStatus)
-      : "Not Started",
-    documentRequestDate: textValue("DocumentRequestDate").slice(0, 10),
-    brokerLastChasedDate: textValue("BrokerLastChasedDate").slice(0, 10),
-    brokerExpectedResponseDate: textValue("BrokerExpectedResponseDate").slice(0, 10),
-    fileSelectionCompleted: booleanValue("FileSelectionCompleted"),
-    testingSheetCompleted: booleanValue("TestingSheetCompleted"),
-    findingsSentDate: textValue("FindingsSentDate").slice(0, 10),
-    coverholderResponseReceivedDate: textValue("CoverholderResponseReceivedDate").slice(0, 10),
-    reportStatus: reportStatusOptions.includes(
-      textValue("ReportStatus") as ReportStatus,
-    )
-      ? (textValue("ReportStatus") as ReportStatus)
-      : "Not Started",
-    invoiceStatus: invoiceStatusOptions.includes(
-      textValue("InvoiceStatus") as InvoiceStatus,
-    )
-      ? (textValue("InvoiceStatus") as InvoiceStatus)
-      : "Not Started",
-    paymentReceived: booleanValue("PaymentReceived"),
-    damSubmissionStatus: damSubmissionStatusOptions.includes(
-      textValue("DamSubmissionStatus") as DamSubmissionStatus,
-    )
-      ? (textValue("DamSubmissionStatus") as DamSubmissionStatus)
-      : "Not Required",
-    nextAction: textValue("NextAction"),
-    blockers: textValue("Blockers"),
-    dueDate: textValue("DueDate").slice(0, 10),
-    lastUpdatedDate: textValue("LastUpdatedDate").slice(0, 10) || todayIso(),
-    labels,
-  });
 }
 
 function withUserDefaults(user: Partial<PrototypeUser>): PrototypeUser {
@@ -1354,7 +900,6 @@ function withUserDefaults(user: Partial<PrototypeUser>): PrototypeUser {
   return {
     fullName: user.fullName?.trim() || "New User",
     username: user.username?.trim().toLowerCase() || "new.user",
-    password: user.password || "password",
     role,
     permissionGroup: user.permissionGroup ?? role,
     email: user.email?.trim() || "new.user@[company-domain]",
@@ -1393,7 +938,6 @@ function secureUserToPrototypeUser(user: SecureAccessUser): PrototypeUser {
   return withUserDefaults({
     fullName: user.fullName,
     username: user.username,
-    password: "",
     role: user.role,
     permissionGroup: user.permissionGroup,
     email: user.email,
@@ -1407,47 +951,6 @@ function secureUserToPrototypeUser(user: SecureAccessUser): PrototypeUser {
     approvedBy: user.approvedBy,
     rejectionReason: user.rejectionReason,
   });
-}
-
-function authenticateUser(
-  username: string,
-  password: string,
-  users: PrototypeUser[],
-) {
-  const normalizedUsername = username.trim().toLowerCase();
-  return (
-    users.find(
-      (user) =>
-        user.active &&
-        user.username === normalizedUsername &&
-        user.password === password,
-    ) ?? null
-  );
-}
-
-function loginAccessMessage(username: string, users: PrototypeUser[]) {
-  const normalizedUsername = username.trim().toLowerCase();
-  const user = users.find((candidate) => candidate.username === normalizedUsername);
-  if (!user) return "Invalid prototype username or password.";
-  if (!user.emailVerified) {
-    return "Confirm your company email before an admin can approve access.";
-  }
-  if (user.accessRequestStatus === "Pending Approval") {
-    return "Your account request is waiting for admin approval.";
-  }
-  if (user.accessRequestStatus === "Rejected") {
-    return user.rejectionReason || "Your account request was rejected.";
-  }
-  if (!user.active) return "Your account is inactive.";
-  return "Invalid prototype username or password.";
-}
-
-function saveCurrentUsername(username: string) {
-  if (!username) {
-    localStorage.removeItem(currentUserStorageKey);
-    return;
-  }
-  localStorage.setItem(currentUserStorageKey, username);
 }
 
 function timestampNow() {
@@ -1587,7 +1090,7 @@ function recommendedNextSteps(
 
   const stageAction: Record<Stage, string> = {
     Intake: "Validate intake fields and move the audit into registration.",
-    Registration: "Confirm reviewer assignment and prepare the quote record.",
+    Registration: "Confirm audit ownership and prepare the quote record.",
     Quote: "Move to scheduling once the quote is accepted.",
     Scheduling:
       "Confirm the audit date, audit week, and remote or onsite format.",
@@ -1596,7 +1099,7 @@ function recommendedNextSteps(
     "Audit Fieldwork": "Complete testing, log exceptions, and prepare findings.",
     Findings:
       "Send findings follow-up and record the coverholder response date.",
-    "Report Drafting": "Route the draft report to reviewer quality check.",
+    "Report Drafting": "Complete the final quality check before issue.",
     "Final Submission":
       "Send the final report package through the correct channel.",
     Invoice: "Issue the invoice and track payment through receipt.",
@@ -1892,7 +1395,6 @@ function exportProjectsToCsv(projects: AuditProject[]) {
     ["Broker", (project) => project.broker],
     ["Lead Auditor", (project) => primaryAuditor(project)],
     ["Audit Team", (project) => formatAuditTeam(project)],
-    ["Reviewer", (project) => project.reviewer],
     ["Current Stage", (project) => project.currentStage],
     ["Assignment Status", (project) => project.assignmentStatus],
     ["Quote Status", (project) => project.quoteStatus],
@@ -1980,29 +1482,17 @@ function App() {
     null,
   );
   const [secureAccessLoading, setSecureAccessLoading] = useState(true);
+  const [systemHealth, setSystemHealth] = useState<SecureSystemHealth | null>(
+    null,
+  );
+  const [systemHealthLoading, setSystemHealthLoading] = useState(false);
+  const [projectStorageLoading, setProjectStorageLoading] = useState(false);
   const [selectedId, setSelectedId] = useState(projects[0]?.id ?? "");
   const [editing, setEditing] = useState<AuditProject | null>(null);
   const [filters, setFilters] = useState<Filters>(defaultFilters);
   const [message, setMessage] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
   const [durationRange, setDurationRange] = useState<DurationRange>("ytd");
-  const [storageMode, setStorageMode] = useState<StorageMode>(() =>
-    loadStorageMode(),
-  );
-  const [microsoftListsConfig, setMicrosoftListsConfig] =
-    useState<MicrosoftListsConnectionConfig>(() => loadMicrosoftListsConfig());
-  const [microsoftAuthConfig, setMicrosoftAuthConfig] =
-    useState<MicrosoftAuthConfig>(() => loadMicrosoftAuthConfig());
-  const [microsoftAccount, setMicrosoftAccount] =
-    useState<MicrosoftAuthAccount | null>(null);
-  const [graphAccessToken, setGraphAccessToken] = useState("");
-  const [microsoftAuthStatus, setMicrosoftAuthStatus] = useState(
-    "Add a Microsoft Entra app client ID, then sign in to get a Graph token.",
-  );
-  const [storageStatus, setStorageStatus] = useState(
-    "Using browser storage until Microsoft Lists is configured.",
-  );
-  const [storageSyncing, setStorageSyncing] = useState(false);
   const [lastExportedAt, setLastExportedAt] = useState(
     () => localStorage.getItem(lastExportStorageKey) ?? "",
   );
@@ -2019,6 +1509,18 @@ function App() {
       ? secureUserToPrototypeUser(secureAccess.user)
       : null;
 
+  const refreshSystemHealth = async () => {
+    if (signedInUser?.role !== "Admin") return;
+    setSystemHealthLoading(true);
+    try {
+      setSystemHealth(await getSecureSystemHealth());
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "System health check failed.");
+    } finally {
+      setSystemHealthLoading(false);
+    }
+  };
+
   const refreshSecureAccess = async () => {
     setSecureAccessLoading(true);
     try {
@@ -2032,7 +1534,7 @@ function App() {
         setup: {
           configured: false,
           missing: ["secure access server"],
-          redirectUri: "http://127.0.0.1:8787/api/auth/callback",
+          redirectUri: "http://localhost:8787/api/auth/callback",
           frontendOrigin: window.location.origin,
         },
       });
@@ -2047,48 +1549,54 @@ function App() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    if (!hasMicrosoftAuthConfig(microsoftAuthConfig)) {
-      setMicrosoftAccount(null);
-      setGraphAccessToken("");
-      setMicrosoftAuthStatus(
-        "Add a Microsoft Entra app client ID, then sign in to get a Graph token.",
-      );
-      return;
+    if (signedInUser?.role === "Admin") {
+      void refreshSystemHealth();
+    } else {
+      setSystemHealth(null);
     }
-    setMicrosoftAuthStatus("Checking saved Microsoft sign-in session...");
-    void restoreMicrosoftGraphSession(microsoftAuthConfig)
-      .then((session) => {
+  }, [signedInUser?.role, signedInUser?.email]);
+
+  useEffect(() => {
+    if (!signedInUser) return;
+    let cancelled = false;
+    setProjectStorageLoading(true);
+    getServerProjects()
+      .then((serverProjects) => {
         if (cancelled) return;
-        if (!session) {
-          setMicrosoftAccount(null);
-          setGraphAccessToken("");
-          setMicrosoftAuthStatus("Microsoft sign-in is configured but not signed in.");
-          return;
-        }
-        setMicrosoftAccount(session.account);
-        setGraphAccessToken(session.accessToken);
-        setMicrosoftAuthStatus(
-          session.accessToken
-            ? `Signed in as ${session.account.username}.`
-            : `Signed in as ${session.account.username}; refresh token before syncing.`,
+        const normalizedProjects = serverProjects.map(withProjectDefaults);
+        setProjects(normalizedProjects);
+        saveProjects(normalizedProjects);
+        setSelectedId((currentId) =>
+          normalizedProjects.some((project) => project.id === currentId)
+            ? currentId
+            : normalizedProjects[0]?.id ?? "",
         );
       })
       .catch((error) => {
         if (cancelled) return;
-        setMicrosoftAccount(null);
-        setGraphAccessToken("");
-        setMicrosoftAuthStatus(
+        setMessage(
           error instanceof Error
             ? error.message
-            : "Could not restore Microsoft sign-in.",
+            : "Project storage is not available.",
         );
+      })
+      .finally(() => {
+        if (!cancelled) setProjectStorageLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [microsoftAuthConfig.clientId, microsoftAuthConfig.tenantId]);
-  const auditorOptions = users
+  }, [signedInUser?.email]);
+
+  const pendingAccessRequests =
+    secureAccess?.pendingRequests?.map(secureUserToPrototypeUser) ?? [];
+  const managedAccessUsers =
+    secureAccess?.managedUsers?.map(secureUserToPrototypeUser) ??
+    (secureAccess?.user ? [secureUserToPrototypeUser(secureAccess.user)] : []);
+  const approvedAccessUsers = managedAccessUsers.filter(
+    (user) => user.accessRequestStatus === "Approved",
+  );
+  const auditorOptions = approvedAccessUsers
     .filter((user) => user.active && user.role !== "Finance" && user.role !== "Read Only")
     .map((user) => user.fullName);
   const auditors = Array.from(
@@ -2155,9 +1663,6 @@ function App() {
   const selectedProject =
     visibleProjects.find((project) => project.id === selectedId) ??
     visibleProjects[0];
-  const pendingAccessRequests =
-    secureAccess?.pendingRequests?.map(secureUserToPrototypeUser) ?? [];
-
   const confirmAccountEmail = async (verificationCode: string) => {
     try {
       await verifySecureAccessCode(verificationCode);
@@ -2190,9 +1695,26 @@ function App() {
     );
   }
 
-  const persist = (nextProjects: AuditProject[]) => {
+  const persist = (
+    nextProjects: AuditProject[],
+    options: { replaceAll?: boolean; successMessage?: string } = {},
+  ) => {
     setProjects(nextProjects);
     saveProjects(nextProjects);
+    void saveServerProjects(nextProjects, { replaceAll: options.replaceAll })
+      .then((serverProjects) => {
+        const normalizedProjects = serverProjects.map(withProjectDefaults);
+        setProjects(normalizedProjects);
+        saveProjects(normalizedProjects);
+        if (options.successMessage) setMessage(options.successMessage);
+      })
+      .catch((error) => {
+        setMessage(
+          error instanceof Error
+            ? error.message
+            : "Project changes were saved locally but not to the server.",
+        );
+      });
   };
 
   const requestConfirmation = (request: ConfirmationRequest) => {
@@ -2223,255 +1745,27 @@ function App() {
     }
     exportMicrosoftListsPackage(
       visibleProjects,
-      signedInUser.role === "Admin" ? users : [],
+      signedInUser.role === "Admin" ? approvedAccessUsers : [],
       signedInUser.fullName,
     );
     recordExport("Microsoft Lists package");
   };
 
-  const saveConnectionConfig = (config: MicrosoftListsConnectionConfig) => {
-    const cleanConfig = sanitizeMicrosoftListsConfig(config);
-    setMicrosoftListsConfig(cleanConfig);
-    saveMicrosoftListsConfig(cleanConfig);
-    setStorageStatus("Microsoft Lists connection settings saved locally.");
-  };
-
-  const saveMicrosoftSignInConfig = (config: MicrosoftAuthConfig) => {
-    const cleanConfig = sanitizeMicrosoftAuthConfig(config);
-    setMicrosoftAuthConfig(cleanConfig);
-    saveMicrosoftAuthConfig(cleanConfig);
-    setGraphAccessToken("");
-    setMicrosoftAccount(null);
-    setMicrosoftAuthStatus(
-      hasMicrosoftAuthConfig(cleanConfig)
-        ? "Microsoft sign-in settings saved. Sign in to authorize Graph access."
-        : "Add a Microsoft Entra app client ID, then sign in to get a Graph token.",
-    );
-  };
-
-  const switchStorageMode = (mode: StorageMode) => {
-    setStorageMode(mode);
-    saveStorageMode(mode);
-    setStorageStatus(
-      mode === "microsoft-lists"
-        ? "Microsoft Lists mode selected. Test the connection before syncing records."
-        : "Browser storage mode selected. Records save in this browser only.",
-    );
-  };
-
-  const microsoftListsSession = (accessToken = graphAccessToken.trim()) => ({
-    ...microsoftListsConfig,
-    accessToken,
-  });
-
-  const applyMicrosoftGraphSession = (session: {
-    accessToken: string;
-    account: MicrosoftAuthAccount;
-  }) => {
-    setMicrosoftAccount(session.account);
-    setGraphAccessToken(session.accessToken);
-    setMicrosoftAuthStatus(`Signed in as ${session.account.username}.`);
-    return microsoftListsSession(session.accessToken);
-  };
-
-  const requireGraphSession = async () => {
-    if (!hasMinimumMicrosoftListsConfig(microsoftListsConfig)) {
-      setStorageStatus("Site ID and Audit Assignments list ID are required first.");
-      return null;
-    }
-    if (graphAccessToken.trim()) {
-      return microsoftListsSession();
-    }
-    if (!hasMicrosoftAuthConfig(microsoftAuthConfig)) {
-      setStorageStatus("Configure Microsoft sign-in before using Microsoft Lists.");
-      return null;
-    }
-    try {
-      setMicrosoftAuthStatus("Requesting Microsoft Graph access...");
-      return applyMicrosoftGraphSession(
-        await refreshMicrosoftGraphToken(microsoftAuthConfig),
-      );
-    } catch (error) {
-      setMicrosoftAuthStatus(
-        error instanceof Error
-          ? error.message
-          : "Microsoft sign-in failed.",
-      );
-      setStorageStatus("Microsoft Graph access is required before syncing.");
-      return null;
-    }
-  };
-
-  const handleMicrosoftSignIn = async () => {
-    if (!hasMicrosoftAuthConfig(microsoftAuthConfig)) {
-      setMicrosoftAuthStatus("Save a Microsoft Entra app client ID first.");
-      return;
-    }
-    setStorageSyncing(true);
-    try {
-      applyMicrosoftGraphSession(await signInWithMicrosoft(microsoftAuthConfig));
-      setStorageStatus("Microsoft Graph sign-in ready for Lists sync.");
-    } catch (error) {
-      setMicrosoftAuthStatus(
-        error instanceof Error
-          ? error.message
-          : "Microsoft sign-in failed.",
-      );
-    } finally {
-      setStorageSyncing(false);
-    }
-  };
-
-  const handleMicrosoftRefreshToken = async () => {
-    if (!hasMicrosoftAuthConfig(microsoftAuthConfig)) {
-      setMicrosoftAuthStatus("Save a Microsoft Entra app client ID first.");
-      return;
-    }
-    setStorageSyncing(true);
-    try {
-      applyMicrosoftGraphSession(
-        await refreshMicrosoftGraphToken(microsoftAuthConfig),
-      );
-      setStorageStatus("Microsoft Graph token refreshed.");
-    } catch (error) {
-      setMicrosoftAuthStatus(
-        error instanceof Error
-          ? error.message
-          : "Could not refresh Microsoft Graph token.",
-      );
-    } finally {
-      setStorageSyncing(false);
-    }
-  };
-
-  const handleMicrosoftSignOut = async () => {
-    setStorageSyncing(true);
-    try {
-      if (hasMicrosoftAuthConfig(microsoftAuthConfig)) {
-        await signOutOfMicrosoft(microsoftAuthConfig);
-      }
-      setMicrosoftAccount(null);
-      setGraphAccessToken("");
-      setMicrosoftAuthStatus("Signed out of Microsoft.");
-      setStorageStatus("Microsoft Graph sign-in is disconnected.");
-    } catch (error) {
-      setMicrosoftAuthStatus(
-        error instanceof Error
-          ? error.message
-          : "Could not sign out of Microsoft.",
-      );
-    } finally {
-      setStorageSyncing(false);
-    }
-  };
-
-  const testConnection = async () => {
-    const session = await requireGraphSession();
-    if (!session) return;
-    setStorageSyncing(true);
-    try {
-      await testMicrosoftListsConnection(session);
-      setStorageStatus("Microsoft Lists connection verified.");
-      switchStorageMode("microsoft-lists");
-    } catch (error) {
-      setStorageStatus(
-        error instanceof Error
-          ? error.message
-          : "Microsoft Lists connection failed.",
-      );
-    } finally {
-      setStorageSyncing(false);
-    }
-  };
-
-  const syncToMicrosoftLists = async () => {
-    const session = await requireGraphSession();
-    if (!session) return;
-    if (!hasFullMicrosoftListsConfig(microsoftListsConfig)) {
-      setStorageStatus(
-        `Missing list IDs: ${missingMicrosoftListLabels(microsoftListsConfig).join(", ")}.`,
-      );
-      return;
-    }
-    setStorageSyncing(true);
-    try {
-      const syncPackage = buildSyncPackage(
-        visibleProjects,
-        signedInUser.role === "Admin" ? users : [],
-        signedInUser.fullName,
-      );
-      const summary = await pushMigrationPackageToMicrosoftLists(
-        session,
-        syncPackage,
-      );
-      const problemText = summary.errors.length
-        ? ` ${summary.errors.length} issues need review.`
-        : "";
-      setStorageStatus(
-        `Synced to Microsoft Lists: ${summary.created} created, ${summary.updated} updated, ${summary.skipped} skipped.${problemText}`,
-      );
-      setStorageMode("microsoft-lists");
-      saveStorageMode("microsoft-lists");
-    } catch (error) {
-      setStorageStatus(
-        error instanceof Error
-          ? error.message
-          : "Microsoft Lists sync failed.",
-      );
-    } finally {
-      setStorageSyncing(false);
-    }
-  };
-
-  const pullFromMicrosoftLists = async () => {
-    const session = await requireGraphSession();
-    if (!session) return;
+  const clearProjectData = () => {
     requestConfirmation({
-      title: "Load assignments from Microsoft Lists?",
+      title: "Clear project data?",
       message:
-        "This replaces the project records in this browser with rows from the configured Audit Assignments list.",
-      confirmLabel: "Load from Lists",
-      tone: "danger",
-      onConfirm: async () => {
-        setStorageSyncing(true);
-        try {
-          const rows = await pullAssignmentRowsFromMicrosoftLists(session);
-          const nextProjects = rows.map(microsoftFieldsToProject);
-          if (nextProjects.length === 0) {
-            setStorageStatus("Microsoft Lists returned no assignment rows.");
-            return;
-          }
-          persist(nextProjects);
-          setSelectedId(nextProjects[0].id);
-          setStorageMode("microsoft-lists");
-          saveStorageMode("microsoft-lists");
-          setStorageStatus(
-            `${nextProjects.length} assignments loaded from Microsoft Lists.`,
-          );
-        } catch (error) {
-          setStorageStatus(
-            error instanceof Error
-              ? error.message
-              : "Could not load assignments from Microsoft Lists.",
-          );
-        } finally {
-          setStorageSyncing(false);
-        }
-      },
-    });
-  };
-
-  const resetSampleProjects = () => {
-    requestConfirmation({
-      title: "Reset sample data?",
-      message:
-        "This replaces the current project records in this browser with the starter sample data.",
-      confirmLabel: "Reset sample data",
+        "This removes all project records from the shared tracker so you can start testing with real audit data.",
+      confirmLabel: "Clear projects",
       tone: "danger",
       onConfirm: () => {
-        persist(sampleProjects);
-        setSelectedId(sampleProjects[0].id);
-        setMessage("Sample data reset.");
+        persist([], {
+          replaceAll: true,
+          successMessage:
+            "Project data cleared. Add or import real audit records to continue testing.",
+        });
+        setSelectedId("");
+        setMessage("Project data cleared. Add or import real audit records to continue testing.");
       },
     });
   };
@@ -2483,7 +1777,7 @@ function App() {
     }
     requestConfirmation({
       title: "Import JSON backup?",
-      message: `Importing ${file.name} replaces the current project records in this browser.`,
+      message: `Importing ${file.name} replaces the current project records in shared tracker storage.`,
       confirmLabel: "Import JSON",
       tone: "danger",
       onConfirm: () => importProjectsFromFile(file),
@@ -2590,6 +1884,15 @@ function App() {
         label === "Waiting on Broker" && project.assignmentStatus === "On Hold"
           ? "In Progress"
           : project.assignmentStatus,
+      activityEvents: [
+        ...(project.activityEvents ?? []),
+        createActivityEvent(
+          "field",
+          "Label removed",
+          `${label} was removed from the project.`,
+          signedInUser.fullName,
+        ),
+      ],
       lastUpdatedDate: new Date().toISOString().slice(0, 10),
     });
     persist(
@@ -2610,6 +1913,17 @@ function App() {
     const updatedProject = {
       ...project,
       comments: [...project.comments, comment],
+      activityEvents: [
+        ...(project.activityEvents ?? []),
+        createActivityEvent(
+          "field",
+          "Comment added",
+          comment.body.length > 120
+            ? `${comment.body.slice(0, 117)}...`
+            : comment.body,
+          signedInUser.fullName,
+        ),
+      ],
       lastUpdatedDate: new Date().toISOString().slice(0, 10),
     };
     persist(
@@ -2774,7 +2088,10 @@ function App() {
         setMessage("Import file did not contain any projects.");
         return;
       }
-      persist(importedProjects);
+      persist(importedProjects, {
+        replaceAll: true,
+        successMessage: `${importedProjects.length} projects imported from JSON.`,
+      });
       setSelectedId(importedProjects[0].id);
       setMessage(`${importedProjects.length} projects imported from JSON.`);
     } catch {
@@ -2827,7 +2144,10 @@ function App() {
     setMessage(`${cleanUser.fullName} saved.`);
   };
 
-  const approveUserRequest = async (username: string) => {
+  const approveUserRequest = async (
+    username: string,
+    update: AccessApprovalUpdate = {},
+  ) => {
     if (signedInUser.role !== "Admin") {
       setMessage("Only admins can approve account requests.");
       return;
@@ -2840,8 +2160,9 @@ function App() {
       return;
     }
     try {
-      await approveSecureAccessRequest(user.email);
+      await approveSecureAccessRequest(user.email, update);
       await refreshSecureAccess();
+      await refreshSystemHealth();
       setMessage(`${user.fullName} approved for tracker access.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Approval failed.");
@@ -2863,31 +2184,31 @@ function App() {
     try {
       await rejectSecureAccessRequest(user.email);
       await refreshSecureAccess();
+      await refreshSystemHealth();
       setMessage(`${user.fullName} rejected.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Rejection failed.");
     }
   };
 
-  const resetUsers = () => {
+  const saveManagedUser = async (email: string, draftUser: PrototypeUser) => {
     if (signedInUser.role !== "Admin") {
-      setMessage("Only admins can reset users.");
+      setMessage("Only admins can manage users.");
       return;
     }
-    setUsers(defaultPrototypeUsers);
-    savePrototypeUsers(defaultPrototypeUsers);
-    setMessage("Prototype users reset.");
-  };
-
-  const confirmResetUsers = () => {
-    requestConfirmation({
-      title: "Reset prototype users?",
-      message:
-        "This restores the starter users, roles, passwords, and visibility settings in this browser.",
-      confirmLabel: "Reset users",
-      tone: "danger",
-      onConfirm: resetUsers,
-    });
+    try {
+      await updateSecureAccessUser(email, {
+        fullName: draftUser.fullName,
+        role: draftUser.role,
+        defaultVisibility: draftUser.defaultVisibility,
+        active: draftUser.active,
+      });
+      await refreshSecureAccess();
+      await refreshSystemHealth();
+      setMessage(`${draftUser.fullName} updated.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "User update failed.");
+    }
   };
 
   return (
@@ -2911,9 +2232,9 @@ function App() {
           <button
             className="secondary"
             disabled={!hasFullProjectAccess(signedInUser)}
-            onClick={resetSampleProjects}
+            onClick={clearProjectData}
           >
-            Reset sample data
+            Clear project data
           </button>
           <button className="secondary" onClick={signOut}>
             Sign out
@@ -2926,41 +2247,36 @@ function App() {
           {message}
         </div>
       )}
+      {projectStorageLoading && (
+        <div className="toast subtle" role="status">
+          Loading shared project storage...
+        </div>
+      )}
 
       <AccessBanner user={signedInUser} visibleCount={visibleProjects.length} />
       {signedInUser.role === "Admin" && (
-        <UserManagementPanel
-          users={users}
-          pendingRequests={pendingAccessRequests}
-          onSaveUser={upsertUser}
-          onApproveRequest={approveUserRequest}
-          onRejectRequest={rejectUserRequest}
-          onResetUsers={confirmResetUsers}
-        />
+        <>
+          <SystemReadinessPanel
+            health={systemHealth}
+            loading={systemHealthLoading}
+            onRefresh={() => void refreshSystemHealth()}
+          />
+          <UserManagementPanel
+            accessUsers={managedAccessUsers}
+            pendingRequests={pendingAccessRequests}
+            onSaveUser={saveManagedUser}
+            onApproveRequest={approveUserRequest}
+            onRejectRequest={rejectUserRequest}
+          />
+        </>
       )}
       {hasFullProjectAccess(signedInUser) && (
         <CentralStoragePanel
           projects={visibleProjects}
-          users={signedInUser.role === "Admin" ? users : []}
+          users={signedInUser.role === "Admin" ? approvedAccessUsers : []}
           exportedBy={signedInUser.fullName}
-          mode={storageMode}
-          config={microsoftListsConfig}
-          authConfig={microsoftAuthConfig}
-          account={microsoftAccount}
-          accessToken={graphAccessToken}
-          authStatus={microsoftAuthStatus}
-          status={storageStatus}
-          syncing={storageSyncing}
+          health={systemHealth}
           onExport={handleExportMicrosoftListsPackage}
-          onModeChange={switchStorageMode}
-          onSaveConfig={saveConnectionConfig}
-          onSaveAuthConfig={saveMicrosoftSignInConfig}
-          onMicrosoftSignIn={() => void handleMicrosoftSignIn()}
-          onMicrosoftSignOut={() => void handleMicrosoftSignOut()}
-          onMicrosoftRefreshToken={() => void handleMicrosoftRefreshToken()}
-          onTestConnection={() => void testConnection()}
-          onSyncToLists={() => void syncToMicrosoftLists()}
-          onPullFromLists={() => void pullFromMicrosoftLists()}
         />
       )}
       <Dashboard projects={visibleProjects} />
@@ -3327,59 +2643,116 @@ function AccessBanner({
   );
 }
 
+function SystemReadinessPanel({
+  health,
+  loading,
+  onRefresh,
+}: {
+  health: SecureSystemHealth | null;
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  const graphRoles = health?.graphApp.roles ?? [];
+  const consentReady =
+    graphRoles.includes("Mail.Send") && graphRoles.includes("Sites.ReadWrite.All");
+  const approvalStoreReady = Boolean(health?.approvalStore.durable);
+  return (
+    <section className="panel readiness-panel">
+      <div className="section-title">
+        <div>
+          <p className="eyebrow dark">Admin readiness</p>
+          <h2>Security and rollout health</h2>
+          <span>
+            Server-side checks for Microsoft sign-in, email sending, SharePoint
+            access, and durable approval storage.
+          </span>
+        </div>
+        <button type="button" className="secondary" disabled={loading} onClick={onRefresh}>
+          {loading ? "Checking..." : "Refresh checks"}
+        </button>
+      </div>
+      <div className="readiness-grid">
+        <ReadinessCard
+          label="Secure access server"
+          ready={Boolean(health?.server.configured)}
+          detail={
+            health?.server.configured
+              ? `Redirect URI: ${health.server.redirectUri}`
+              : `Missing: ${health?.server.missing.join(", ") || "health check"}`
+          }
+        />
+        <ReadinessCard
+          label="Microsoft app token"
+          ready={Boolean(health?.graphApp.tokenAvailable)}
+          detail={
+            health?.graphApp.tokenAvailable
+              ? health.graphApp.appDisplayName || "Token request succeeded"
+              : health?.graphApp.error || "Waiting for server check"
+          }
+        />
+        <ReadinessCard
+          label="Graph admin consent"
+          ready={consentReady}
+          detail={
+            consentReady
+              ? "Mail.Send and Sites.ReadWrite.All are active."
+              : `Missing roles: ${health?.graphApp.missingRoles.join(", ") || "not checked"}`
+          }
+        />
+        <ReadinessCard
+          label="Approval storage"
+          ready={approvalStoreReady}
+          detail={
+            health?.approvalStore.status ||
+            "Local approval storage is active until Microsoft Lists is approved."
+          }
+        />
+      </div>
+      {health && (
+        <div className="readiness-next">
+          <strong>Next required actions</strong>
+          <ul>
+            {health.recommendations.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ReadinessCard({
+  label,
+  ready,
+  detail,
+}: {
+  label: string;
+  ready: boolean;
+  detail: string;
+}) {
+  return (
+    <article className={`readiness-card ${ready ? "ready" : "blocked"}`}>
+      <span>{ready ? "Ready" : "Action needed"}</span>
+      <strong>{label}</strong>
+      <p>{detail}</p>
+    </article>
+  );
+}
+
 function CentralStoragePanel({
   projects,
   users,
   exportedBy,
-  mode,
-  config,
-  authConfig,
-  account,
-  accessToken,
-  authStatus,
-  status,
-  syncing,
+  health,
   onExport,
-  onModeChange,
-  onSaveConfig,
-  onSaveAuthConfig,
-  onMicrosoftSignIn,
-  onMicrosoftSignOut,
-  onMicrosoftRefreshToken,
-  onTestConnection,
-  onSyncToLists,
-  onPullFromLists,
 }: {
   projects: AuditProject[];
   users: PrototypeUser[];
   exportedBy: string;
-  mode: StorageMode;
-  config: MicrosoftListsConnectionConfig;
-  authConfig: MicrosoftAuthConfig;
-  account: MicrosoftAuthAccount | null;
-  accessToken: string;
-  authStatus: string;
-  status: string;
-  syncing: boolean;
+  health: SecureSystemHealth | null;
   onExport: () => void;
-  onModeChange: (mode: StorageMode) => void;
-  onSaveConfig: (config: MicrosoftListsConnectionConfig) => void;
-  onSaveAuthConfig: (config: MicrosoftAuthConfig) => void;
-  onMicrosoftSignIn: () => void;
-  onMicrosoftSignOut: () => void;
-  onMicrosoftRefreshToken: () => void;
-  onTestConnection: () => void;
-  onSyncToLists: () => void;
-  onPullFromLists: () => void;
 }) {
-  const [draftConfig, setDraftConfig] = useState(config);
-  const [draftAuthConfig, setDraftAuthConfig] = useState(authConfig);
-  useEffect(() => {
-    setDraftConfig(config);
-  }, [config]);
-  useEffect(() => {
-    setDraftAuthConfig(authConfig);
-  }, [authConfig]);
   const packagePreview = useMemo(
     () =>
       buildMicrosoftListsMigrationPackage(projects, users, {
@@ -3388,181 +2761,134 @@ function CentralStoragePanel({
       }),
     [projects, users, exportedBy],
   );
-  const updateListId = (key: MicrosoftListKey, value: string) => {
-    setDraftConfig((current) => ({
-      ...current,
-      listIds: {
-        ...current.listIds,
-        [key]: value,
-      },
-    }));
-  };
-  const hasMinimumConfig = hasMinimumMicrosoftListsConfig(config);
-  const hasFullConfig = hasFullMicrosoftListsConfig(config);
-  const hasAuthConfig = hasMicrosoftAuthConfig(authConfig);
-  const canRequestGraph = hasAuthConfig || Boolean(accessToken.trim());
+  const approvalStoreLabel =
+    health?.approvalStore.mode === "microsoft-lists"
+      ? "Tracker Users list"
+      : "Local server file";
+  const sharePointReady = Boolean(health?.sharePoint.permissionGranted);
+  const trackerUsersReady = Boolean(
+    health?.sharePoint.siteIdConfigured &&
+      health?.sharePoint.trackerUsersListIdConfigured,
+  );
+  const detailRows =
+    packagePreview.rows.auditTeamMembers.length +
+    packagePreview.rows.auditComments.length +
+    packagePreview.rows.auditChecklistItems.length +
+    packagePreview.rows.auditStatusHistory.length +
+    packagePreview.rows.auditActivityLog.length;
+  const listGroups = [
+    {
+      label: "Core project records",
+      lists: ["Audit Assignments", "Audit Team Members"],
+    },
+    {
+      label: "Audit history",
+      lists: ["Audit Comments", "Audit Checklist Items", "Audit Status History", "Audit Activity Log"],
+    },
+    {
+      label: "Access control",
+      lists: ["Tracker Users"],
+    },
+  ];
 
   return (
     <section className="panel central-storage">
       <div className="section-title">
         <div>
-          <p className="eyebrow dark">Central storage</p>
-          <h2>Microsoft Lists foundation</h2>
+          <p className="eyebrow dark">Data foundation</p>
+          <h2>Microsoft Lists data foundation</h2>
           <span>
-            {mode === "microsoft-lists"
-              ? "Microsoft Lists mode selected; sync actions use the configured Graph connection."
-              : "Browser storage active; Microsoft Lists connection is ready to configure."}
+            Server settings control Microsoft Graph and shared project data.
+            This panel shows what is live now and what still needs Microsoft
+            Lists configuration.
           </span>
         </div>
-        <div className="storage-mode-toggle">
-          <button
-            type="button"
-            className={mode === "local" ? "active" : "secondary"}
-            onClick={() => onModeChange("local")}
-          >
-            Browser
-          </button>
-          <button
-            type="button"
-            className={mode === "microsoft-lists" ? "active" : "secondary"}
-            onClick={() => onModeChange("microsoft-lists")}
-          >
-            Microsoft Lists
+        <div className="storage-actions">
+          <button type="button" className="secondary" onClick={onExport}>
+            Export migration package
           </button>
         </div>
       </div>
-      <div className={`storage-status ${mode === "microsoft-lists" ? "connected" : ""}`}>
-        <strong>{mode === "microsoft-lists" ? "Microsoft Lists mode" : "Browser storage mode"}</strong>
-        <span>{status}</span>
+      <div className={`storage-status ${health?.approvalStore.durable ? "connected" : ""}`}>
+        <strong>Access approvals: {approvalStoreLabel}</strong>
+        <span>
+          {health?.approvalStore.durable
+            ? "New account approvals are stored in Microsoft Lists."
+            : "New account approvals are stored on the app server until TRACKER_USER_STORE is switched to microsoft-lists."}
+        </span>
+      </div>
+      <div className="readiness-grid">
+        <ReadinessCard
+          label="Graph permissions"
+          ready={sharePointReady}
+          detail={
+            sharePointReady
+              ? "Sites.ReadWrite.All is available for Microsoft Lists work."
+              : "Waiting for Sites.ReadWrite.All application permission."
+          }
+        />
+        <ReadinessCard
+          label="Tracker Users list"
+          ready={trackerUsersReady}
+          detail={
+            trackerUsersReady
+              ? "Site ID and Tracker Users list ID are configured."
+              : "Add TRACKER_USERS_SITE_ID and TRACKER_USERS_LIST_ID before moving approvals."
+          }
+        />
+        <ReadinessCard
+          label="Project data package"
+          ready
+          detail={`${packagePreview.totals.lists} lists, ${packagePreview.totals.rows} rows ready for export.`}
+        />
+        <ReadinessCard
+          label="Live project write path"
+          ready
+          detail="Projects, comments, checklist items, and activity events now save through the secure server."
+        />
       </div>
       <div className="storage-stats">
         <span>
           <strong>{packagePreview.totals.lists}</strong>
-          Lists
+          Lists defined
         </span>
         <span>
           <strong>{packagePreview.totals.assignments}</strong>
-          Assignments
+          Project records
         </span>
         <span>
-          <strong>{packagePreview.totals.activityLogEvents}</strong>
-          Activity events
+          <strong>{detailRows}</strong>
+          Detail rows
         </span>
         <span>
-          <strong>{packagePreview.totals.rows}</strong>
-          Seed rows
+          <strong>{packagePreview.rows.trackerUsers.length}</strong>
+          Directory rows
         </span>
       </div>
-      <div className="storage-config">
-        <Input
-          label="SharePoint site ID"
-          value={draftConfig.siteId}
-          placeholder="contoso.sharepoint.com,site-id,web-id"
-          onChange={(value) =>
-            setDraftConfig((current) => ({ ...current, siteId: value }))
-          }
-        />
-        <Input
-          label="Microsoft Entra app client ID"
-          value={draftAuthConfig.clientId}
-          placeholder="Application (client) ID"
-          onChange={(value) =>
-            setDraftAuthConfig((current) => ({ ...current, clientId: value }))
-          }
-        />
-        <Input
-          label="Tenant ID or domain"
-          value={draftAuthConfig.tenantId}
-          placeholder="organizations, tenant ID, or domain"
-          onChange={(value) =>
-            setDraftAuthConfig((current) => ({ ...current, tenantId: value }))
-          }
-        />
-        <div className="storage-list-id-grid">
-          {requiredMicrosoftListKeys.map((key) => (
-            <Input
-              key={key}
-              label={`${microsoftListLabels[key]} list ID`}
-              value={draftConfig.listIds[key] ?? ""}
-              placeholder="SharePoint list ID"
-              onChange={(value) => updateListId(key, value)}
-            />
-          ))}
-        </div>
-      </div>
-      <div className="auth-card">
+      <div className="storage-roadmap">
         <div>
-          <strong>
-            {account ? `Signed in as ${account.name}` : "Microsoft sign-in"}
-          </strong>
-          <span>{authStatus}</span>
-          <small>Requested Graph scopes: {microsoftAuthScopeLabel()}</small>
+          <strong>Current production behavior</strong>
+          <span>Microsoft OAuth controls sign-in, admin approval controls tracker access, and shared projects save on the server.</span>
         </div>
-        <div className="storage-actions">
-          <button type="button" onClick={() => onSaveAuthConfig(draftAuthConfig)}>
-            Save sign-in
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            disabled={syncing || !hasAuthConfig}
-            onClick={onMicrosoftSignIn}
-          >
-            Sign in with Microsoft
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            disabled={syncing || !hasAuthConfig}
-            onClick={onMicrosoftRefreshToken}
-          >
-            Refresh token
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            disabled={syncing || !account}
-            onClick={onMicrosoftSignOut}
-          >
-            Sign out
-          </button>
+        <div>
+          <strong>Next configuration move</strong>
+          <span>Point approval storage to the Tracker Users list after the list ID is ready.</span>
+        </div>
+        <div>
+          <strong>Next engineering move</strong>
+          <span>Move project storage from the local server file into Microsoft Lists when the project list IDs are ready.</span>
         </div>
       </div>
-      <div className="storage-actions">
-        <button type="button" onClick={() => onSaveConfig(draftConfig)}>
-          Save connection
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          disabled={syncing || !hasMinimumConfig || !canRequestGraph}
-          onClick={onTestConnection}
-        >
-          Test connection
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          disabled={syncing || !hasFullConfig || !canRequestGraph}
-          onClick={onSyncToLists}
-        >
-          Sync to Lists
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          disabled={syncing || !hasMinimumConfig || !canRequestGraph}
-          onClick={onPullFromLists}
-        >
-          Load from Lists
-        </button>
-        <button type="button" className="secondary" onClick={onExport}>
-          Export Lists package
-        </button>
-      </div>
-      <div className="storage-list-chips" aria-label="Microsoft Lists schema">
-        {microsoftListSchemas.map((schema) => (
-          <span key={schema.key}>{schema.displayName}</span>
+      <div className="storage-schema-groups" aria-label="Microsoft Lists schema">
+        {listGroups.map((group) => (
+          <article key={group.label}>
+            <strong>{group.label}</strong>
+            <div className="storage-list-chips">
+              {group.lists.map((label) => (
+                <span key={label}>{label}</span>
+              ))}
+            </div>
+          </article>
         ))}
       </div>
     </section>
@@ -3570,52 +2896,63 @@ function CentralStoragePanel({
 }
 
 function UserManagementPanel({
-  users,
+  accessUsers,
   pendingRequests,
   onSaveUser,
   onApproveRequest,
   onRejectRequest,
-  onResetUsers,
 }: {
-  users: PrototypeUser[];
+  accessUsers: PrototypeUser[];
   pendingRequests: PrototypeUser[];
-  onSaveUser: (originalUsername: string | null, user: PrototypeUser) => void;
-  onApproveRequest: (username: string) => void;
+  onSaveUser: (email: string, user: PrototypeUser) => void;
+  onApproveRequest: (username: string, update: AccessApprovalUpdate) => void;
   onRejectRequest: (username: string) => void;
-  onResetUsers: () => void;
 }) {
-  const firstUsername = users[0]?.username ?? "";
-  const [selectedUsername, setSelectedUsername] = useState(firstUsername);
+  const approvedAccessUsers = accessUsers
+    .filter((user) => user.accessRequestStatus === "Approved")
+    .sort((a, b) => a.fullName.localeCompare(b.fullName));
+  const firstEmail = approvedAccessUsers[0]?.email ?? "";
+  const [selectedEmail, setSelectedEmail] = useState(firstEmail);
   const selectedUser =
-    users.find((user) => user.username === selectedUsername) ?? users[0];
+    approvedAccessUsers.find((user) => user.email === selectedEmail) ??
+    approvedAccessUsers[0];
   const [draft, setDraft] = useState<PrototypeUser>(
-    selectedUser ??
-      withUserDefaults({
-        fullName: "",
-        username: "",
-      }),
+    selectedUser ?? secureUserToPrototypeUserPlaceholder(),
   );
-  const [isNewUser, setIsNewUser] = useState(false);
+  const [approvalDrafts, setApprovalDrafts] = useState<
+    Record<string, AccessApprovalUpdate>
+  >({});
+  const waitingOnEmailCount = pendingRequests.filter(
+    (user) => user.accessRequestStatus === "Pending Verification",
+  ).length;
+  const waitingOnAdminCount = pendingRequests.filter(
+    (user) => user.accessRequestStatus === "Pending Approval",
+  ).length;
+  const approvedUsersSignature = approvedAccessUsers
+    .map((user) =>
+      [
+        user.email,
+        user.fullName,
+        user.role,
+        user.defaultVisibility,
+        user.active,
+      ].join(":"),
+    )
+    .join("|");
 
   const loadUser = (user: PrototypeUser) => {
-    setSelectedUsername(user.username);
+    setSelectedEmail(user.email);
     setDraft(user);
-    setIsNewUser(false);
   };
 
-  const startNewUser = () => {
-    setSelectedUsername("");
-    setDraft(
-      withUserDefaults({
-        fullName: "",
-        username: "",
-        email: "",
-        role: "Auditor",
-        permissionGroup: "Auditor",
-      }),
-    );
-    setIsNewUser(true);
-  };
+  useEffect(() => {
+    if (!approvedAccessUsers.length) return;
+    const latest =
+      approvedAccessUsers.find((user) => user.email === selectedEmail) ??
+      approvedAccessUsers[0];
+    setSelectedEmail(latest.email);
+    setDraft(latest);
+  }, [approvedUsersSignature, selectedEmail]);
 
   const updateDraft = <K extends keyof PrototypeUser>(
     key: K,
@@ -3628,46 +2965,110 @@ function UserManagementPanel({
     setDraft(nextDraft);
   };
 
+  const approvalDraftFor = (user: PrototypeUser): AccessApprovalUpdate => ({
+    role: approvalDrafts[user.username]?.role ?? user.role,
+    defaultVisibility:
+      approvalDrafts[user.username]?.defaultVisibility ?? user.defaultVisibility,
+  });
+
+  const updateApprovalDraft = (
+    user: PrototypeUser,
+    update: AccessApprovalUpdate,
+  ) => {
+    setApprovalDrafts((current) => ({
+      ...current,
+      [user.username]: {
+        ...approvalDraftFor(user),
+        ...update,
+      },
+    }));
+  };
+
   return (
     <section className="panel user-management">
       <div className="section-title">
         <div>
           <p className="eyebrow dark">Admin</p>
-          <h2>User management</h2>
-          <span>Edit prototype users, roles, active status, and visibility.</span>
-        </div>
-        <div className="segmented">
-          <button type="button" onClick={startNewUser}>
-            Add user
-          </button>
-          <button type="button" className="secondary" onClick={onResetUsers}>
-            Reset users
-          </button>
+          <h2>Access and assignment directory</h2>
+          <span>
+            Approved Microsoft accounts are the directory. Pending, rejected,
+            and unverified users are excluded from workload and assignment
+            owner lists.
+          </span>
         </div>
       </div>
+      <div className="user-admin-summary">
+        <span>
+          <strong>{waitingOnAdminCount}</strong>
+          Awaiting admin approval
+        </span>
+        <span>
+          <strong>{waitingOnEmailCount}</strong>
+          Awaiting email code
+        </span>
+        <span>
+          <strong>{approvedAccessUsers.length}</strong>
+          Approved accounts
+        </span>
+        <span>
+          <strong>{approvedAccessUsers.filter((user) => user.active).length}</strong>
+          Active in directory
+        </span>
+      </div>
       <div className="user-management-grid">
-        {pendingRequests.length > 0 && (
-          <div className="access-request-queue">
-            <div>
-              <h3>Account requests</h3>
-              <span>{pendingRequests.length} waiting for review</span>
-            </div>
-            {pendingRequests.map((user) => (
+        <div className="access-request-queue">
+          <div>
+            <h3>Microsoft access requests</h3>
+            <span>
+              {pendingRequests.length > 0
+                ? `${pendingRequests.length} request${pendingRequests.length === 1 ? "" : "s"} in progress`
+                : "No account requests waiting"}
+            </span>
+          </div>
+          {pendingRequests.length === 0 ? (
+            <p className="muted-note">
+              New users appear here after they sign in with Microsoft, request
+              tracker access, and confirm their email code.
+            </p>
+          ) : (
+            pendingRequests.map((user) => (
               <article className="access-request-card" key={user.username}>
                 <div>
                   <strong>{user.fullName}</strong>
                   <span>{user.email}</span>
                   <small>
-                    {user.emailVerified
+                    {user.accessRequestStatus === "Pending Approval"
                       ? "Email confirmed"
-                      : "Waiting on email confirmation"}
+                      : "Waiting on email code"}
                   </small>
+                </div>
+                <div className="approval-controls">
+                  <Select
+                    label="Role on approval"
+                    value={approvalDraftFor(user).role ?? "Auditor"}
+                    options={userRoleOptions}
+                    placeholder="Select role"
+                    onChange={(value) =>
+                      updateApprovalDraft(user, { role: value as UserRole })
+                    }
+                  />
+                  <Select
+                    label="Default visibility"
+                    value={approvalDraftFor(user).defaultVisibility ?? "Role Default"}
+                    options={projectVisibilityOptions}
+                    placeholder="Select visibility"
+                    onChange={(value) =>
+                      updateApprovalDraft(user, {
+                        defaultVisibility: value as ProjectVisibility,
+                      })
+                    }
+                  />
                 </div>
                 <div className="storage-actions">
                   <button
                     type="button"
                     disabled={!canApproveAccessRequest(user)}
-                    onClick={() => onApproveRequest(user.username)}
+                    onClick={() => onApproveRequest(user.username, approvalDraftFor(user))}
                   >
                     Approve
                   </button>
@@ -3680,103 +3081,156 @@ function UserManagementPanel({
                   </button>
                 </div>
               </article>
-            ))}
+            ))
+          )}
+        </div>
+        <div className="user-list approved-directory-list" aria-label="Approved Microsoft account directory">
+          <div className="section-subhead">
+            <div>
+              <h3>Approved account directory</h3>
+              <span>These users can sign in and appear in assignment ownership tools.</span>
+            </div>
           </div>
-        )}
-        <div className="user-list" aria-label="Prototype users">
-          {users.map((user) => (
-            <button
-              type="button"
-              className={
-                user.username === selectedUsername ? "selected secondary" : "secondary"
-              }
-              key={user.username}
-              onClick={() => loadUser(user)}
-            >
-              <strong>{user.fullName}</strong>
-              <span className="user-meta">
-                <span>{user.role}</span>
-                <span
-                  className={`user-status-badge ${
-                    user.active && user.accessRequestStatus === "Approved"
-                      ? "active"
-                      : "inactive"
-                  }`}
-                >
-                  {user.accessRequestStatus === "Approved"
-                    ? user.active
-                      ? "Active"
-                      : "Inactive"
-                    : user.accessRequestStatus}
+          {approvedAccessUsers.length === 0 ? (
+            <p className="muted-note">
+              Approved Microsoft users will appear here after account requests
+              are confirmed and approved.
+            </p>
+          ) : (
+            approvedAccessUsers.map((user) => (
+              <button
+                type="button"
+                className={user.email === selectedEmail ? "selected secondary" : "secondary"}
+                key={user.email}
+                onClick={() => loadUser(user)}
+              >
+                <strong>{user.fullName}</strong>
+                <span>{user.email}</span>
+                <span className="user-meta">
+                  <span className="user-status-badge active">{user.role}</span>
+                  <span className="user-status-badge visibility">
+                    {user.defaultVisibility}
+                  </span>
+                  <span
+                    className={`user-status-badge ${
+                      user.active ? "active" : "inactive"
+                    }`}
+                  >
+                    {user.active ? "Active" : "Inactive"}
+                  </span>
                 </span>
-              </span>
-            </button>
-          ))}
+              </button>
+            ))
+          )}
         </div>
         <form
           className="user-editor"
           onSubmit={(event) => {
             event.preventDefault();
-            onSaveUser(isNewUser ? null : selectedUsername, draft);
-            setSelectedUsername(draft.username.trim().toLowerCase());
-            setIsNewUser(false);
+            if (!draft.email) return;
+            const preparedDraft = withUserDefaults({
+              ...draft,
+              permissionGroup: draft.role,
+              emailVerified: true,
+              accessRequestStatus: "Approved",
+            });
+            onSaveUser(draft.email, preparedDraft);
           }}
         >
-          <div className="form-grid user-editor-grid">
-            <Input
-              label="Full name"
-              value={draft.fullName}
-              onChange={(value) => updateDraft("fullName", value)}
-            />
-            <Input
-              label="Username"
-              value={draft.username}
-              onChange={(value) => updateDraft("username", value)}
-            />
-            <Input
-              label="Email"
-              value={draft.email}
-              onChange={(value) => updateDraft("email", value)}
-            />
-            <Input
-              label="Test password"
-              value={draft.password}
-              onChange={(value) => updateDraft("password", value)}
-            />
-            <Select
-              label="Role"
-              value={draft.role}
-              options={userRoleOptions}
-              placeholder="Select role"
-              onChange={(value) => updateDraft("role", value as UserRole)}
-            />
-            <Select
-              label="Default visibility"
-              value={draft.defaultVisibility}
-              options={projectVisibilityOptions}
-              placeholder="Select visibility"
-              onChange={(value) =>
-                updateDraft("defaultVisibility", value as ProjectVisibility)
-              }
-            />
-            <Check
-              label="Active user"
-              checked={draft.active}
-              onChange={(value) => updateDraft("active", value)}
-            />
-            <Check
-              label="Email verified"
-              checked={draft.emailVerified}
-              onChange={(value) => updateDraft("emailVerified", value)}
-            />
+          <div className="section-subhead">
+            <div>
+              <h3>Manage approved account</h3>
+              <span>
+                Role, visibility, and active status save to the secure access
+                server and then refresh this directory.
+              </span>
+            </div>
           </div>
-          <div className="modal-actions">
-            <button type="submit">Save user</button>
-          </div>
+          {approvedAccessUsers.length === 0 ? (
+            <p className="muted-note">
+              Approve a Microsoft access request before editing user roles.
+            </p>
+          ) : (
+            <>
+              <div className="selected-account-summary">
+                <span className="avatar">
+                  {draft.fullName
+                    .split(" ")
+                    .map((part) => part[0])
+                    .slice(0, 2)
+                    .join("")}
+                </span>
+                <div>
+                  <strong>{draft.fullName}</strong>
+                  <span>{draft.email}</span>
+                  <div className="user-meta">
+                    <span className="user-status-badge active">{draft.role}</span>
+                    <span className="user-status-badge visibility">
+                      {draft.defaultVisibility}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="form-grid user-editor-grid">
+                <Input
+                  label="Full name"
+                  value={draft.fullName}
+                  onChange={(value) => updateDraft("fullName", value)}
+                />
+                <label>
+                  Company email
+                  <input value={draft.email} readOnly />
+                </label>
+                <Select
+                  label="Role"
+                  value={draft.role}
+                  options={userRoleOptions}
+                  placeholder="Select role"
+                  onChange={(value) => updateDraft("role", value as UserRole)}
+                />
+                <Select
+                  label="Default visibility"
+                  value={draft.defaultVisibility}
+                  options={projectVisibilityOptions}
+                  placeholder="Select visibility"
+                  onChange={(value) =>
+                    updateDraft("defaultVisibility", value as ProjectVisibility)
+                  }
+                />
+                <Check
+                  label="Active account"
+                  checked={draft.active}
+                  onChange={(value) => updateDraft("active", value)}
+                />
+              </div>
+              <div className="modal-actions">
+                <button type="submit">Save approved account</button>
+              </div>
+            </>
+          )}
         </form>
       </div>
     </section>
   );
+}
+
+function secureUserToPrototypeUserPlaceholder(): PrototypeUser {
+  return {
+    fullName: "",
+    username: "",
+    role: "Auditor",
+    permissionGroup: "Auditor",
+    email: "",
+    active: true,
+    defaultVisibility: "Role Default",
+    emailVerified: true,
+    accessRequestStatus: "Approved",
+    verificationCode: "",
+    requestedAt: "",
+    approvedAt: "",
+    approvedBy: "",
+    rejectionReason: "",
+  };
 }
 
 function Dashboard({ projects }: { projects: AuditProject[] }) {
@@ -4559,7 +4013,6 @@ function ProjectDetail({
           />
           <Meta label="Broker" value={project.broker} />
           <Meta label="Audit team" value={formatAuditTeam(project)} />
-          <Meta label="Reviewer" value={project.reviewer} />
           <Meta label="Status" value={project.assignmentStatus} />
           <Meta
             label="Quote"
@@ -5241,7 +4694,6 @@ function ProjectForm({
     "People",
     "Planning",
     "Documents & quote",
-    "Review",
   ];
   const update = <K extends keyof AuditProject>(
     key: K,
@@ -5383,11 +4835,6 @@ function ProjectForm({
           options={auditorOptions}
           placeholder="Select lead auditor"
           onChange={updateLeadAuditor}
-        />
-        <Input
-          label="Reviewer"
-          value={draft.reviewer}
-          onChange={(value) => update("reviewer", value)}
         />
         <Select
           label="Assignment status"
@@ -5564,37 +5011,6 @@ function ProjectForm({
     </section>
   );
 
-  const review = (
-    <section className="form-section-card review-card">
-      <div>
-        <h3>Review project before creating</h3>
-        <p>
-          This card will start in {draft.currentStage}. You can add advanced
-          report, findings, and invoice details later from Edit Project.
-        </p>
-      </div>
-      <div className="review-grid">
-        <Meta label="Assignment" value={draft.assignmentNumber} />
-        <Meta
-          label="Source / type"
-          value={`${draft.assignmentSource} · ${draft.assignmentType}`}
-        />
-        <Meta label="Audit Entity" value={draft.auditEntity || "Not set"} />
-        <Meta label="Audit team" value={formatAuditTeam(draft)} />
-        <Meta label="Reviewer" value={draft.reviewer || "Not assigned"} />
-        <Meta label="Due date" value={draft.dueDate || "Not set"} />
-        <Meta
-          label="Quote"
-          value={`${draft.quoteStatus} · ${draft.quoteAmount || 0}`}
-        />
-        <Meta
-          label="Labels"
-          value={draft.labels.length ? draft.labels.join(", ") : "None"}
-        />
-      </div>
-    </section>
-  );
-
   const advanced = (
     <section className="form-section-card">
       <div>
@@ -5664,7 +5080,7 @@ function ProjectForm({
     </section>
   );
 
-  const createStepContent = [basics, people, planning, documentsQuote, review];
+  const createStepContent = [basics, people, planning, documentsQuote];
 
   return (
     <div className="modal-backdrop">

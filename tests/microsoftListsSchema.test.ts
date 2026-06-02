@@ -21,7 +21,6 @@ const project: CentralAuditProject = {
     { person: "Lorraine Mojica", role: "Lead Auditor" },
     { person: "Leslie Domenech", role: "Supporting Auditor" },
   ],
-  reviewer: "Justin Mojica",
   currentStage: "Quote",
   assignmentStatus: "In Progress",
   quoteStatus: "Sent",
@@ -87,7 +86,6 @@ const project: CentralAuditProject = {
 const user: CentralPrototypeUser = {
   fullName: "Justin Mojica",
   username: "justin.mojica",
-  password: "password",
   role: "Admin",
   permissionGroup: "Admin",
   email: "justin.mojica@example.com",

@@ -7,7 +7,6 @@ export type AccountRequestStatus =
 export type AccessRequestUser = {
   fullName: string;
   username: string;
-  password: string;
   role: string;
   permissionGroup: string;
   email: string;
@@ -64,13 +63,11 @@ export function createVerificationCode() {
 export function buildAccessRequestUser({
   fullName,
   email,
-  password,
   requestedAt,
   verificationCode = createVerificationCode(),
 }: {
   fullName: string;
   email: string;
-  password: string;
   requestedAt: string;
   verificationCode?: string;
 }): AccessRequestUser {
@@ -78,7 +75,6 @@ export function buildAccessRequestUser({
   return {
     fullName: fullName.trim(),
     username: usernameFromCompanyEmail(cleanEmail),
-    password,
     role: "Auditor",
     permissionGroup: "Auditor",
     email: cleanEmail,

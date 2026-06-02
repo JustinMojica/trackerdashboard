@@ -306,7 +306,7 @@ export function recommendedNextSteps(
 
   const stageAction: Record<Stage, string> = {
     Intake: "Validate intake fields and move the audit into registration.",
-    Registration: "Confirm reviewer assignment and prepare the quote record.",
+    Registration: "Confirm audit ownership and prepare the quote record.",
     Quote: "Move to scheduling once the quote is accepted.",
     Scheduling:
       "Confirm the audit date, audit week, and remote or onsite format.",
@@ -315,7 +315,7 @@ export function recommendedNextSteps(
     "Audit Fieldwork": "Complete testing, log exceptions, and prepare findings.",
     Findings:
       "Send findings follow-up and record the coverholder response date.",
-    "Report Drafting": "Route the draft report to reviewer quality check.",
+    "Report Drafting": "Complete the final quality check before issue.",
     "Final Submission":
       "Send the final report package through the correct channel.",
     Invoice: "Issue the invoice and track payment through receipt.",

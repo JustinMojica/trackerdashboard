@@ -38,6 +38,7 @@ export type SecureAccessState = {
     | string;
   user?: SecureAccessUser;
   pendingRequests?: SecureAccessUser[];
+  managedUsers?: SecureAccessUser[];
   signInUrl?: string;
   requestAccessUrl?: string;
   setup?: {
@@ -94,6 +95,11 @@ export type AccessApprovalUpdate = {
   defaultVisibility?: SecureAccessUser["defaultVisibility"];
 };
 
+export type SecureAccessUserUpdate = AccessApprovalUpdate & {
+  fullName?: string;
+  active?: boolean;
+};
+
 export function secureAccessApiBase() {
   if (window.location.port === "5173") return "http://localhost:8787";
   return "";
@@ -138,6 +144,26 @@ export async function approveSecureAccessRequest(
 
 export async function rejectSecureAccessRequest(email: string) {
   return decideSecureAccessRequest(email, "reject");
+}
+
+export async function updateSecureAccessUser(
+  email: string,
+  update: SecureAccessUserUpdate,
+) {
+  const response = await fetch(
+    secureAccessUrl(`/api/admin/users/${encodeURIComponent(email)}`),
+    {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(update),
+    },
+  );
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.message || payload.error || "User update failed.");
+  }
+  return response.json();
 }
 
 export async function logoutSecureAccess() {

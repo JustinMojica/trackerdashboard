@@ -1,10 +1,10 @@
 # Auditor Login And Access Setup
 
-This setup is based on the default auditor names and seeded project records in the tracker dashboard.
+This setup is based on the default auditor names used in the tracker dashboard.
 
-## Prototype Credential Fields
+## Microsoft Sign-In
 
-For tracker testing only, use `firstname.lastname` as the username and `password` as the test password. Do not use this password for live Microsoft 365, SharePoint, or production accounts.
+Users sign in with their company Microsoft account. New users must request access, confirm the emailed verification code, and wait for an admin to approve the profile.
 
 ## Permission Groups
 
@@ -18,35 +18,23 @@ For tracker testing only, use `firstname.lastname` as the username and `password
 
 ## Internal User Setup
 
-| Full Name | Username | Test Password | Work Email | Role | Permission Group | Tracker Access | SharePoint Access | Notes |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Lorraine Mojica | lorraine.mojica | password | lorraine.mojica@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | Lead auditor on seeded dashboard projects |
-| Walter Aviles | walter.aviles | password | walter.aviles@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | Lead/supporting auditor on seeded dashboard projects |
-| Leslie Domenech | leslie.domenech | password | leslie.domenech@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | Supporting auditor on seeded dashboard projects |
-| Mark James | mark.james | password | mark.james@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | In dashboard auditor list |
-| Justin Mojica | justin.mojica | password | justin.mojica@[company-domain] | Auditor / Admin | Admin | Full edit | Full control | Lead auditor on seeded dashboard project and likely system owner |
-| Sheilah Couture | sheilah.couture | password | sheilah.couture@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | In dashboard auditor list |
-| Annabelle J. Crawford Mojica | annabelle.crawford.mojica | password | annabelle.crawford.mojica@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | In dashboard auditor list; confirm preferred username/email format |
-| Molly Aviles | molly.aviles | password | molly.aviles@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | In dashboard auditor list |
-| Lindsie Guillermo | lindsie.guillermo | password | lindsie.guillermo@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | In dashboard auditor list |
-
-## Seeded Project Visibility
-
-| Assignment | Audit Entity | Lead Auditor | Supporting Auditor(s) | Stage |
-| --- | --- | --- | --- | --- |
-| AA-2026-0142 | Northbridge Coverholder Operations | Lorraine Mojica | Walter Aviles | Quote |
-| AA-2026-0148 | Harbor Specialty Program | Walter Aviles | Leslie Domenech | Pre-Audit |
-| AA-2026-0155 | Summit Claims Administration | Lorraine Mojica |  | Findings |
-| AA-2026-0161 | Cedar Binding Authority | Justin Mojica |  | Final Submission |
-
-Reviewer names also appear in the seeded project records, but they are not part of the dashboard's default auditor list. Confirm whether reviewer-only users should receive Audit Manager logins.
+| Full Name | Username | Work Email | Role | Permission Group | Tracker Access | SharePoint Access | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Lorraine Mojica | lorraine.mojica | lorraine.mojica@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | Default auditor directory record |
+| Walter Aviles | walter.aviles | walter.aviles@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | Default auditor directory record |
+| Leslie Domenech | leslie.domenech | leslie.domenech@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | Default auditor directory record |
+| Mark James | mark.james | mark.james@[company-domain] | Audit Manager | Audit Manager | Edit all audit rows | All audit folders | Manager directory record |
+| Justin Mojica | justin.mojica | justin.mojica@[company-domain] | Auditor / Admin | Admin | Full edit | Full control | System owner |
+| Sheilah Couture | sheilah.couture | sheilah.couture@[company-domain] | Finance | Finance | Edit invoice/payment fields | Invoice folders | Finance directory record |
+| Annabelle J. Crawford Mojica | annabelle.crawford.mojica | annabelle.crawford.mojica@[company-domain] | Read Only | Read Only | View only | View only | Read-only directory record; confirm preferred username/email format |
+| Molly Aviles | molly.aviles | molly.aviles@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | In dashboard auditor list |
+| Lindsie Guillermo | lindsie.guillermo | lindsie.guillermo@[company-domain] | Auditor | Auditor | Edit assigned rows | Assigned client folders | In dashboard auditor list |
 
 ## Recommended Tracker Fields
 
 | Field | Purpose |
 | --- | --- |
 | Assigned Auditor | Shows who owns the audit work |
-| Reviewer | Shows who reviews work before close-out |
 | Next Action Owner | Makes it clear who needs to act next |
 | Last Updated By | Creates accountability for tracker changes |
 | Last Updated Date | Shows whether the record is stale |
@@ -54,6 +42,24 @@ Reviewer names also appear in the seeded project records, but they are not part 
 | SharePoint Folder Link | Keeps documents tied to the assignment |
 | Quote Approved By | Prevents unapproved quote sends |
 | Invoice Owner | Separates audit completion from billing responsibility |
+
+## Role Rules
+
+| Role | Tracker Access |
+| --- | --- |
+| Admin | View, create, edit, move stages, import JSON, reset data, and update finance fields |
+| Audit Manager | View, create, edit, move stages, import JSON, reset data, and update finance fields |
+| Auditor | View and update projects where they are lead or supporting auditor |
+| Finance | View invoice/final-submission/closed records and update invoice/payment fields |
+| Read Only | View all records without save actions |
+
+Admins manage access and assignment names inside the dashboard. The user management panel supports:
+
+- Microsoft access request approval
+- full name, company email, role, and assignment visibility
+- role changes
+- active/inactive status
+- default project visibility: role default, all projects, assigned projects, or finance records
 
 ## Naming Convention
 
@@ -74,7 +80,7 @@ Use a standard login identity format:
 5. Create or confirm the SharePoint folder permissions.
 6. Test with one auditor account before rolling out to the full team.
 7. Remove any shared credentials from the process.
-8. Replace prototype test passwords before connecting this to live authentication.
+8. Confirm each real tester can complete Microsoft sign-in, email code confirmation, and admin approval.
 
 ## External Access Rule
 

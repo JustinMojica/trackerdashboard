@@ -18,7 +18,6 @@ test("email verification must happen before admin approval", () => {
   const request = buildAccessRequestUser({
     fullName: "New Auditor",
     email: "new.auditor@example-company.com",
-    password: "password",
     requestedAt: "2026-05-29T12:00:00.000Z",
     verificationCode: "123456",
   });

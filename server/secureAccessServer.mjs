@@ -9,10 +9,12 @@ import {
   accessUserStoreStatus,
   createAccessUserStore,
 } from "./accessUserStore.mjs";
+import { createProjectStore } from "./projectStore.mjs";
 
 const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const dataDir = resolve(rootDir, "server", "data");
 const usersFile = resolve(dataDir, "access-users.json");
+const projectsFile = resolve(dataDir, "audit-projects.json");
 const distDir = resolve(rootDir, "dist");
 const oauthStates = new Map();
 const cookieName = "tracker_session";
@@ -20,10 +22,17 @@ const oauthCookieName = "tracker_oauth_state";
 
 loadLocalEnvironment();
 
+const inferredPublicOrigin = process.env.WEBSITE_HOSTNAME
+  ? `https://${process.env.WEBSITE_HOSTNAME}`
+  : "http://localhost:8787";
+const publicOrigin = process.env.TRACKER_PUBLIC_ORIGIN || inferredPublicOrigin;
+const listenTarget =
+  process.env.PORT || process.env.TRACKER_SERVER_PORT || "8787";
+
 const config = {
-  port: Number(process.env.TRACKER_SERVER_PORT || 8787),
-  frontendOrigin: process.env.TRACKER_FRONTEND_ORIGIN || "http://localhost:5173",
-  publicOrigin: process.env.TRACKER_PUBLIC_ORIGIN || "http://localhost:8787",
+  port: /^\d+$/.test(listenTarget) ? Number(listenTarget) : listenTarget,
+  frontendOrigin: process.env.TRACKER_FRONTEND_ORIGIN || publicOrigin,
+  publicOrigin,
   tenantId: process.env.MICROSOFT_TENANT_ID || "",
   clientId: process.env.MICROSOFT_CLIENT_ID || "",
   clientSecret: process.env.MICROSOFT_CLIENT_SECRET || "",
@@ -38,7 +47,6 @@ const config = {
   userStoreListId: process.env.TRACKER_USERS_LIST_ID || "",
 };
 
-const redirectUri = `${config.publicOrigin}/api/auth/callback`;
 const authority = `https://login.microsoftonline.com/${config.tenantId}/oauth2/v2.0`;
 const userStoreStatus = accessUserStoreStatus(config);
 const accessUserStore = createAccessUserStore({
@@ -50,6 +58,7 @@ const accessUserStore = createAccessUserStore({
     getAccessToken: getGraphAppToken,
   },
 });
+const projectStore = createProjectStore(projectsFile);
 const jwks = hasConfiguredValue(config.tenantId)
   ? createRemoteJWKSet(
       new URL(`https://login.microsoftonline.com/${config.tenantId}/discovery/v2.0/keys`),
@@ -78,7 +87,7 @@ async function route(request, response) {
 
   const url = new URL(request.url ?? "/", config.publicOrigin);
   if (url.pathname === "/api/auth/config") {
-    return sendJson(request, response, 200, accessConfigStatus());
+    return sendJson(request, response, 200, accessConfigStatus(request));
   }
   if (url.pathname === "/api/auth/me") {
     return sendJson(request, response, 200, await currentAccessState(request));
@@ -102,16 +111,28 @@ async function route(request, response) {
   if (url.pathname === "/api/admin/system-health") {
     return systemHealth(request, response);
   }
+  if (url.pathname === "/api/projects" && request.method === "GET") {
+    return listProjects(request, response);
+  }
+  if (url.pathname === "/api/projects" && request.method === "PUT") {
+    return saveProjects(request, response);
+  }
   const approvalMatch = url.pathname.match(
     /^\/api\/admin\/access-requests\/([^/]+)\/(approve|reject)$/,
   );
   if (approvalMatch && request.method === "POST") {
     return decideAccessRequest(request, response, approvalMatch[1], approvalMatch[2]);
   }
+  const userUpdateMatch = url.pathname.match(/^\/api\/admin\/users\/([^/]+)$/);
+  if (userUpdateMatch && request.method === "PATCH") {
+    return updateManagedUser(request, response, userUpdateMatch[1]);
+  }
   return serveStatic(request, response, url);
 }
 
-function accessConfigStatus() {
+function accessConfigStatus(request) {
+  const requestOrigin = request ? requestPublicOrigin(request) : config.publicOrigin;
+  const frontendOrigin = request ? requestFrontendOrigin(request, requestOrigin) : config.frontendOrigin;
   const missing = [];
   for (const [key, value] of Object.entries({
     MICROSOFT_TENANT_ID: config.tenantId,
@@ -128,8 +149,8 @@ function accessConfigStatus() {
   return {
     configured: missing.length === 0,
     missing,
-    redirectUri,
-    frontendOrigin: config.frontendOrigin,
+    redirectUri: `${requestOrigin}/api/auth/callback`,
+    frontendOrigin,
     userStore: userStoreStatus,
   };
 }
@@ -170,7 +191,8 @@ function hasConfiguredValue(value) {
 }
 
 async function currentAccessState(request) {
-  const setup = accessConfigStatus();
+  const setup = accessConfigStatus(request);
+  const publicOrigin = requestPublicOrigin(request);
   if (!setup.configured) {
     return {
       configured: false,
@@ -186,8 +208,8 @@ async function currentAccessState(request) {
       configured: true,
       authenticated: false,
       status: "not-signed-in",
-      signInUrl: `${config.publicOrigin}/api/auth/start?mode=signin`,
-      requestAccessUrl: `${config.publicOrigin}/api/auth/start?mode=request`,
+      signInUrl: `${publicOrigin}/api/auth/start?mode=signin`,
+      requestAccessUrl: `${publicOrigin}/api/auth/start?mode=request`,
     };
   }
 
@@ -198,8 +220,8 @@ async function currentAccessState(request) {
       configured: true,
       authenticated: false,
       status: "not-requested",
-      signInUrl: `${config.publicOrigin}/api/auth/start?mode=signin`,
-      requestAccessUrl: `${config.publicOrigin}/api/auth/start?mode=request`,
+      signInUrl: `${publicOrigin}/api/auth/start?mode=signin`,
+      requestAccessUrl: `${publicOrigin}/api/auth/start?mode=request`,
     };
   }
 
@@ -208,11 +230,14 @@ async function currentAccessState(request) {
     authenticated: user.active && user.accessRequestStatus === "Approved",
     status: statusSlug(user.accessRequestStatus),
     user: publicUser(user),
-    signInUrl: `${config.publicOrigin}/api/auth/start?mode=signin`,
-    requestAccessUrl: `${config.publicOrigin}/api/auth/start?mode=request`,
+    signInUrl: `${publicOrigin}/api/auth/start?mode=signin`,
+    requestAccessUrl: `${publicOrigin}/api/auth/start?mode=request`,
   };
 
   if (state.authenticated && user.role === "Admin") {
+    state.managedUsers = store.users
+      .map(publicUser)
+      .sort((a, b) => a.fullName.localeCompare(b.fullName));
     state.pendingRequests = store.users
       .filter((candidate) =>
         ["Pending Verification", "Pending Approval"].includes(
@@ -224,10 +249,13 @@ async function currentAccessState(request) {
   return state;
 }
 
-async function startMicrosoftAuth(_request, response, url) {
-  const setup = accessConfigStatus();
+async function startMicrosoftAuth(request, response, url) {
+  const setup = accessConfigStatus(request);
   if (!setup.configured) return sendSetupError(response, setup);
 
+  const publicOrigin = requestPublicOrigin(request);
+  const frontendOrigin = requestFrontendOrigin(request, publicOrigin);
+  const redirectUri = `${publicOrigin}/api/auth/callback`;
   const mode = url.searchParams.get("mode") === "request" ? "request" : "signin";
   const state = base64Url(randomBytes(32));
   const nonce = base64Url(randomBytes(32));
@@ -237,6 +265,8 @@ async function startMicrosoftAuth(_request, response, url) {
     mode,
     nonce,
     codeVerifier,
+    frontendOrigin,
+    redirectUri,
     expiresAt: Date.now() + 10 * 60 * 1000,
   });
   response.setHeader("Set-Cookie", signedCookie(oauthCookieName, { state }, 600));
@@ -258,32 +288,34 @@ async function startMicrosoftAuth(_request, response, url) {
 }
 
 async function finishMicrosoftAuth(request, response, url) {
-  const setup = accessConfigStatus();
+  const setup = accessConfigStatus(request);
   if (!setup.configured) return sendSetupError(response, setup);
 
   const error = url.searchParams.get("error");
-  if (error) return redirect(response, `${config.frontendOrigin}/?auth=${error}`);
+  const fallbackFrontendOrigin = requestFrontendOrigin(request, requestPublicOrigin(request));
+  if (error) return redirect(response, `${fallbackFrontendOrigin}/?auth=${error}`);
 
   const state = url.searchParams.get("state") ?? "";
   const code = url.searchParams.get("code") ?? "";
   const stateCookie = readSignedCookie(request, oauthCookieName);
   const oauthState = oauthStates.get(state);
+  const frontendOrigin = oauthState?.frontendOrigin || fallbackFrontendOrigin;
   oauthStates.delete(state);
   response.setHeader("Set-Cookie", clearCookie(oauthCookieName));
 
   if (!code || !stateCookie || stateCookie.state !== state || !oauthState) {
-    return redirect(response, `${config.frontendOrigin}/?auth=invalid-state`);
+    return redirect(response, `${frontendOrigin}/?auth=invalid-state`);
   }
   if (oauthState.expiresAt < Date.now()) {
-    return redirect(response, `${config.frontendOrigin}/?auth=expired-state`);
+    return redirect(response, `${frontendOrigin}/?auth=expired-state`);
   }
 
-  const token = await exchangeCodeForToken(code, oauthState.codeVerifier);
+  const token = await exchangeCodeForToken(code, oauthState.codeVerifier, oauthState.redirectUri);
   const claims = await validateIdToken(token.id_token, oauthState.nonce);
   const email = claimEmail(claims);
   const name = String(claims.name || email.split("@")[0]);
   if (!isAllowedEmail(email)) {
-    return redirect(response, `${config.frontendOrigin}/?auth=domain-blocked`);
+    return redirect(response, `${frontendOrigin}/?auth=domain-blocked`);
   }
 
   const store = await loadUserStore();
@@ -295,22 +327,22 @@ async function finishMicrosoftAuth(request, response, url) {
     await saveUserStore(store);
     if (user.accessRequestStatus === "Approved" && user.active) {
       setSession(response, { email, status: "approved" });
-      return redirect(response, `${config.frontendOrigin}/?auth=success`);
+      return redirect(response, `${frontendOrigin}/?auth=success`);
     }
     setSession(response, { email, status: "pending" });
-    return redirect(response, `${config.frontendOrigin}/?auth=code-sent`);
+    return redirect(response, `${frontendOrigin}/?auth=code-sent`);
   }
 
   if (!user) {
-    return redirect(response, `${config.frontendOrigin}/?auth=request-required`);
+    return redirect(response, `${frontendOrigin}/?auth=request-required`);
   }
   if (user.accessRequestStatus !== "Approved" || !user.active) {
     setSession(response, { email, status: "pending" });
-    return redirect(response, `${config.frontendOrigin}/?auth=pending`);
+    return redirect(response, `${frontendOrigin}/?auth=pending`);
   }
 
   setSession(response, { email, status: "approved" });
-  return redirect(response, `${config.frontendOrigin}/?auth=success`);
+  return redirect(response, `${frontendOrigin}/?auth=success`);
 }
 
 async function createOrRefreshAccessRequest(store, email, name) {
@@ -350,7 +382,7 @@ async function createOrRefreshAccessRequest(store, email, name) {
 }
 
 async function verifyAccessCode(request, response) {
-  const setup = accessConfigStatus();
+  const setup = accessConfigStatus(request);
   if (!setup.configured) return sendJson(request, response, 503, { error: "setup-required", setup });
   const session = readSignedCookie(request, cookieName);
   if (!session?.email) {
@@ -426,10 +458,40 @@ async function decideAccessRequest(request, response, encodedEmail, decision) {
   return sendJson(request, response, 200, { ok: true, user: publicUser(user) });
 }
 
+async function updateManagedUser(request, response, encodedEmail) {
+  const admin = await requireAdmin(request, response);
+  if (!admin) return;
+  const email = decodeURIComponent(encodedEmail).toLowerCase();
+  const body = await readJson(request).catch(() => ({}));
+  const store = await loadUserStore();
+  const user = findUser(store, email);
+  if (!user) return sendJson(request, response, 404, { error: "not_found" });
+  if (user.accessRequestStatus !== "Approved") {
+    return sendJson(request, response, 400, {
+      error: "not_approved",
+      message: "Only approved Microsoft accounts can be managed here.",
+    });
+  }
+
+  const role = normalizeRole(body.role, user.role || "Auditor");
+  user.role = role;
+  user.permissionGroup = role;
+  user.defaultVisibility = normalizeVisibility(
+    body.defaultVisibility,
+    user.defaultVisibility || (role === "Finance" ? "Finance Records" : "Role Default"),
+  );
+  if (typeof body.active === "boolean") user.active = body.active;
+  if (typeof body.fullName === "string" && body.fullName.trim()) {
+    user.fullName = body.fullName.trim();
+  }
+  await saveUserStore(store);
+  return sendJson(request, response, 200, { ok: true, user: publicUser(user) });
+}
+
 async function systemHealth(request, response) {
   const admin = await requireAdmin(request, response);
   if (!admin) return;
-  const setup = accessConfigStatus();
+  const setup = accessConfigStatus(request);
   const graphApp = await graphAppHealth();
   const approvalStore = {
     mode: userStoreStatus.mode,
@@ -525,7 +587,112 @@ function healthRecommendations(setup, graphApp, approvalStore) {
   return recommendations;
 }
 
-async function requireAdmin(request, response) {
+async function listProjects(request, response) {
+  const user = await requireApprovedUser(request, response);
+  if (!user) return;
+  const store = await loadProjectStore();
+  return sendJson(request, response, 200, {
+    projects: store.projects.filter((project) => canViewProjectForUser(user, project)),
+  });
+}
+
+async function saveProjects(request, response) {
+  const user = await requireApprovedUser(request, response);
+  if (!user) return;
+  const body = await readJson(request).catch(() => ({}));
+  const incomingProjects = Array.isArray(body.projects)
+    ? body.projects.map(normalizeProjectRecord).filter((project) => project.id)
+    : [];
+  if (!Array.isArray(body.projects)) {
+    return sendJson(request, response, 400, {
+      error: "invalid_projects",
+      message: "Project payload must include a projects array.",
+    });
+  }
+
+  const fullReplace = body.mode === "replace-all";
+  if (fullReplace && !hasFullProjectAccess(user)) {
+    return sendJson(request, response, 403, {
+      error: "project_admin_required",
+      message: "Only admins and audit managers can replace all project records.",
+    });
+  }
+
+  const store = await loadProjectStore();
+  if (fullReplace) {
+    store.projects = incomingProjects;
+  } else {
+    const existingById = new Map(store.projects.map((project) => [project.id, project]));
+    for (const project of incomingProjects) {
+      const existing = existingById.get(project.id);
+      if (!canEditProjectForUser(user, existing ?? project)) {
+        return sendJson(request, response, 403, {
+          error: "project_write_denied",
+          message: `You cannot save project ${project.assignmentNumber || project.id}.`,
+        });
+      }
+    }
+    const incomingById = new Map(incomingProjects.map((project) => [project.id, project]));
+    const merged = store.projects.map((project) =>
+      incomingById.has(project.id) ? incomingById.get(project.id) : project,
+    );
+    for (const project of incomingProjects) {
+      if (!existingById.has(project.id)) merged.unshift(project);
+    }
+    store.projects = merged;
+  }
+
+  await saveProjectStore(store);
+  return sendJson(request, response, 200, {
+    ok: true,
+    projects: store.projects.filter((project) => canViewProjectForUser(user, project)),
+  });
+}
+
+async function loadProjectStore() {
+  const store = await projectStore.load();
+  return {
+    projects: Array.isArray(store.projects)
+      ? store.projects.map(normalizeProjectRecord).filter((project) => project.id)
+      : [],
+  };
+}
+
+async function saveProjectStore(store) {
+  await projectStore.save({
+    projects: (store.projects ?? []).map(normalizeProjectRecord).filter((project) => project.id),
+  });
+}
+
+function normalizeProjectRecord(project) {
+  const record = project && typeof project === "object" ? { ...project } : {};
+  const auditTeam = Array.isArray(record.auditTeam) ? record.auditTeam : [];
+  const assignedAuditor =
+    String(record.assignedAuditor || "").trim() ||
+    String(auditTeam.find((member) => member?.role === "Lead Auditor")?.person || "").trim() ||
+    String(auditTeam[0]?.person || "").trim();
+  return {
+    ...record,
+    id: String(record.id || ""),
+    assignmentNumber: String(record.assignmentNumber || record.id || ""),
+    assignedAuditor,
+    auditTeam,
+    currentStage: String(record.currentStage || "Intake"),
+    invoiceStatus: String(record.invoiceStatus || "Not Started"),
+    reportStatus: String(record.reportStatus || "Not Started"),
+    paymentReceived: Boolean(record.paymentReceived),
+    labels: Array.isArray(record.labels) ? record.labels : [],
+    checklistCompletions:
+      record.checklistCompletions && typeof record.checklistCompletions === "object"
+        ? record.checklistCompletions
+        : {},
+    statusHistory: Array.isArray(record.statusHistory) ? record.statusHistory : [],
+    comments: Array.isArray(record.comments) ? record.comments : [],
+    activityEvents: Array.isArray(record.activityEvents) ? record.activityEvents : [],
+  };
+}
+
+async function requireApprovedUser(request, response) {
   const session = readSignedCookie(request, cookieName);
   if (!session?.email) {
     sendJson(request, response, 401, { error: "not_signed_in" });
@@ -537,6 +704,12 @@ async function requireAdmin(request, response) {
     sendJson(request, response, 403, { error: "not_approved" });
     return null;
   }
+  return user;
+}
+
+async function requireAdmin(request, response) {
+  const user = await requireApprovedUser(request, response);
+  if (!user) return null;
   if (user.role !== "Admin") {
     sendJson(request, response, 403, { error: "admin_required" });
     return null;
@@ -544,7 +717,7 @@ async function requireAdmin(request, response) {
   return user;
 }
 
-async function exchangeCodeForToken(code, codeVerifier) {
+async function exchangeCodeForToken(code, codeVerifier, redirectUri) {
   const response = await fetch(`${authority}/token`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
@@ -816,6 +989,60 @@ function normalizeVisibility(value, fallback) {
   return allowed.includes(value) ? value : fallback;
 }
 
+function hasFullProjectAccess(user) {
+  return user.role === "Admin" || user.role === "Audit Manager";
+}
+
+function assignedAuditorNames(project) {
+  const auditTeam = Array.isArray(project.auditTeam) ? project.auditTeam : [];
+  const names = auditTeam
+    .map((member) => String(member?.person || "").trim())
+    .filter(Boolean);
+  const assignedAuditor = String(project.assignedAuditor || "").trim();
+  return Array.from(new Set([assignedAuditor, ...names].filter(Boolean)));
+}
+
+function projectHasAuditor(project, auditor) {
+  return assignedAuditorNames(project).includes(String(auditor || "").trim());
+}
+
+function isFinanceProject(project) {
+  return (
+    project.currentStage === "Final Submission" ||
+    project.currentStage === "Invoice" ||
+    project.currentStage === "Closed" ||
+    project.invoiceStatus !== "Not Started" ||
+    project.reportStatus === "Issued"
+  );
+}
+
+function roleDefaultVisibility(role) {
+  if (role === "Finance") return "Finance Records";
+  if (role === "Auditor") return "Assigned Projects";
+  return "All Projects";
+}
+
+function effectiveVisibility(user) {
+  return user.defaultVisibility === "Role Default"
+    ? roleDefaultVisibility(user.role)
+    : normalizeVisibility(user.defaultVisibility, roleDefaultVisibility(user.role));
+}
+
+function canViewProjectForUser(user, project) {
+  if (!user.active) return false;
+  const visibility = effectiveVisibility(user);
+  if (visibility === "All Projects") return true;
+  if (visibility === "Finance Records") return isFinanceProject(project);
+  return projectHasAuditor(project, user.fullName);
+}
+
+function canEditProjectForUser(user, project) {
+  if (hasFullProjectAccess(user)) return true;
+  if (user.role === "Finance") return isFinanceProject(project);
+  if (user.role === "Auditor") return projectHasAuditor(project, user.fullName);
+  return false;
+}
+
 function splitCsv(value) {
   return value
     .split(",")
@@ -845,13 +1072,42 @@ function sendJson(request, response, status, payload) {
 
 function setCors(request, response) {
   const origin = request.headers.origin;
-  if (origin === config.frontendOrigin) {
+  if (origin && [config.frontendOrigin, config.publicOrigin].includes(origin)) {
     response.setHeader("Access-Control-Allow-Origin", origin);
     response.setHeader("Access-Control-Allow-Credentials", "true");
     response.setHeader("Vary", "Origin");
   }
   response.setHeader("Access-Control-Allow-Headers", "content-type");
-  response.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  response.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+}
+
+function requestPublicOrigin(request) {
+  const forwardedHost = firstForwardedHeader(request.headers["x-forwarded-host"]);
+  const host = forwardedHost || request.headers.host || "";
+  const forwardedProto = firstForwardedHeader(request.headers["x-forwarded-proto"]);
+  const protocol =
+    forwardedProto ||
+    (host.includes("localhost") || host.startsWith("127.0.0.1")
+      ? "http"
+      : "https");
+  return host ? `${protocol}://${host}` : config.publicOrigin;
+}
+
+function requestFrontendOrigin(request, publicOrigin) {
+  const refererOrigin = originFromUrl(request.headers.referer || "");
+  return refererOrigin || config.frontendOrigin || publicOrigin;
+}
+
+function firstForwardedHeader(value) {
+  return String(value || "").split(",")[0].trim();
+}
+
+function originFromUrl(value) {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return "";
+  }
 }
 
 function redirect(response, location) {
