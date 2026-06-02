@@ -6,7 +6,7 @@ This is the target central-storage structure for the audit assignment tracker. T
 
 | List | Purpose | Key fields |
 | ---- | ------- | ---------- |
-| Audit Assignments | Main assignment record | `TrackerAssignmentId`, `AssignmentNumber`, `CurrentStage`, `AssignmentStatus`, document flags, finance fields, due dates |
+| Audit Assignments | Main assignment record | `TrackerAssignmentId`, `AssignmentNumber`, `CurrentStage`, `AssignmentStatus`, document flags, finance fields, due dates, `TrackerProjectJson` |
 | Audit Team Members | Lead/support workload rows | `TeamMemberKey`, `TrackerAssignmentId`, `PersonName`, `TeamRole`, `ActiveOnAssignment` |
 | Audit Comments | Card comments | `TrackerCommentId`, `TrackerAssignmentId`, `CommentCreatedAt`, `CommentAuthor`, `CommentBody` |
 | Audit Checklist Items | Per-stage checklist state | `TrackerChecklistItemId`, `TrackerAssignmentId`, `ChecklistKey`, `ChecklistStage`, `ChecklistItem`, `Completed` |
@@ -37,9 +37,12 @@ Current supported live actions:
 
 The secure account gate now uses the backend server for Microsoft OAuth, Graph email verification codes, signed HTTP-only sessions, and admin approval endpoints. A new user starts with Microsoft-hosted sign-in, requests access with that Microsoft identity, receives a verification code by email, confirms the code in the tracker, and then waits for an Admin user to approve the profile. The backend can persist approval records in `server/data/access-users.json` for local testing or in the `Tracker Users` Microsoft List when `TRACKER_USER_STORE=microsoft-lists`, `TRACKER_USERS_SITE_ID`, and `TRACKER_USERS_LIST_ID` are configured.
 
+Project records can also move from the app server file into Microsoft Lists. Set `TRACKER_PROJECT_STORE=microsoft-lists`, `TRACKER_PROJECTS_SITE_ID`, and `TRACKER_PROJECTS_LIST_ID` after the Audit Assignments list exists. The server writes the normal reporting columns plus `TrackerProjectJson`, which preserves comments, checklist state, status history, and activity events in the main assignment record while the child lists remain available for exports and reporting.
+
 The sync client uses stable app keys for upserts:
 
 - `TrackerAssignmentId` for assignment rows.
+- `TrackerProjectJson` for full project persistence when backend project storage uses Microsoft Lists.
 - `TeamMemberKey` for team-member rows.
 - `TrackerChecklistItemId` for checklist rows.
 - `TrackerCommentId`, `TrackerHistoryId`, `TrackerEventId`, and `TrackerUsername` for the other child/user lists.
@@ -72,8 +75,9 @@ Each activity row should include:
 6. Connect the app to Microsoft Graph after the list structure is approved.
 7. Validate the Microsoft Entra sign-in with a real tenant app registration.
 8. Move backend approval records from local server JSON into Microsoft Lists or Dataverse.
-9. Add a setup health check that tests Microsoft OAuth, Graph email delivery, and all seven configured lists.
-10. Add Power Automate flows only after live list writes and activity-log entries are stable.
+9. Switch backend project storage to `TRACKER_PROJECT_STORE=microsoft-lists` after `TrackerProjectJson` is present on the Audit Assignments list.
+10. Add a setup health check that tests Microsoft OAuth, Graph email delivery, approval storage, and project storage.
+11. Add Power Automate flows only after live list writes and activity-log entries are stable.
 
 ## Why This Split Matters
 

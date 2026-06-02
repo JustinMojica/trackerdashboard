@@ -9,7 +9,7 @@ import {
   accessUserStoreStatus,
   createAccessUserStore,
 } from "./accessUserStore.mjs";
-import { createProjectStore } from "./projectStore.mjs";
+import { createProjectStore, projectStoreStatus } from "./projectStore.mjs";
 
 const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const dataDir = resolve(rootDir, "server", "data");
@@ -54,10 +54,14 @@ const config = {
   userStoreMode: process.env.TRACKER_USER_STORE || "local",
   userStoreSiteId: process.env.TRACKER_USERS_SITE_ID || "",
   userStoreListId: process.env.TRACKER_USERS_LIST_ID || "",
+  projectStoreMode: process.env.TRACKER_PROJECT_STORE || "local",
+  projectStoreSiteId: process.env.TRACKER_PROJECTS_SITE_ID || "",
+  projectStoreListId: process.env.TRACKER_PROJECTS_LIST_ID || "",
 };
 
 const authority = `https://login.microsoftonline.com/${config.tenantId}/oauth2/v2.0`;
 const userStoreStatus = accessUserStoreStatus(config);
+const currentProjectStoreStatus = projectStoreStatus(config);
 const accessUserStore = createAccessUserStore({
   mode: userStoreStatus.mode,
   usersFile,
@@ -67,7 +71,15 @@ const accessUserStore = createAccessUserStore({
     getAccessToken: getGraphAppToken,
   },
 });
-const projectStore = createProjectStore(projectsFile);
+const projectStore = createProjectStore({
+  mode: currentProjectStoreStatus.configured ? currentProjectStoreStatus.mode : "local",
+  projectsFile,
+  graph: {
+    siteId: config.projectStoreSiteId,
+    listId: config.projectStoreListId,
+    getAccessToken: getGraphAppToken,
+  },
+});
 const jwks = hasConfiguredValue(config.tenantId)
   ? createRemoteJWKSet(
       new URL(`https://login.microsoftonline.com/${config.tenantId}/discovery/v2.0/keys`),
@@ -143,6 +155,7 @@ function accessConfigStatus(request) {
   const requestOrigin = request ? requestPublicOrigin(request) : config.publicOrigin;
   const frontendOrigin = request ? requestFrontendOrigin(request, requestOrigin) : config.frontendOrigin;
   const missing = [];
+  const invalid = [];
   for (const [key, value] of Object.entries({
     MICROSOFT_TENANT_ID: config.tenantId,
     MICROSOFT_CLIENT_ID: config.clientId,
@@ -154,13 +167,18 @@ function accessConfigStatus(request) {
   })) {
     if (!hasConfiguredValue(value)) missing.push(key);
   }
+  const sessionSecretStatus = validateSessionSecret(config.sessionSecret);
+  if (sessionSecretStatus === "missing") missing.push("TRACKER_SESSION_SECRET");
+  if (sessionSecretStatus === "invalid") invalid.push("TRACKER_SESSION_SECRET");
   missing.push(...userStoreStatus.missing);
   return {
-    configured: missing.length === 0,
+    configured: missing.length === 0 && invalid.length === 0,
     missing,
+    invalid,
     redirectUri: `${requestOrigin}/api/auth/callback`,
     frontendOrigin,
     userStore: userStoreStatus,
+    projectStore: currentProjectStoreStatus,
   };
 }
 
@@ -516,11 +534,28 @@ async function systemHealth(request, response) {
     mode: userStoreStatus.mode,
     configured: userStoreStatus.configured,
     missing: userStoreStatus.missing,
-    durable: userStoreStatus.mode === "microsoft-lists",
+    durable: userStoreStatus.mode === "microsoft-lists" && userStoreStatus.configured,
     status:
-      userStoreStatus.mode === "microsoft-lists"
+      userStoreStatus.mode === "microsoft-lists" && userStoreStatus.configured
         ? "Approval records will be stored in Microsoft Lists."
+        : userStoreStatus.mode === "microsoft-lists"
+          ? `Approval storage is set to Microsoft Lists but missing: ${userStoreStatus.missing.join(", ")}.`
         : "Approval records are still stored on this local server.",
+  };
+  const projectStoreHealth = {
+    mode: currentProjectStoreStatus.mode,
+    configured: currentProjectStoreStatus.configured,
+    missing: currentProjectStoreStatus.missing,
+    durable:
+      currentProjectStoreStatus.mode === "microsoft-lists" &&
+      currentProjectStoreStatus.configured,
+    status:
+      currentProjectStoreStatus.mode === "microsoft-lists" &&
+      currentProjectStoreStatus.configured
+        ? "Project records will be stored in the Audit Assignments Microsoft List."
+        : currentProjectStoreStatus.mode === "microsoft-lists"
+          ? `Project storage is set to Microsoft Lists but missing: ${currentProjectStoreStatus.missing.join(", ")}.`
+        : "Project records are still stored on this app server.",
   };
   return sendJson(request, response, 200, {
     generatedAt: new Date().toISOString(),
@@ -539,11 +574,20 @@ async function systemHealth(request, response) {
     },
     sharePoint: {
       permissionGranted: graphApp.roles.includes("Sites.ReadWrite.All"),
-      siteIdConfigured: hasConfiguredValue(config.userStoreSiteId),
+      siteIdConfigured:
+        hasConfiguredValue(config.userStoreSiteId) ||
+        hasConfiguredValue(config.projectStoreSiteId),
       trackerUsersListIdConfigured: hasConfiguredValue(config.userStoreListId),
+      auditAssignmentsListIdConfigured: hasConfiguredValue(config.projectStoreListId),
     },
     approvalStore,
-    recommendations: healthRecommendations(setup, graphApp, approvalStore),
+    projectStore: projectStoreHealth,
+    recommendations: healthRecommendations(
+      setup,
+      graphApp,
+      approvalStore,
+      projectStoreHealth,
+    ),
   });
 }
 
@@ -582,7 +626,7 @@ async function graphAppHealth() {
   }
 }
 
-function healthRecommendations(setup, graphApp, approvalStore) {
+function healthRecommendations(setup, graphApp, approvalStore, projectStoreHealth) {
   const recommendations = [];
   if (!setup.configured) {
     recommendations.push(`Complete missing server configuration: ${setup.missing.join(", ")}.`);
@@ -600,8 +644,15 @@ function healthRecommendations(setup, graphApp, approvalStore) {
       "Switch TRACKER_USER_STORE to microsoft-lists after admin consent and Tracker Users list IDs are ready.",
     );
   }
+  if (!projectStoreHealth.durable) {
+    recommendations.push(
+      "Switch TRACKER_PROJECT_STORE to microsoft-lists after the Audit Assignments list ID is ready.",
+    );
+  }
   if (recommendations.length === 0) {
-    recommendations.push("Secure access, mail, and Microsoft Lists approval storage are ready.");
+    recommendations.push(
+      "Secure access, mail, approval storage, and project storage are ready.",
+    );
   }
   return recommendations;
 }
@@ -712,6 +763,7 @@ function normalizeProjectRecord(project) {
 }
 
 async function requireApprovedUser(request, response) {
+  if (sendSetupRequired(request, response)) return null;
   const session = readSignedCookie(request, cookieName);
   if (!session?.email) {
     sendJson(request, response, 401, { error: "not_signed_in" });

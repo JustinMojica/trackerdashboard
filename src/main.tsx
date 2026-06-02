@@ -1000,6 +1000,57 @@ export function computedBlockers(project: AuditProject) {
   return blockers;
 }
 
+function intakeRequiredIssues(project: AuditProject) {
+  const issues: string[] = [];
+  if (!project.assignmentNumber.trim()) issues.push("Assignment number is required.");
+  if (!project.auditEntity.trim()) issues.push("Audit entity is required.");
+  if (!project.clientCoverholderCode.trim()) {
+    issues.push("Client / coverholder code is required.");
+  }
+  if (!project.broker.trim()) issues.push("Broker is required.");
+  if (!primaryAuditor(project)) issues.push("Lead auditor is required.");
+  if (!project.dueDate) issues.push("Due date is required.");
+  return issues;
+}
+
+function intakeWarningIssues(project: AuditProject) {
+  const warnings: string[] = [];
+  const stageIndex = stages.indexOf(project.currentStage);
+  if (
+    stageIndex >= stages.indexOf("Quote") &&
+    project.quoteStatus !== "Accepted"
+  ) {
+    warnings.push("This project is past intake but the quote is not accepted.");
+  }
+  if (
+    ["Sent", "Accepted"].includes(project.quoteStatus) &&
+    project.quoteAmount <= 0
+  ) {
+    warnings.push("Quote amount should be entered once the quote is sent.");
+  }
+  if (
+    project.documentRequestStatus === "Complete" &&
+    getMissingDocuments(project).length > 0
+  ) {
+    warnings.push(
+      `Document request is complete but still missing: ${getMissingDocuments(project).join(", ")}.`,
+    );
+  }
+  if (
+    stageIndex >= stages.indexOf("Scheduling") &&
+    project.quoteStatus !== "Accepted"
+  ) {
+    warnings.push("Scheduling should wait until the quote is accepted.");
+  }
+  if (
+    stageIndex >= stages.indexOf("File Selection") &&
+    !project.premiumBdxReceived
+  ) {
+    warnings.push("File selection needs Premium BDX before moving forward.");
+  }
+  return warnings;
+}
+
 export function canMoveToStage(project: AuditProject, targetStage: Stage) {
   const targetIndex = stages.indexOf(targetStage);
   if (
@@ -2223,19 +2274,14 @@ function App() {
           </p>
         </div>
         <div className="hero-actions">
-          <button
-            disabled={!canCreateProject(signedInUser)}
-            onClick={() => setEditing(blankProject())}
-          >
-            Add project
-          </button>
-          <button
-            className="secondary"
-            disabled={!hasFullProjectAccess(signedInUser)}
-            onClick={clearProjectData}
-          >
-            Clear project data
-          </button>
+          {canCreateProject(signedInUser) && (
+            <button onClick={() => setEditing(blankProject())}>Add project</button>
+          )}
+          {hasFullProjectAccess(signedInUser) && (
+            <button className="secondary" onClick={clearProjectData}>
+              Clear project data
+            </button>
+          )}
           <button className="secondary" onClick={signOut}>
             Sign out
           </button>
@@ -2268,6 +2314,7 @@ function App() {
             onApproveRequest={approveUserRequest}
             onRejectRequest={rejectUserRequest}
           />
+          <AdminActivityPanel projects={visibleProjects} />
         </>
       )}
       {hasFullProjectAccess(signedInUser) && (
@@ -2656,6 +2703,7 @@ function SystemReadinessPanel({
   const consentReady =
     graphRoles.includes("Mail.Send") && graphRoles.includes("Sites.ReadWrite.All");
   const approvalStoreReady = Boolean(health?.approvalStore.durable);
+  const projectStoreReady = Boolean(health?.projectStore?.durable);
   return (
     <section className="panel readiness-panel">
       <div className="section-title">
@@ -2705,6 +2753,14 @@ function SystemReadinessPanel({
           detail={
             health?.approvalStore.status ||
             "Local approval storage is active until Microsoft Lists is approved."
+          }
+        />
+        <ReadinessCard
+          label="Project storage"
+          ready={projectStoreReady}
+          detail={
+            health?.projectStore?.status ||
+            "Projects save on the app server until Microsoft Lists is configured."
           }
         />
       </div>
@@ -2765,11 +2821,16 @@ function CentralStoragePanel({
     health?.approvalStore.mode === "microsoft-lists"
       ? "Tracker Users list"
       : "Local server file";
+  const projectStoreLabel =
+    health?.projectStore?.mode === "microsoft-lists"
+      ? "Audit Assignments list"
+      : "App server file";
   const sharePointReady = Boolean(health?.sharePoint.permissionGranted);
   const trackerUsersReady = Boolean(
     health?.sharePoint.siteIdConfigured &&
       health?.sharePoint.trackerUsersListIdConfigured,
   );
+  const projectStoreReady = Boolean(health?.projectStore?.durable);
   const detailRows =
     packagePreview.rows.auditTeamMembers.length +
     packagePreview.rows.auditComments.length +
@@ -2817,6 +2878,13 @@ function CentralStoragePanel({
             : "New account approvals are stored on the app server until TRACKER_USER_STORE is switched to microsoft-lists."}
         </span>
       </div>
+      <div className={`storage-status ${projectStoreReady ? "connected" : ""}`}>
+        <strong>Project records: {projectStoreLabel}</strong>
+        <span>
+          {health?.projectStore?.status ||
+            "Project records use server storage until Microsoft Lists project storage is configured."}
+        </span>
+      </div>
       <div className="readiness-grid">
         <ReadinessCard
           label="Graph permissions"
@@ -2837,14 +2905,18 @@ function CentralStoragePanel({
           }
         />
         <ReadinessCard
+          label="Audit Assignments list"
+          ready={projectStoreReady}
+          detail={
+            projectStoreReady
+              ? "Project reads and writes are configured for Microsoft Lists."
+              : "Add TRACKER_PROJECTS_SITE_ID and TRACKER_PROJECTS_LIST_ID before moving project storage."
+          }
+        />
+        <ReadinessCard
           label="Project data package"
           ready
           detail={`${packagePreview.totals.lists} lists, ${packagePreview.totals.rows} rows ready for export.`}
-        />
-        <ReadinessCard
-          label="Live project write path"
-          ready
-          detail="Projects, comments, checklist items, and activity events now save through the secure server."
         />
       </div>
       <div className="storage-stats">
@@ -2872,11 +2944,11 @@ function CentralStoragePanel({
         </div>
         <div>
           <strong>Next configuration move</strong>
-          <span>Point approval storage to the Tracker Users list after the list ID is ready.</span>
+          <span>Point approval and project storage to Microsoft Lists after both list IDs are ready.</span>
         </div>
         <div>
           <strong>Next engineering move</strong>
-          <span>Move project storage from the local server file into Microsoft Lists when the project list IDs are ready.</span>
+          <span>Use the activity log to review who changed real records after coworker testing starts.</span>
         </div>
       </div>
       <div className="storage-schema-groups" aria-label="Microsoft Lists schema">
@@ -3209,6 +3281,89 @@ function UserManagementPanel({
             </>
           )}
         </form>
+      </div>
+    </section>
+  );
+}
+
+function AdminActivityPanel({ projects }: { projects: AuditProject[] }) {
+  const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<"All" | ActivityItem["type"]>("All");
+  const events = useMemo(
+    () =>
+      projects
+        .flatMap((project) =>
+          activityTimeline(project).map((item) => ({
+            ...item,
+            projectId: project.id,
+            assignmentNumber: project.assignmentNumber,
+            auditEntity: project.auditEntity,
+          })),
+        )
+        .sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp)),
+    [projects],
+  );
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredEvents = events.filter((event) => {
+    const matchesType = typeFilter === "All" || event.type === typeFilter;
+    const searchable = [
+      event.assignmentNumber,
+      event.auditEntity,
+      event.title,
+      event.detail,
+      event.type,
+    ]
+      .join(" ")
+      .toLowerCase();
+    return matchesType && (!normalizedQuery || searchable.includes(normalizedQuery));
+  });
+
+  return (
+    <section className="panel admin-activity-panel">
+      <div className="section-title">
+        <div>
+          <p className="eyebrow dark">Admin audit log</p>
+          <h2>Recent tracker activity</h2>
+          <span>Recent project changes, comments, checklist updates, and stage movement.</span>
+        </div>
+      </div>
+      <div className="admin-activity-controls">
+        <Input
+          label="Search activity"
+          value={query}
+          placeholder="Assignment, entity, user, or action"
+          onChange={setQuery}
+        />
+        <Select
+          label="Event type"
+          value={typeFilter}
+          options={["All", ...activityTypeOptions]}
+          placeholder="All"
+          onChange={(value) => setTypeFilter(value as "All" | ActivityItem["type"])}
+        />
+      </div>
+      <div className="admin-activity-list">
+        {filteredEvents.length === 0 ? (
+          <p className="muted-note">No matching activity yet.</p>
+        ) : (
+          filteredEvents.slice(0, 30).map((event) => (
+            <article className={`activity-item ${event.type}`} key={`${event.projectId}-${event.id}`}>
+              <span className="activity-marker" />
+              <div>
+                <div className="activity-heading">
+                  <strong>{event.title}</strong>
+                  <span className={`activity-type ${event.tone ?? "muted"}`}>
+                    {event.type}
+                  </span>
+                </div>
+                <small>
+                  {event.assignmentNumber} | {event.auditEntity || "No entity"} | {event.timestamp}
+                </small>
+                <p>{event.detail}</p>
+              </div>
+            </article>
+          ))
+        )}
       </div>
     </section>
   );
@@ -3990,7 +4145,7 @@ function ProjectDetail({
       <article className="panel detail">
         <div className="section-title">
           <h2>{project.assignmentNumber}</h2>
-          <button disabled={!canEdit} onClick={onEdit}>Edit project</button>
+          {canEdit && <button onClick={onEdit}>Edit project</button>}
         </div>
         {project.labels.length > 0 && (
           <div className="label-strip">
@@ -4055,20 +4210,21 @@ function ProjectDetail({
         ) : (
           <p>No blockers recorded.</p>
         )}
-        <div className="move-row">
-          <label>
-            Move stage
-            <select
-              value={project.currentStage}
-              disabled={!canEdit}
-              onChange={(event) => onMove(project, event.target.value as Stage)}
-            >
-              {stages.map((stage) => (
-                <option key={stage}>{stage}</option>
-              ))}
-            </select>
-          </label>
-        </div>
+        {canEdit && (
+          <div className="move-row">
+            <label>
+              Move stage
+              <select
+                value={project.currentStage}
+                onChange={(event) => onMove(project, event.target.value as Stage)}
+              >
+                {stages.map((stage) => (
+                  <option key={stage}>{stage}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+        )}
       </article>
       <AuditTeamPanel
         project={project}
@@ -4688,6 +4844,7 @@ function ProjectForm({
 }) {
   const [draft, setDraft] = useState(project);
   const [step, setStep] = useState(0);
+  const [attemptedSave, setAttemptedSave] = useState(false);
   const isNewProject = project.statusHistory.length === 0;
   const steps = [
     "Assignment basics",
@@ -4709,6 +4866,8 @@ function ProjectForm({
   };
   const draftAuditTeam = normalizeAuditTeam(draft);
   const leadAuditor = primaryAuditor(draft);
+  const requiredIssues = intakeRequiredIssues(draft);
+  const warningIssues = intakeWarningIssues(draft);
   const updateLeadAuditor = (auditor: string) => {
     const supportingTeam = draftAuditTeam
       .filter((member) => member.person !== auditor)
@@ -4747,6 +4906,8 @@ function ProjectForm({
       setStep(step + 1);
       return;
     }
+    setAttemptedSave(true);
+    if (requiredIssues.length > 0) return;
     onSave(draft);
   };
 
@@ -5124,6 +5285,25 @@ function ProjectForm({
             {advanced}
           </>
         )}
+        {(attemptedSave || warningIssues.length > 0) && (
+          <div className="intake-quality-panel">
+            <strong>Intake quality check</strong>
+            {requiredIssues.length > 0 && (
+              <ul className="quality-errors">
+                {requiredIssues.map((issue) => (
+                  <li key={issue}>{issue}</li>
+                ))}
+              </ul>
+            )}
+            {warningIssues.length > 0 && (
+              <ul className="quality-warnings">
+                {warningIssues.map((issue) => (
+                  <li key={issue}>{issue}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
         <div className="modal-actions sticky-actions">
           <button type="button" className="secondary" onClick={onCancel}>
             Cancel
@@ -5137,7 +5317,7 @@ function ProjectForm({
               Back
             </button>
           )}
-          <button type="submit">
+          <button type="submit" disabled={attemptedSave && requiredIssues.length > 0}>
             {isNewProject && step < steps.length - 1 ? "Next" : "Save project"}
           </button>
         </div>
