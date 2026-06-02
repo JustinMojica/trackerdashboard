@@ -209,6 +209,7 @@ export const microsoftListSchemas: MicrosoftListSchema[] = [
       note("Labels", "Labels"),
       note("NextAction", "Next action"),
       note("Blockers", "Blockers"),
+      note("TrackerProjectJson", "Tracker project JSON"),
     ],
   },
   {
@@ -469,6 +470,7 @@ function projectToAssignmentRow(project: CentralAuditProject): MicrosoftListSeed
     Labels: project.labels.join("; "),
     NextAction: project.nextAction,
     Blockers: project.blockers,
+    TrackerProjectJson: JSON.stringify(project),
   });
 }
 

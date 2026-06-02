@@ -51,6 +51,11 @@ export type SecureAccessState = {
       configured: boolean;
       missing: string[];
     };
+    projectStore?: {
+      mode: "local" | "microsoft-lists";
+      configured: boolean;
+      missing: string[];
+    };
   };
 };
 
@@ -79,8 +84,16 @@ export type SecureSystemHealth = {
     permissionGranted: boolean;
     siteIdConfigured: boolean;
     trackerUsersListIdConfigured: boolean;
+    auditAssignmentsListIdConfigured: boolean;
   };
   approvalStore: {
+    mode: "local" | "microsoft-lists";
+    configured: boolean;
+    missing: string[];
+    durable: boolean;
+    status: string;
+  };
+  projectStore: {
     mode: "local" | "microsoft-lists";
     configured: boolean;
     missing: string[];

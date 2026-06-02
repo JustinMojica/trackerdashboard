@@ -653,6 +653,22 @@ main {
 .user-editor-grid {
   grid-template-columns: repeat(3, minmax(180px, 1fr));
 }
+.admin-activity-panel {
+  display: grid;
+  gap: 1rem;
+}
+.admin-activity-controls {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(260px, 1fr) minmax(180px, 260px);
+}
+.admin-activity-list {
+  display: grid;
+  gap: 0.65rem;
+  max-height: 520px;
+  overflow: auto;
+  padding-right: 0.2rem;
+}
 
 .hero {
   align-items: center;
@@ -1338,6 +1354,26 @@ textarea {
   justify-content: flex-end;
   margin-top: 1rem;
 }
+.intake-quality-panel {
+  background: #fffaf0;
+  border: 1px solid #f0c45b;
+  border-radius: 14px;
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+}
+.intake-quality-panel ul {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+.quality-errors li {
+  color: #a2362b;
+  font-weight: 800;
+}
+.quality-warnings li {
+  color: #785200;
+}
 
 @media (max-width: 1100px) {
   .summary-grid {
@@ -1369,7 +1405,8 @@ textarea {
   .storage-schema-groups,
   .user-admin-summary,
   .storage-config,
-  .storage-list-id-grid {
+  .storage-list-id-grid,
+  .admin-activity-controls {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .hero {
@@ -1403,7 +1440,8 @@ textarea {
   .approval-controls,
   .access-request-card,
   .storage-config,
-  .storage-list-id-grid {
+  .storage-list-id-grid,
+  .admin-activity-controls {
     grid-template-columns: 1fr;
   }
   .modal-backdrop {
