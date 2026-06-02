@@ -12,7 +12,7 @@ Add this repository variable after the secret is ready:
 
 - `ENABLE_AZURE_DEPLOY=true`
 
-The workflow also supports manual runs from **Actions > Deploy Azure App Service > Run workflow**.
+The workflow also supports manual runs from **Actions > Deploy Azure App Service > Run workflow**, but production deployments only run when the selected ref is `main` and `ENABLE_AZURE_DEPLOY=true`.
 
 ## Azure App Service Settings
 
