@@ -625,11 +625,9 @@ async function saveProjects(request, response) {
     const existingById = new Map(store.projects.map((project) => [project.id, project]));
     for (const project of incomingProjects) {
       const existing = existingById.get(project.id);
-      if (!canEditProjectForUser(user, existing ?? project)) {
-        return sendJson(request, response, 403, {
-          error: "project_write_denied",
-          message: `You cannot save project ${project.assignmentNumber || project.id}.`,
-        });
+      const validationError = validateProjectWriteForUser(user, existing, project);
+      if (validationError) {
+        return sendJson(request, response, 403, validationError);
       }
     }
     const incomingById = new Map(incomingProjects.map((project) => [project.id, project]));
@@ -1034,6 +1032,153 @@ function canViewProjectForUser(user, project) {
   if (visibility === "All Projects") return true;
   if (visibility === "Finance Records") return isFinanceProject(project);
   return projectHasAuditor(project, user.fullName);
+}
+
+const financeProjectUpdateFields = new Set([
+  "invoiceStatus",
+  "paymentReceived",
+  "lastUpdatedDate",
+  "activityEvents",
+]);
+
+const auditorProjectUpdateFields = new Set([
+  "currentStage",
+  "assignmentStatus",
+  "baaReceived",
+  "endorsementsReceived",
+  "premiumBdxReceived",
+  "preAuditQuestionnaireStatus",
+  "documentRequestStatus",
+  "documentRequestDate",
+  "brokerLastChasedDate",
+  "brokerExpectedResponseDate",
+  "fileSelectionCompleted",
+  "testingSheetCompleted",
+  "findingsSentDate",
+  "coverholderResponseReceivedDate",
+  "tentativeAuditWeek",
+  "confirmedAuditDate",
+  "auditType",
+  "nextAction",
+  "blockers",
+  "dueDate",
+  "lastUpdatedDate",
+  "labels",
+  "checklistCompletions",
+  "statusHistory",
+  "comments",
+  "activityEvents",
+]);
+
+function validateProjectWriteForUser(user, existingProject, incomingProject) {
+  if (hasFullProjectAccess(user)) return null;
+  if (!existingProject) {
+    return {
+      error: "project_create_denied",
+      message: "Only admins and audit managers can create project records.",
+    };
+  }
+  if (!canEditProjectForUser(user, existingProject)) {
+    return {
+      error: "project_write_denied",
+      message: `You cannot save project ${existingProject.assignmentNumber || existingProject.id}.`,
+    };
+  }
+
+  const allowedFields =
+    user.role === "Finance"
+      ? financeProjectUpdateFields
+      : user.role === "Auditor"
+        ? auditorProjectUpdateFields
+        : new Set();
+  const changedFields = changedProjectFields(existingProject, incomingProject);
+  const blockedField = changedFields.find((field) => !allowedFields.has(field));
+  if (blockedField) {
+    return {
+      error: "project_field_denied",
+      message: `Your role cannot update ${blockedField} on ${
+        existingProject.assignmentNumber || existingProject.id
+      }.`,
+    };
+  }
+
+  if (
+    changedFields.includes("comments") &&
+    !hasOnlyUserAppendedItems(
+      existingProject.comments,
+      incomingProject.comments,
+      "author",
+      user.fullName,
+    )
+  ) {
+    return {
+      error: "project_field_denied",
+      message: `Your role can only append your own comments on ${
+        existingProject.assignmentNumber || existingProject.id
+      }.`,
+    };
+  }
+  if (
+    changedFields.includes("statusHistory") &&
+    !hasOnlyUserAppendedItems(
+      existingProject.statusHistory,
+      incomingProject.statusHistory,
+      "changedBy",
+      user.fullName,
+    )
+  ) {
+    return {
+      error: "project_field_denied",
+      message: `Your role can only append your own status history on ${
+        existingProject.assignmentNumber || existingProject.id
+      }.`,
+    };
+  }
+  if (
+    changedFields.includes("activityEvents") &&
+    !hasOnlyUserAppendedItems(
+      existingProject.activityEvents,
+      incomingProject.activityEvents,
+      "actor",
+      user.fullName,
+    )
+  ) {
+    return {
+      error: "project_field_denied",
+      message: `Your role can only append your own activity events on ${
+        existingProject.assignmentNumber || existingProject.id
+      }.`,
+    };
+  }
+  return null;
+}
+
+function changedProjectFields(existingProject, incomingProject) {
+  const keys = new Set([
+    ...Object.keys(existingProject),
+    ...Object.keys(incomingProject),
+  ]);
+  return Array.from(keys).filter(
+    (key) => !sameProjectValue(existingProject[key], incomingProject[key]),
+  );
+}
+
+function sameProjectValue(left, right) {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
+function hasOnlyUserAppendedItems(existingItems, incomingItems, userField, fullName) {
+  if (!Array.isArray(existingItems) || !Array.isArray(incomingItems)) return false;
+  if (incomingItems.length < existingItems.length) return false;
+  for (let index = 0; index < existingItems.length; index += 1) {
+    if (!sameProjectValue(existingItems[index], incomingItems[index])) return false;
+  }
+  return incomingItems
+    .slice(existingItems.length)
+    .every(
+      (item) =>
+        String(item?.[userField] || "").trim() === String(fullName || "").trim(),
+    );
 }
 
 function canEditProjectForUser(user, project) {
