@@ -19,6 +19,17 @@ const distDir = resolve(rootDir, "dist");
 const oauthStates = new Map();
 const cookieName = "tracker_session";
 const oauthCookieName = "tracker_oauth_state";
+const minimumSessionSecretLength = 32;
+const weakSessionSecretValues = new Set([
+  "dev",
+  "development",
+  "test",
+  "secret",
+  "session-secret",
+  "changeme",
+  "change-me",
+  "password",
+]);
 
 loadLocalEnvironment();
 
@@ -146,21 +157,25 @@ function accessConfigStatus(request) {
   const requestOrigin = request ? requestPublicOrigin(request) : config.publicOrigin;
   const frontendOrigin = request ? requestFrontendOrigin(request, requestOrigin) : config.frontendOrigin;
   const missing = [];
+  const invalid = [];
   for (const [key, value] of Object.entries({
     MICROSOFT_TENANT_ID: config.tenantId,
     MICROSOFT_CLIENT_ID: config.clientId,
     MICROSOFT_CLIENT_SECRET: config.clientSecret,
     MICROSOFT_MAIL_FROM: config.mailFrom,
-    TRACKER_SESSION_SECRET: config.sessionSecret,
     TRACKER_ALLOWED_EMAIL_DOMAINS: config.allowedDomains.join(","),
     TRACKER_ADMIN_EMAILS: config.adminEmails.join(","),
   })) {
     if (!hasConfiguredValue(value)) missing.push(key);
   }
+  const sessionSecretStatus = validateSessionSecret(config.sessionSecret);
+  if (sessionSecretStatus === "missing") missing.push("TRACKER_SESSION_SECRET");
+  if (sessionSecretStatus === "invalid") invalid.push("TRACKER_SESSION_SECRET");
   missing.push(...userStoreStatus.missing);
   return {
-    configured: missing.length === 0,
+    configured: missing.length === 0 && invalid.length === 0,
     missing,
+    invalid,
     redirectUri: `${requestOrigin}/api/auth/callback`,
     frontendOrigin,
     userStore: userStoreStatus,
@@ -201,6 +216,27 @@ function hasConfiguredValue(value) {
     "yourcompany.com",
     "your.email@yourcompany.com",
   ].includes(normalized);
+}
+
+function validateSessionSecret(value) {
+  const secret = String(value ?? "").trim();
+  const normalized = secret.toLowerCase();
+  if (!secret || normalized.startsWith("replace-with-")) return "missing";
+  if (
+    weakSessionSecretValues.has(normalized) ||
+    normalized === "00000000-0000-0000-0000-000000000000" ||
+    secret.length < minimumSessionSecretLength
+  ) {
+    return "invalid";
+  }
+  return "valid";
+}
+
+function sendSetupRequired(request, response) {
+  const setup = accessConfigStatus(request);
+  if (setup.configured) return false;
+  sendJson(request, response, 503, { error: "setup-required", setup });
+  return true;
 }
 
 async function currentAccessState(request) {
@@ -739,6 +775,7 @@ function normalizeProjectRecord(project) {
 }
 
 async function requireApprovedUser(request, response) {
+  if (sendSetupRequired(request, response)) return null;
   const session = readSignedCookie(request, cookieName);
   if (!session?.email) {
     sendJson(request, response, 401, { error: "not_signed_in" });
@@ -972,7 +1009,13 @@ function readSignedCookie(request, name) {
 }
 
 function sign(value) {
-  return base64Url(createHmac("sha256", config.sessionSecret || "dev").update(value).digest());
+  const sessionSecretStatus = validateSessionSecret(config.sessionSecret);
+  if (sessionSecretStatus !== "valid") {
+    throw new Error(
+      "TRACKER_SESSION_SECRET must be at least 32 characters and must not be a placeholder.",
+    );
+  }
+  return base64Url(createHmac("sha256", config.sessionSecret).update(value).digest());
 }
 
 function hashCode(email, code) {
