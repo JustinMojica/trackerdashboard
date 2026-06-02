@@ -5,8 +5,6 @@ on:
     branches: [main]
     paths:
       - 'codex-patches/trackerdashboard-ux13-16.patchpart.*'
-      - 'codex-patches/*.patch.gz.b64'
-      - 'codex-patches/*.patch.gz.b64part.*'
       - '.github/workflows/apply-codex-patch.yml'
 
 permissions:
@@ -21,14 +19,8 @@ jobs:
       - name: Apply Codex patch
         run: |
           shopt -s nullglob
-          b64_parts=(codex-patches/*.patch.gz.b64part.*)
-          gzip_patches=(codex-patches/*.patch.gz.b64)
           patch_parts=(codex-patches/trackerdashboard-ux13-16.patchpart.*)
-          if [ ${#b64_parts[@]} -gt 0 ]; then
-            cat codex-patches/*.patch.gz.b64part.* | base64 -d | gzip -dc > /tmp/trackerdashboard-codex.patch
-          elif [ ${#gzip_patches[@]} -gt 0 ]; then
-            base64 -d "${gzip_patches[0]}" | gzip -dc > /tmp/trackerdashboard-codex.patch
-          elif [ ${#patch_parts[@]} -gt 0 ]; then
+          if [ ${#patch_parts[@]} -gt 0 ]; then
             cat codex-patches/trackerdashboard-ux13-16.patchpart.* > /tmp/trackerdashboard-codex.patch
             python - <<'PY'
           from pathlib import Path
@@ -43,7 +35,7 @@ jobs:
             exit 1
           fi
           git apply --whitespace=fix /tmp/trackerdashboard-codex.patch
-          rm -f codex-patches/trackerdashboard-ux13-16.patchpart.* codex-patches/*.patch.gz.b64 codex-patches/*.patch.gz.b64part.*
+          rm -f codex-patches/trackerdashboard-ux13-16.patchpart.*
           rmdir codex-patches 2>/dev/null || true
           git config user.name "codex-app"
           git config user.email "codex-app@users.noreply.github.com"
