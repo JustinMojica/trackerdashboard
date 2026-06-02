@@ -19,6 +19,15 @@ const distDir = resolve(rootDir, "dist");
 const oauthStates = new Map();
 const cookieName = "tracker_session";
 const oauthCookieName = "tracker_oauth_state";
+const sessionSecretMinLength = 32;
+const weakSessionSecrets = new Set([
+  "dev",
+  "development",
+  "secret",
+  "password",
+  "changeme",
+  "test",
+]);
 
 loadLocalEnvironment();
 
@@ -139,7 +148,7 @@ function accessConfigStatus(request) {
     MICROSOFT_CLIENT_ID: config.clientId,
     MICROSOFT_CLIENT_SECRET: config.clientSecret,
     MICROSOFT_MAIL_FROM: config.mailFrom,
-    TRACKER_SESSION_SECRET: config.sessionSecret,
+    TRACKER_SESSION_SECRET: hasValidSessionSecret(config.sessionSecret) ? config.sessionSecret : "",
     TRACKER_ALLOWED_EMAIL_DOMAINS: config.allowedDomains.join(","),
     TRACKER_ADMIN_EMAILS: config.adminEmails.join(","),
   })) {
@@ -188,6 +197,16 @@ function hasConfiguredValue(value) {
     "yourcompany.com",
     "your.email@yourcompany.com",
   ].includes(normalized);
+}
+
+function hasValidSessionSecret(value) {
+  const secret = String(value ?? "").trim();
+  const normalized = secret.toLowerCase();
+  return (
+    hasConfiguredValue(secret) &&
+    secret.length >= sessionSecretMinLength &&
+    !weakSessionSecrets.has(normalized)
+  );
 }
 
 async function currentAccessState(request) {
@@ -905,6 +924,9 @@ function clearSession(response) {
 function signedCookie(name, value, maxAge) {
   const payload = base64Url(Buffer.from(JSON.stringify(value)));
   const signature = sign(payload);
+  if (!signature) {
+    throw new Error("TRACKER_SESSION_SECRET must be a strong, non-placeholder value.");
+  }
   return `${name}=${payload}.${signature}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`;
 }
 
@@ -917,7 +939,8 @@ function readSignedCookie(request, name) {
   const raw = cookies[name];
   if (!raw) return null;
   const [payload, signature] = raw.split(".");
-  if (!payload || !signature || sign(payload) !== signature) return null;
+  const expectedSignature = payload ? sign(payload) : null;
+  if (!payload || !signature || !expectedSignature || expectedSignature !== signature) return null;
   try {
     return JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
   } catch {
@@ -926,7 +949,8 @@ function readSignedCookie(request, name) {
 }
 
 function sign(value) {
-  return base64Url(createHmac("sha256", config.sessionSecret || "dev").update(value).digest());
+  if (!hasValidSessionSecret(config.sessionSecret)) return null;
+  return base64Url(createHmac("sha256", config.sessionSecret).update(value).digest());
 }
 
 function hashCode(email, code) {
