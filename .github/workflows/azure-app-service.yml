@@ -12,7 +12,7 @@ env:
 
 jobs:
   build-and-deploy:
-    if: ${{ github.event_name == 'workflow_dispatch' || vars.ENABLE_AZURE_DEPLOY == 'true' }}
+    if: ${{ github.ref == 'refs/heads/main' && vars.ENABLE_AZURE_DEPLOY == 'true' }}
     runs-on: ubuntu-latest
 
     steps:
