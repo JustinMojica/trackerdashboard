@@ -8,6 +8,13 @@ other sensitive configuration values.
 
 ### Added
 
+- Added an operating system command center combining workflow gates, SLA
+  escalation, role consoles, draft queue, reporting export, and an AI-ready
+  assistant brief.
+- Added per-project workflow controls for stage gates, document/quote/close-out
+  gates, SLA signals, SharePoint workspace folder planning, and top draft copy.
+- Added an operations report export with blockers, next actions, SLA signals,
+  draft queue, and workspace folders for each visible assignment.
 - Added live deployment metadata support for GitHub Actions deployments.
 - Added admin health reporting for runtime configuration source, Node version,
   public host, and deployment commit metadata.

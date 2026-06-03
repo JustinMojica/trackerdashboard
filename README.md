@@ -259,6 +259,8 @@ Important operational requirement:
 - Role-based visibility: Admin, Audit Manager, Auditor, Finance, Read Only.
 - Guided project intake with required-field checks.
 - Assignment dashboard, Today queue, workload, cycle-time reporting, filters, Kanban/table views.
+- Operating system command center for workflow gates, SLA escalation, role consoles, draft queue, and AI-ready assistant brief.
+- Per-project workflow controls for stage gates, workspace folder planning, and communication draft review.
 - Document readiness workflow and broker follow-up actions.
 - Finance update path for invoice/payment records.
 - Activity timeline and admin activity review.

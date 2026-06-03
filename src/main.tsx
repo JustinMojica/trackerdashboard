@@ -207,6 +207,40 @@ type CommunicationTemplate = {
   body: (project: AuditProject) => string;
 };
 
+type WorkflowGate = {
+  label: string;
+  status: "Ready" | "Blocked" | "Watch";
+  detail: string;
+};
+
+type SlaSignal = {
+  level: "Critical" | "Warning" | "Normal";
+  label: string;
+  detail: string;
+};
+
+type OperationsDraft = {
+  id: string;
+  projectId: string;
+  assignmentNumber: string;
+  auditEntity: string;
+  templateId: string;
+  label: string;
+  kind: CommunicationTemplate["kind"];
+  priority: "High" | "Medium" | "Low";
+  reason: string;
+  subject: string;
+  body: string;
+};
+
+type OperationsBrief = {
+  summary: string;
+  risks: string[];
+  actions: string[];
+  managerFocus: string[];
+  aiPrompt: string;
+};
+
 export const stages: Stage[] = [
   "Intake",
   "Registration",
@@ -1428,6 +1462,245 @@ const communicationTemplates: CommunicationTemplate[] = [
   },
 ];
 
+function nextStage(project: AuditProject) {
+  const index = stages.indexOf(project.currentStage);
+  return index >= 0 ? stages[index + 1] : undefined;
+}
+
+function daysSince(dateValue: string) {
+  if (!dateValue) return Number.POSITIVE_INFINITY;
+  const parsed = new Date(`${dateValue}T12:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return Number.POSITIVE_INFINITY;
+  return Math.floor((today.getTime() - parsed.getTime()) / 86400000);
+}
+
+function workflowGates(project: AuditProject): WorkflowGate[] {
+  const target = nextStage(project);
+  const stageMoveBlocker = target ? canMoveToStage(project, target) : "";
+  const readiness = documentReadiness(project);
+  return [
+    {
+      label: "Stage gate",
+      status: stageMoveBlocker ? "Blocked" : target ? "Ready" : "Watch",
+      detail: stageMoveBlocker || (target ? `Ready to move toward ${target}.` : "Project is at the final stage."),
+    },
+    {
+      label: "Document gate",
+      status: readiness.percent === 100 ? "Ready" : readiness.percent >= 60 ? "Watch" : "Blocked",
+      detail:
+        readiness.percent === 100
+          ? "Required document readiness items are complete."
+          : `${readiness.percent}% ready; missing ${readiness.missingDocuments.join(", ") || "workflow completion"}.`,
+    },
+    {
+      label: "Quote gate",
+      status: project.quoteStatus === "Accepted" ? "Ready" : "Blocked",
+      detail:
+        project.quoteStatus === "Accepted"
+          ? "Quote is accepted."
+          : `Quote is ${project.quoteStatus.toLowerCase()}; scheduling should wait.`,
+    },
+    {
+      label: "Close-out gate",
+      status:
+        project.reportStatus === "Issued" &&
+        project.invoiceStatus === "Paid" &&
+        project.paymentReceived
+          ? "Ready"
+          : stages.indexOf(project.currentStage) >= stages.indexOf("Final Submission")
+            ? "Watch"
+            : "Ready",
+      detail:
+        stages.indexOf(project.currentStage) >= stages.indexOf("Final Submission")
+          ? `Report ${project.reportStatus.toLowerCase()}, invoice ${project.invoiceStatus.toLowerCase()}, payment ${project.paymentReceived ? "received" : "open"}.`
+          : "Close-out is not active yet.",
+    },
+  ];
+}
+
+function slaSignals(project: AuditProject): SlaSignal[] {
+  const signals: SlaSignal[] = [];
+  const dueIn = daysUntil(project.dueDate);
+  const staleDays = daysSince(project.lastUpdatedDate);
+  if (dueIn < 0) {
+    signals.push({
+      level: "Critical",
+      label: "Overdue",
+      detail: `${Math.abs(dueIn)} day${Math.abs(dueIn) === 1 ? "" : "s"} overdue.`,
+    });
+  } else if (dueIn <= 3) {
+    signals.push({
+      level: "Warning",
+      label: "Due soon",
+      detail: `Due in ${dueIn} day${dueIn === 1 ? "" : "s"}.`,
+    });
+  }
+  if (project.assignmentStatus === "Blocked" || computedBlockers(project).length > 0) {
+    signals.push({
+      level: "Critical",
+      label: "Blocked",
+      detail: computedBlockers(project).slice(0, 2).join("; ") || "Assignment is marked blocked.",
+    });
+  }
+  if (project.labels.includes("Waiting on Broker")) {
+    signals.push({
+      level: "Warning",
+      label: "Broker wait",
+      detail: project.brokerLastChasedDate
+        ? `Last chased ${project.brokerLastChasedDate}.`
+        : "Waiting on broker with no chase date.",
+    });
+  }
+  if (staleDays >= 7 && project.currentStage !== "Closed") {
+    signals.push({
+      level: "Warning",
+      label: "Stale update",
+      detail: `No update for ${staleDays} days.`,
+    });
+  }
+  return signals.length
+    ? signals
+    : [{ level: "Normal", label: "On track", detail: "No SLA exceptions detected." }];
+}
+
+function workspaceFolders(project: AuditProject) {
+  return [
+    "01 Quote",
+    "02 Planning",
+    "03 Broker Documents",
+    "04 File Selection",
+    "05 Testing",
+    "06 Findings",
+    "07 Report",
+    "08 Invoice",
+    "09 Closeout",
+  ].map((folder) => `${project.assignmentNumber || project.id}/${folder}`);
+}
+
+function recommendedDrafts(project: AuditProject): OperationsDraft[] {
+  const drafts: OperationsDraft[] = [];
+  const addDraft = (
+    templateId: string,
+    priority: OperationsDraft["priority"],
+    reason: string,
+  ) => {
+    const template = communicationTemplates.find((item) => item.id === templateId);
+    if (!template) return;
+    drafts.push({
+      id: `${project.id}-${template.id}`,
+      projectId: project.id,
+      assignmentNumber: project.assignmentNumber,
+      auditEntity: project.auditEntity,
+      templateId,
+      label: template.label,
+      kind: template.kind,
+      priority,
+      reason,
+      subject: template.subject(project),
+      body: template.body(project),
+    });
+  };
+  if (getMissingDocuments(project).length > 0 || project.documentRequestStatus !== "Complete") {
+    addDraft("document-request", "High", "Documents or request workflow are incomplete.");
+  }
+  if (project.preAuditQuestionnaireStatus !== "Complete") {
+    addDraft("pre-audit-questionnaire", "Medium", "Pre-audit questionnaire is not complete.");
+  }
+  if (project.quoteStatus !== "Accepted") {
+    addDraft("quote-email", "High", "Quote needs a client decision before scheduling.");
+  }
+  if (
+    stages.indexOf(project.currentStage) >= stages.indexOf("Findings") &&
+    !project.coverholderResponseReceivedDate
+  ) {
+    addDraft("findings-follow-up", "High", "Findings response is needed for wrap-up.");
+  }
+  if (
+    stages.indexOf(project.currentStage) >= stages.indexOf("Final Submission") ||
+    project.reportStatus === "Issued" ||
+    project.invoiceStatus !== "Not Started"
+  ) {
+    addDraft("invoice-note", "Medium", "Finance handoff or invoice status needs tracking.");
+  }
+  return drafts;
+}
+
+function operationsDraftQueue(projects: AuditProject[]) {
+  const priorityRank = { High: 0, Medium: 1, Low: 2 };
+  return projects
+    .filter((project) => project.currentStage !== "Closed")
+    .flatMap(recommendedDrafts)
+    .sort((a, b) => priorityRank[a.priority] - priorityRank[b.priority]);
+}
+
+function operationsBrief(projects: AuditProject[], user: PrototypeUser): OperationsBrief {
+  const openProjects = projects.filter((project) => project.currentStage !== "Closed");
+  const criticalProjects = openProjects.filter((project) =>
+    slaSignals(project).some((signal) => signal.level === "Critical"),
+  );
+  const draftQueue = operationsDraftQueue(openProjects);
+  const topRisks = criticalProjects.slice(0, 5).map(
+    (project) =>
+      `${project.assignmentNumber}: ${slaSignals(project)
+        .filter((signal) => signal.level === "Critical")
+        .map((signal) => signal.label)
+        .join(", ")}`,
+  );
+  const actions = openProjects
+    .flatMap((project) =>
+      recommendedNextSteps(project).slice(0, 2).map((step) => `${project.assignmentNumber}: ${step}`),
+    )
+    .slice(0, 7);
+  const managerFocus = [
+    `${criticalProjects.length} critical assignment${criticalProjects.length === 1 ? "" : "s"}`,
+    `${draftQueue.length} draft email/document action${draftQueue.length === 1 ? "" : "s"}`,
+    `${openProjects.filter((project) => project.quoteStatus !== "Accepted").length} quote decision${openProjects.filter((project) => project.quoteStatus !== "Accepted").length === 1 ? "" : "s"} open`,
+    `${openProjects.filter((project) => project.invoiceStatus !== "Paid" && stages.indexOf(project.currentStage) >= stages.indexOf("Invoice")).length} invoice follow-up${openProjects.filter((project) => project.invoiceStatus !== "Paid" && stages.indexOf(project.currentStage) >= stages.indexOf("Invoice")).length === 1 ? "" : "s"}`,
+  ];
+  return {
+    summary: `${user.role} console: ${openProjects.length} open, ${criticalProjects.length} critical, ${draftQueue.length} communication drafts ready for review.`,
+    risks: topRisks.length ? topRisks : ["No critical SLA risks in visible assignments."],
+    actions: actions.length ? actions : ["Create or import real assignments to populate the operating console."],
+    managerFocus,
+    aiPrompt: [
+      "Summarize these audit tracker priorities and recommend the next three actions.",
+      `User role: ${user.role}`,
+      `Open assignments: ${openProjects.length}`,
+      `Risks: ${topRisks.join(" | ") || "none"}`,
+      `Draft queue: ${draftQueue.slice(0, 5).map((draft) => `${draft.assignmentNumber} ${draft.label}`).join(" | ") || "none"}`,
+    ].join("\n"),
+  };
+}
+
+function buildOperationsReport(projects: AuditProject[], user: PrototypeUser) {
+  const rows = projects.map((project) => ({
+    assignmentNumber: project.assignmentNumber,
+    auditEntity: project.auditEntity,
+    currentStage: project.currentStage,
+    status: project.assignmentStatus,
+    dueDate: project.dueDate,
+    dueInDays: daysUntil(project.dueDate),
+    slaSignals: slaSignals(project).map((signal) => signal.label),
+    blockers: computedBlockers(project),
+    nextSteps: recommendedNextSteps(project),
+    drafts: recommendedDrafts(project).map((draft) => draft.label),
+    workspaceFolders: workspaceFolders(project),
+  }));
+  return {
+    exportedAt: new Date().toISOString(),
+    exportedBy: user.fullName,
+    role: user.role,
+    totals: {
+      projects: projects.length,
+      open: projects.filter((project) => project.currentStage !== "Closed").length,
+      critical: rows.filter((row) => row.slaSignals.includes("Overdue") || row.slaSignals.includes("Blocked")).length,
+      drafts: rows.reduce((sum, row) => sum + row.drafts.length, 0),
+    },
+    assistantBrief: operationsBrief(projects, user),
+    rows,
+  };
+}
+
 export function escapeCsv(value: string | number | boolean) {
   const text = String(value ?? "");
   return `"${text.replace(/"/g, '""')}"`;
@@ -1800,6 +2073,14 @@ function App() {
       signedInUser.fullName,
     );
     recordExport("Microsoft Lists package");
+  };
+
+  const handleExportOperationsReport = () => {
+    downloadJsonFile(
+      buildOperationsReport(visibleProjects, signedInUser),
+      `audit-operations-report-${new Date().toISOString().slice(0, 10)}.json`,
+    );
+    recordExport("Operations report");
   };
 
   const clearProjectData = () => {
@@ -2266,7 +2547,7 @@ function App() {
     <main>
       <header className="hero">
         <div>
-          <p className="eyebrow">Prototype login: {signedInUser.role}</p>
+          <p className="eyebrow">Signed in: {signedInUser.role}</p>
           <h1>Audit Assignment Tracker</h1>
           <p>
             Manage audit assignments from intake through final report, invoice,
@@ -2327,6 +2608,12 @@ function App() {
         />
       )}
       <Dashboard projects={visibleProjects} />
+      <OperationsCommandCenter
+        projects={visibleProjects}
+        currentUser={signedInUser}
+        onSelect={setSelectedId}
+        onExportReport={handleExportOperationsReport}
+      />
       <TodaysWork projects={visibleProjects} onSelect={setSelectedId} />
       <CycleTimeDashboard
         projects={visibleProjects}
@@ -3487,6 +3774,144 @@ function Dashboard({ projects }: { projects: AuditProject[] }) {
   );
 }
 
+function OperationsCommandCenter({
+  projects,
+  currentUser,
+  onSelect,
+  onExportReport,
+}: {
+  projects: AuditProject[];
+  currentUser: PrototypeUser;
+  onSelect: (id: string) => void;
+  onExportReport: () => void;
+}) {
+  const [copyMessage, setCopyMessage] = useState("");
+  const openProjects = projects.filter((project) => project.currentStage !== "Closed");
+  const criticalProjects = openProjects.filter((project) =>
+    slaSignals(project).some((signal) => signal.level === "Critical"),
+  );
+  const draftQueue = operationsDraftQueue(openProjects);
+  const brief = operationsBrief(projects, currentUser);
+  const roleCards = [
+    {
+      label: "Manager console",
+      value: criticalProjects.length,
+      detail: "Critical SLA or blocker items needing review.",
+    },
+    {
+      label: "Auditor console",
+      value: openProjects.filter((project) => projectHasAuditor(project, currentUser.fullName)).length,
+      detail: "Open assignments where you are lead or support.",
+    },
+    {
+      label: "Finance console",
+      value: openProjects.filter(
+        (project) =>
+          stages.indexOf(project.currentStage) >= stages.indexOf("Invoice") &&
+          project.invoiceStatus !== "Paid",
+      ).length,
+      detail: "Invoice-stage assignments still not paid.",
+    },
+    {
+      label: "Draft queue",
+      value: draftQueue.length,
+      detail: "Email or document drafts ready for manual review.",
+    },
+  ];
+
+  const copyPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(brief.aiPrompt);
+      setCopyMessage("Assistant brief copied.");
+    } catch {
+      setCopyMessage("Copy failed. Select the brief text manually.");
+    }
+  };
+
+  return (
+    <section className="panel operations-command">
+      <div className="section-title">
+        <div>
+          <p className="eyebrow dark">Operating system</p>
+          <h2>Workflow, SLA, automation, and reporting control</h2>
+          <span>{brief.summary}</span>
+        </div>
+        <div className="storage-actions">
+          <button type="button" className="secondary" onClick={copyPrompt}>
+            Copy assistant brief
+          </button>
+          <button type="button" onClick={onExportReport}>
+            Export ops report
+          </button>
+        </div>
+      </div>
+      {copyMessage && <p className="muted-note">{copyMessage}</p>}
+      <div className="ops-role-grid">
+        {roleCards.map((card) => (
+          <article key={card.label}>
+            <span>{card.label}</span>
+            <strong>{card.value}</strong>
+            <p>{card.detail}</p>
+          </article>
+        ))}
+      </div>
+      <div className="ops-grid">
+        <article>
+          <h3>SLA escalation</h3>
+          {criticalProjects.length === 0 ? (
+            <p className="muted-note">No critical visible assignments.</p>
+          ) : (
+            <div className="queue-list">
+              {criticalProjects.slice(0, 5).map((project) => (
+                <button
+                  type="button"
+                  className="queue-item"
+                  key={project.id}
+                  onClick={() => onSelect(project.id)}
+                >
+                  <strong>{project.assignmentNumber}</strong>
+                  <span>{project.auditEntity || project.clientCoverholderCode}</span>
+                  <small>{slaSignals(project).map((signal) => signal.label).join(", ")}</small>
+                </button>
+              ))}
+            </div>
+          )}
+        </article>
+        <article>
+          <h3>Email and document queue</h3>
+          {draftQueue.length === 0 ? (
+            <p className="muted-note">No draft actions needed for visible assignments.</p>
+          ) : (
+            <div className="draft-list">
+              {draftQueue.slice(0, 6).map((draft) => (
+                <button
+                  type="button"
+                  className="draft-item"
+                  key={draft.id}
+                  onClick={() => onSelect(draft.projectId)}
+                >
+                  <strong>{draft.label}</strong>
+                  <span>{draft.assignmentNumber} | {draft.priority}</span>
+                  <small>{draft.reason}</small>
+                </button>
+              ))}
+            </div>
+          )}
+        </article>
+        <article>
+          <h3>Assistant brief</h3>
+          <p>{brief.summary}</p>
+          <ul className="compact-list">
+            {brief.managerFocus.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </article>
+      </div>
+    </section>
+  );
+}
+
 function sortByUrgency(projects: AuditProject[]) {
   return projects
     .slice()
@@ -4296,6 +4721,7 @@ function ProjectDetail({
         onDocumentWorkflowAction={onDocumentWorkflowAction}
         canUpdateDocuments={canEdit}
       />
+      <WorkflowEnginePanel project={project} />
       <FinancePanel
         key={project.id}
         project={project}
@@ -4566,6 +4992,107 @@ function FinancePanel({
       >
         Save finance
       </button>
+    </article>
+  );
+}
+
+function WorkflowEnginePanel({ project }: { project: AuditProject }) {
+  const [copyMessage, setCopyMessage] = useState("");
+  const gates = workflowGates(project);
+  const signals = slaSignals(project);
+  const drafts = recommendedDrafts(project);
+  const folders = workspaceFolders(project);
+  const target = nextStage(project);
+
+  const copyWorkspacePlan = async () => {
+    try {
+      await navigator.clipboard.writeText(folders.join("\n"));
+      setCopyMessage("Workspace folder plan copied.");
+    } catch {
+      setCopyMessage("Copy failed. Select the folder list manually.");
+    }
+  };
+
+  const copyFirstDraft = async () => {
+    const firstDraft = drafts[0];
+    if (!firstDraft) return;
+    try {
+      await navigator.clipboard.writeText(
+        `Subject: ${firstDraft.subject}\n\n${firstDraft.body}`,
+      );
+      setCopyMessage(`${firstDraft.label} copied.`);
+    } catch {
+      setCopyMessage("Copy failed. Select the draft manually.");
+    }
+  };
+
+  return (
+    <article className="panel workflow-engine-panel">
+      <div className="section-title">
+        <div>
+          <p className="eyebrow dark">Workflow engine</p>
+          <h2>Controls and automation prep</h2>
+          <span>
+            {target
+              ? `Next stage target: ${target}`
+              : "This assignment is at the end of the workflow."}
+          </span>
+        </div>
+      </div>
+      <div className="workflow-gates">
+        {gates.map((gate) => (
+          <div className={`workflow-gate ${gate.status.toLowerCase()}`} key={gate.label}>
+            <span>{gate.status}</span>
+            <strong>{gate.label}</strong>
+            <p>{gate.detail}</p>
+          </div>
+        ))}
+      </div>
+      <div className="workflow-columns">
+        <div>
+          <h3>SLA signals</h3>
+          <ul className="compact-list">
+            {signals.map((signal) => (
+              <li key={`${signal.label}-${signal.detail}`}>
+                <strong>{signal.label}:</strong> {signal.detail}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <h3>Workspace plan</h3>
+          <ul className="compact-list">
+            {folders.slice(0, 5).map((folder) => (
+              <li key={folder}>{folder}</li>
+            ))}
+          </ul>
+          <button type="button" className="secondary" onClick={copyWorkspacePlan}>
+            Copy folder plan
+          </button>
+        </div>
+        <div>
+          <h3>Draft queue</h3>
+          {drafts.length === 0 ? (
+            <p className="muted-note">No draft action recommended.</p>
+          ) : (
+            <ul className="compact-list">
+              {drafts.slice(0, 4).map((draft) => (
+                <li key={draft.id}>
+                  <strong>{draft.label}:</strong> {draft.reason}
+                </li>
+              ))}
+            </ul>
+          )}
+          <button
+            type="button"
+            disabled={drafts.length === 0}
+            onClick={copyFirstDraft}
+          >
+            Copy top draft
+          </button>
+        </div>
+      </div>
+      {copyMessage && <p className="muted-note">{copyMessage}</p>}
     </article>
   );
 }

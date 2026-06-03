@@ -770,6 +770,69 @@ main {
 .summary-card.warning strong {
   color: #b46b00;
 }
+.operations-command {
+  display: grid;
+  gap: 1rem;
+}
+.ops-role-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+}
+.ops-role-grid article,
+.ops-grid article {
+  background: #f8fbff;
+  border: 1px solid #dfe7f2;
+  border-radius: 14px;
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.9rem;
+}
+.ops-role-grid span {
+  color: #66748a;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.ops-role-grid strong {
+  color: #172033;
+  font-size: 1.7rem;
+}
+.ops-role-grid p,
+.ops-grid p {
+  color: #53637a;
+  margin: 0;
+}
+.ops-grid {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+}
+.draft-list {
+  display: grid;
+  gap: 0.5rem;
+}
+.draft-item {
+  background: #fff;
+  border: 1px solid #dfe7f2;
+  color: #172033;
+  display: grid;
+  gap: 0.25rem;
+  justify-items: start;
+  padding: 0.7rem;
+  text-align: left;
+}
+.draft-item span,
+.draft-item small {
+  color: #66748a;
+}
+.compact-list {
+  color: #53637a;
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.25rem 0 0;
+  padding-left: 1rem;
+}
 .todays-work {
   background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
 }
@@ -1000,6 +1063,7 @@ textarea {
   grid-template-areas:
     "detail detail team"
     "detail detail documents"
+    "workflow workflow documents"
     "finance finance documents"
     "checklist comments templates"
     "trail trail trail";
@@ -1008,6 +1072,59 @@ textarea {
 .detail {
   grid-area: detail;
   min-height: 100%;
+}
+.workflow-engine-panel {
+  display: grid;
+  gap: 0.85rem;
+  grid-area: workflow;
+}
+.workflow-gates {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+}
+.workflow-gate {
+  background: #f8fbff;
+  border: 1px solid #dfe7f2;
+  border-radius: 14px;
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem;
+}
+.workflow-gate.ready {
+  background: #ecf8f1;
+  border-color: #aadbbc;
+}
+.workflow-gate.blocked {
+  background: #fff0ea;
+  border-color: #f0b59e;
+}
+.workflow-gate.watch {
+  background: #fff7e8;
+  border-color: #e9cb83;
+}
+.workflow-gate span {
+  color: #53637a;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.workflow-gate p {
+  color: #53637a;
+  margin: 0;
+}
+.workflow-columns {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+}
+.workflow-columns > div {
+  background: #f8fbff;
+  border: 1px solid #dfe7f2;
+  border-radius: 14px;
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.85rem;
 }
 .meta-grid {
   display: grid;
@@ -1407,6 +1524,7 @@ textarea {
   .detail,
   .team-panel,
   .document-workflow,
+  .workflow-engine-panel,
   .finance-panel,
   .checklist-panel,
   .comments-panel,
@@ -1424,7 +1542,11 @@ textarea {
   .user-admin-summary,
   .storage-config,
   .storage-list-id-grid,
-  .admin-activity-controls {
+  .admin-activity-controls,
+  .ops-role-grid,
+  .ops-grid,
+  .workflow-gates,
+  .workflow-columns {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .hero {
@@ -1459,7 +1581,11 @@ textarea {
   .access-request-card,
   .storage-config,
   .storage-list-id-grid,
-  .admin-activity-controls {
+  .admin-activity-controls,
+  .ops-role-grid,
+  .ops-grid,
+  .workflow-gates,
+  .workflow-columns {
     grid-template-columns: 1fr;
   }
   .modal-backdrop {
