@@ -12,6 +12,7 @@ The current app is no longer a browser-storage-only prototype. It has:
 - Server-backed project storage with optional Microsoft Lists persistence.
 - Microsoft Lists schema/export support for assignments, team members, comments, checklist items, status history, activity log, and tracker users.
 - GitHub Actions deployment to Azure App Service.
+- Admin health reporting for auth, Graph consent, runtime config source, storage mode, and live deployment metadata.
 
 ## Live Site
 
@@ -86,6 +87,17 @@ npm run build
 
 Current test coverage includes workflow logic, Microsoft Lists package generation, access-request rules, role/project permissions, and server security checks for weak or missing session secrets.
 
+## Change Log
+
+Production changes are tracked in:
+
+```text
+CHANGELOG.md
+```
+
+Git commit history remains the source of truth for code changes. `CHANGELOG.md`
+summarizes user-facing and operational changes without exposing secrets.
+
 ## Required Azure App Settings
 
 Set these in Azure App Service > Settings > Environment variables:
@@ -122,6 +134,17 @@ WEBSITE_NODE_DEFAULT_VERSION=22
 Use a long random value for `TRACKER_SESSION_SECRET`. Do not use `dev`, `secret`, `password`, or any placeholder value.
 
 Do not commit `server.env`, publish profiles, client secrets, or generated deployment artifacts.
+
+If Azure CLI or portal access is unavailable, the server can also read a
+persistent Azure data env file:
+
+```text
+$HOME/data/tracker-server.env
+```
+
+This fallback survives normal Zip Deploy updates better than a `server.env`
+file in `site/wwwroot`, but Azure App Service Environment variables are still
+the preferred long-term configuration source.
 
 ## Microsoft Entra Setup
 
@@ -162,6 +185,8 @@ GitHub Actions requires:
 - Variable: `ENABLE_AZURE_DEPLOY=true`
 
 The workflow runs on pushes to `main` only when `ENABLE_AZURE_DEPLOY=true`.
+Each deployment writes non-secret metadata to `server/deploy-info.json` so the
+admin health panel can show the live commit and deployment time.
 
 Manual deployment:
 
@@ -235,13 +260,11 @@ Important operational requirement:
 
 ## Recommended Next Steps
 
-1. Restore/verify Azure App Service environment variables so `/api/auth/config` returns configured.
-2. Regenerate the Azure publish profile and replace the GitHub secret.
-3. Let GitHub Actions deploy a clean successful run from `main`.
-4. Test the live sign-in flow with your account.
-5. Have one coworker request access, confirm the email code, and wait for admin approval.
-6. Enter real test assignments and validate the intake fields.
-7. Create the Microsoft Lists and move approval storage first.
-8. Move project storage to Microsoft Lists after the Audit Assignments list has `TrackerProjectJson`.
-9. Add Power Automate only after live records and activity logging are stable.
-
+1. Regenerate the Azure publish profile and replace the GitHub secret.
+2. Prefer Azure App Service Environment variables over Kudu env-file fallback once portal or CLI access is stable.
+3. Test the live sign-in flow with your account.
+4. Have one coworker request access, confirm the email code, and wait for admin approval.
+5. Enter real test assignments and validate the intake fields.
+6. Create the Microsoft Lists and move approval storage first.
+7. Move project storage to Microsoft Lists after the Audit Assignments list has `TrackerProjectJson`.
+8. Add Power Automate only after live records and activity logging are stable.

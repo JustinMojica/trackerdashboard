@@ -2704,6 +2704,10 @@ function SystemReadinessPanel({
     graphRoles.includes("Mail.Send") && graphRoles.includes("Sites.ReadWrite.All");
   const approvalStoreReady = Boolean(health?.approvalStore.durable);
   const projectStoreReady = Boolean(health?.projectStore?.durable);
+  const configSource = health?.runtime.configSource ?? "Waiting for server check";
+  const deployCommit = health?.deployment.commit
+    ? health.deployment.commit.slice(0, 7)
+    : "Not reported";
   return (
     <section className="panel readiness-panel">
       <div className="section-title">
@@ -2763,7 +2767,32 @@ function SystemReadinessPanel({
             "Projects save on the app server until Microsoft Lists is configured."
           }
         />
+        <ReadinessCard
+          label="Runtime config source"
+          ready={Boolean(health?.runtime.persistentDataEnvLoaded || health?.runtime.appSettingKeyCount)}
+          detail={
+            health
+              ? `${configSource}. ${health.runtime.appSettingKeyCount} app setting keys, ${health.runtime.localFileKeyCount} local-file keys.`
+              : "Waiting for server check"
+          }
+        />
+        <ReadinessCard
+          label="Live deployment"
+          ready={Boolean(health?.deployment.commit || health?.server.publicOrigin)}
+          detail={
+            health?.deployment.deployedAt
+              ? `${deployCommit} deployed ${formatDateTime(health.deployment.deployedAt)}`
+              : `${deployCommit}. Public origin: ${health?.server.publicOrigin || "not checked"}`
+          }
+        />
       </div>
+      {health && (
+        <div className="runtime-summary">
+          <span>Health checked {formatDateTime(health.generatedAt)}</span>
+          <span>Node {health.runtime.nodeVersion}</span>
+          <span>{health.runtime.websiteHostname || health.server.publicOrigin}</span>
+        </div>
+      )}
       {health && (
         <div className="readiness-next">
           <strong>Next required actions</strong>
@@ -2831,12 +2860,48 @@ function CentralStoragePanel({
       health?.sharePoint.trackerUsersListIdConfigured,
   );
   const projectStoreReady = Boolean(health?.projectStore?.durable);
+  const durableRuntimeConfig = Boolean(
+    health?.runtime.appSettingKeyCount || health?.runtime.persistentDataEnvLoaded,
+  );
   const detailRows =
     packagePreview.rows.auditTeamMembers.length +
     packagePreview.rows.auditComments.length +
     packagePreview.rows.auditChecklistItems.length +
     packagePreview.rows.auditStatusHistory.length +
     packagePreview.rows.auditActivityLog.length;
+  const migrationSteps = [
+    {
+      label: "1. Secure sign-in",
+      ready: Boolean(health?.server.configured),
+      detail: "Microsoft OAuth and signed server sessions control tracker access.",
+    },
+    {
+      label: "2. Durable runtime config",
+      ready: durableRuntimeConfig,
+      detail:
+        health?.runtime.configSource ||
+        "Move secrets to Azure App Service settings or the persistent Azure data env file.",
+    },
+    {
+      label: "3. Approval storage",
+      ready: trackerUsersReady,
+      detail: trackerUsersReady
+        ? "Tracker Users list identifiers are configured."
+        : "Create/configure the Tracker Users Microsoft List before switching approvals.",
+    },
+    {
+      label: "4. Project storage",
+      ready: projectStoreReady,
+      detail: projectStoreReady
+        ? "Audit Assignments list is the active project store."
+        : "Create/configure the Audit Assignments Microsoft List before switching projects.",
+    },
+    {
+      label: "5. Activity log",
+      ready: detailRows > 0,
+      detail: "Status history, comments, checklist rows, and activity events are export-ready.",
+    },
+  ];
   const listGroups = [
     {
       label: "Core project records",
@@ -2938,18 +3003,12 @@ function CentralStoragePanel({
         </span>
       </div>
       <div className="storage-roadmap">
-        <div>
-          <strong>Current production behavior</strong>
-          <span>Microsoft OAuth controls sign-in, admin approval controls tracker access, and shared projects save on the server.</span>
-        </div>
-        <div>
-          <strong>Next configuration move</strong>
-          <span>Point approval and project storage to Microsoft Lists after both list IDs are ready.</span>
-        </div>
-        <div>
-          <strong>Next engineering move</strong>
-          <span>Use the activity log to review who changed real records after coworker testing starts.</span>
-        </div>
+        {migrationSteps.map((step) => (
+          <div key={step.label} className={step.ready ? "ready" : ""}>
+            <strong>{step.label}</strong>
+            <span>{step.detail}</span>
+          </div>
+        ))}
       </div>
       <div className="storage-schema-groups" aria-label="Microsoft Lists schema">
         {listGroups.map((group) => (

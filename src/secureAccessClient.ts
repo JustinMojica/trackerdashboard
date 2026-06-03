@@ -61,6 +61,22 @@ export type SecureAccessState = {
 
 export type SecureSystemHealth = {
   generatedAt: string;
+  deployment: {
+    source: string;
+    commit: string;
+    branch: string;
+    deployedAt: string;
+    workflowRun: string;
+  };
+  runtime: {
+    nodeVersion: string;
+    websiteHostname: string;
+    configSource: string;
+    appSettingKeyCount: number;
+    localFileKeyCount: number;
+    persistentDataEnvLoaded: boolean;
+    loadedEnvFileCount: number;
+  };
   server: {
     configured: boolean;
     missing: string[];

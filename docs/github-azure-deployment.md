@@ -14,6 +14,11 @@ Add this repository variable after the secret is ready:
 
 The workflow also supports manual runs from **Actions > Deploy Azure App Service > Run workflow**, but production deployments only run when the selected ref is `main` and `ENABLE_AZURE_DEPLOY=true`.
 
+Every successful workflow writes non-secret deployment metadata to
+`server/deploy-info.json` before the Azure deploy step. The admin health panel
+uses this file to show the live commit, branch, deployment time, and workflow
+run ID.
+
 ## Azure App Service Settings
 
 Keep these app settings configured in Azure:
@@ -38,6 +43,23 @@ Keep these app settings configured in Azure:
 
 Use `TRACKER_PROJECT_STORE=local` until the Audit Assignments Microsoft List has the `TrackerProjectJson` column and the list ID is configured.
 
+## Runtime Config Fallback
+
+Azure App Service Environment variables are the preferred configuration source.
+If Azure portal or Azure CLI access is temporarily unavailable, the server can
+also load a persistent Kudu data env file:
+
+```text
+$HOME/data/tracker-server.env
+```
+
+This file should contain the same `KEY=value` entries as `server.env`, but it
+must never be committed to GitHub. It is safer than placing `server.env` in
+`site/wwwroot` because normal Zip Deploy updates can replace the app root.
+
+The admin health panel reports whether live config is coming from Azure App
+Service settings, the persistent Azure data env file, or a local env file.
+
 ## Verification
 
 After deployment, check:
@@ -51,6 +73,11 @@ The homepage can return `200` while sign-in is still unavailable. The auth confi
 
 If `/api/auth/config` lists missing values, restore those values in Azure App Service > Settings > Environment variables, then restart the app.
 
+For admin-only production readiness details, sign in as an Admin and use the
+Security and rollout health panel. It checks auth config, Graph app token,
+Graph consent roles, approval storage, project storage, runtime config source,
+and deployment metadata.
+
 ## Troubleshooting
 
 GitHub Actions deploy failure:
@@ -63,6 +90,7 @@ Azure site loads but sign-in fails:
 
 - Open `/api/auth/config`.
 - Add any missing settings shown there to the Azure App Service environment variables.
+- If Azure setting access is blocked, upload the same settings to `$HOME/data/tracker-server.env` through Kudu and restart the App Service.
 - Confirm the Entra redirect URI matches the live callback URL.
 - Restart the App Service.
 

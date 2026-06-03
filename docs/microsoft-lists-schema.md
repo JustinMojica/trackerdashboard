@@ -1,6 +1,6 @@
 # Microsoft Lists Storage Schema
 
-This is the target central-storage structure for the audit assignment tracker. The app can still run from browser storage, but Admin and Audit Manager users can also configure a Microsoft Lists connection for live Graph test, sync, and load actions. The exported Microsoft Lists package still contains the list schemas, Graph-style list creation payloads, and seed rows.
+This is the target central-storage structure for the audit assignment tracker. The live app now uses the backend server for Microsoft sign-in, approval records, and shared project storage. Microsoft Lists is the next durable storage target for approvals, project records, reporting rows, and the activity ledger. The exported Microsoft Lists package contains the list schemas, Graph-style list creation payloads, and seed rows.
 
 ## Target Lists
 
@@ -14,26 +14,27 @@ This is the target central-storage structure for the audit assignment tracker. T
 | Audit Activity Log | Append-only accountability log | `TrackerEventId`, `TrackerAssignmentId`, `OccurredAt`, `EventType`, `ActorName`, `Summary`, `Detail`, previous/new values |
 | Tracker Users | Prototype role map and account access gate | `TrackerUsername`, `FullName`, `Email`, `Role`, `PermissionGroup`, `Active`, `EmailVerified`, `AccessRequestStatus`, `DefaultVisibility`, `RequestedAt`, `ApprovedAt`, `ApprovedBy`, `RejectionReason`, `VerificationCodeHash`, `VerificationSentAt` |
 
-## Live Connection Mode
+## Live Storage Mode
 
-The live connection panel stores the SharePoint site ID, list IDs, Microsoft Entra application client ID, and tenant value in browser storage. Microsoft Graph access tokens come from MSAL Browser and are session-only in React state.
+The live storage settings are server-side environment values. Do not store SharePoint list IDs, client secrets, or tenant configuration in browser storage for production.
 
 The Microsoft Entra app registration needs:
 
-- Platform type: Single-page application.
-- Redirect URI: the app origin used for testing, such as `http://127.0.0.1:5173`.
-- Delegated Graph permissions for browser sync: `User.Read` and `Sites.ReadWrite.All`.
-- Application Graph permissions for the secure backend: `Mail.Send` for verification email and `Sites.ReadWrite.All` when `Tracker Users` is stored in Microsoft Lists.
+- Platform type: Web.
+- Redirect URI: `https://mosaic-audit-tracker-live.azurewebsites.net/api/auth/callback`.
+- Local redirect URI for development: `http://localhost:8787/api/auth/callback`.
+- Application Graph permissions for the secure backend: `Mail.Send` for verification email and `Sites.ReadWrite.All` for Microsoft Lists storage.
 - Admin consent if the tenant requires consent for SharePoint list read/write scopes.
 
 Current supported live actions:
 
 - Sign in with Microsoft.
-- Refresh the Microsoft Graph token.
-- Sign out of the Microsoft session.
-- Test the configured SharePoint site and Audit Assignments list.
-- Push the current migration package to configured Microsoft Lists.
-- Load assignment rows from the configured Audit Assignments list into the browser prototype.
+- Request tracker access.
+- Send and verify email codes.
+- Approve or reject users from the admin panel.
+- Save shared project records on the app server.
+- Export the Microsoft Lists migration package.
+- Switch approval and project storage to Microsoft Lists after the site/list IDs are configured.
 
 The secure account gate now uses the backend server for Microsoft OAuth, Graph email verification codes, signed HTTP-only sessions, and admin approval endpoints. A new user starts with Microsoft-hosted sign-in, requests access with that Microsoft identity, receives a verification code by email, confirms the code in the tracker, and then waits for an Admin user to approve the profile. The backend can persist approval records in `server/data/access-users.json` for local testing or in the `Tracker Users` Microsoft List when `TRACKER_USER_STORE=microsoft-lists`, `TRACKER_USERS_SITE_ID`, and `TRACKER_USERS_LIST_ID` are configured.
 
@@ -67,16 +68,16 @@ Each activity row should include:
 
 ## Implementation Order
 
-1. Create the lists from the exported `graphListCreateRequests`.
-2. Import `Audit Assignments` first.
-3. Import child rows in this order: team members, checklist items, comments, status history, activity log.
-4. Import or configure `Tracker Users` for prototype testing; replace app-local roles with Microsoft 365 groups before production.
-5. Validate that each child row has a matching `TrackerAssignmentId`.
-6. Connect the app to Microsoft Graph after the list structure is approved.
-7. Validate the Microsoft Entra sign-in with a real tenant app registration.
-8. Move backend approval records from local server JSON into Microsoft Lists or Dataverse.
-9. Switch backend project storage to `TRACKER_PROJECT_STORE=microsoft-lists` after `TrackerProjectJson` is present on the Audit Assignments list.
-10. Add a setup health check that tests Microsoft OAuth, Graph email delivery, approval storage, and project storage.
+1. Confirm live Microsoft sign-in and admin approval work with real Mosaic accounts.
+2. Create the lists from the exported `graphListCreateRequests`.
+3. Import `Audit Assignments` first.
+4. Import child rows in this order: team members, checklist items, comments, status history, activity log.
+5. Configure `Tracker Users` with the approved-account schema.
+6. Validate that each child row has a matching `TrackerAssignmentId`.
+7. Set `TRACKER_USERS_SITE_ID` and `TRACKER_USERS_LIST_ID`.
+8. Switch backend approval records to `TRACKER_USER_STORE=microsoft-lists`.
+9. Set `TRACKER_PROJECTS_SITE_ID` and `TRACKER_PROJECTS_LIST_ID` after `TrackerProjectJson` exists on the Audit Assignments list.
+10. Switch backend project storage to `TRACKER_PROJECT_STORE=microsoft-lists`.
 11. Add Power Automate flows only after live list writes and activity-log entries are stable.
 
 ## Why This Split Matters

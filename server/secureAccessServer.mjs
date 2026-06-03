@@ -16,6 +16,7 @@ const dataDir = resolve(rootDir, "server", "data");
 const usersFile = resolve(dataDir, "access-users.json");
 const projectsFile = resolve(dataDir, "audit-projects.json");
 const distDir = resolve(rootDir, "dist");
+const deployInfoFile = resolve(rootDir, "server", "deploy-info.json");
 const oauthStates = new Map();
 const cookieName = "tracker_session";
 const oauthCookieName = "tracker_oauth_state";
@@ -29,7 +30,7 @@ const weakSessionSecrets = new Set([
   "test",
 ]);
 
-loadLocalEnvironment();
+const localEnvironment = loadLocalEnvironment();
 
 const inferredPublicOrigin = process.env.WEBSITE_HOSTNAME
   ? `https://${process.env.WEBSITE_HOSTNAME}`
@@ -192,9 +193,19 @@ function sendSetupRequired(request, response) {
 }
 
 function loadLocalEnvironment() {
-  for (const filename of [".env", ".env.local", "server.env"]) {
-    const envPath = resolve(rootDir, filename);
+  const candidates = [
+    resolve(rootDir, ".env"),
+    resolve(rootDir, ".env.local"),
+    resolve(rootDir, "server.env"),
+  ];
+  if (process.env.HOME) {
+    candidates.push(resolve(process.env.HOME, "data", "tracker-server.env"));
+  }
+  const loadedFiles = [];
+  const keysFromLocalFiles = new Set();
+  for (const envPath of candidates) {
     if (!existsSync(envPath)) continue;
+    loadedFiles.push(envPath);
     const contents = readFileSync(envPath, "utf8");
     for (const rawLine of contents.split(/\r?\n/)) {
       const line = rawLine.trim();
@@ -209,9 +220,16 @@ function loadLocalEnvironment() {
       ) {
         value = value.slice(1, -1);
       }
-      if (process.env[key] === undefined) process.env[key] = value;
+      if (process.env[key] === undefined) {
+        process.env[key] = value;
+        keysFromLocalFiles.add(key);
+      }
     }
   }
+  return {
+    loadedFiles,
+    keysFromLocalFiles,
+  };
 }
 
 function hasConfiguredValue(value) {
@@ -545,6 +563,8 @@ async function systemHealth(request, response) {
   if (!admin) return;
   const setup = accessConfigStatus(request);
   const graphApp = await graphAppHealth();
+  const runtime = runtimeHealth();
+  const deployment = deploymentInfo();
   const approvalStore = {
     mode: userStoreStatus.mode,
     configured: userStoreStatus.configured,
@@ -574,6 +594,8 @@ async function systemHealth(request, response) {
   };
   return sendJson(request, response, 200, {
     generatedAt: new Date().toISOString(),
+    deployment,
+    runtime,
     server: {
       configured: setup.configured,
       missing: setup.missing,
@@ -602,8 +624,75 @@ async function systemHealth(request, response) {
       graphApp,
       approvalStore,
       projectStoreHealth,
+      runtime,
     ),
   });
+}
+
+function deploymentInfo() {
+  if (!existsSync(deployInfoFile)) {
+    return {
+      source: "local",
+      commit: "",
+      branch: "",
+      deployedAt: "",
+      workflowRun: "",
+    };
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(deployInfoFile, "utf8"));
+    return {
+      source: String(parsed.source || "github-actions"),
+      commit: String(parsed.commit || ""),
+      branch: String(parsed.branch || ""),
+      deployedAt: String(parsed.deployedAt || ""),
+      workflowRun: String(parsed.workflowRun || ""),
+    };
+  } catch {
+    return {
+      source: "unknown",
+      commit: "",
+      branch: "",
+      deployedAt: "",
+      workflowRun: "",
+    };
+  }
+}
+
+function runtimeHealth() {
+  const requiredKeys = [
+    "MICROSOFT_TENANT_ID",
+    "MICROSOFT_CLIENT_ID",
+    "MICROSOFT_CLIENT_SECRET",
+    "MICROSOFT_MAIL_FROM",
+    "TRACKER_SESSION_SECRET",
+    "TRACKER_ALLOWED_EMAIL_DOMAINS",
+    "TRACKER_ADMIN_EMAILS",
+  ];
+  const localFileKeyCount = requiredKeys.filter((key) =>
+    localEnvironment.keysFromLocalFiles.has(key),
+  ).length;
+  const appSettingKeyCount = requiredKeys.filter(
+    (key) =>
+      process.env[key] !== undefined && !localEnvironment.keysFromLocalFiles.has(key),
+  ).length;
+  const persistentDataEnvLoaded = localEnvironment.loadedFiles.some((file) =>
+    normalize(file).endsWith(normalize("data/tracker-server.env")),
+  );
+  return {
+    nodeVersion: process.version,
+    websiteHostname: process.env.WEBSITE_HOSTNAME || "",
+    configSource:
+      localFileKeyCount === 0
+        ? "Azure App Service environment variables"
+        : persistentDataEnvLoaded
+          ? "Persistent Azure data env file"
+          : "Local env file",
+    appSettingKeyCount,
+    localFileKeyCount,
+    persistentDataEnvLoaded,
+    loadedEnvFileCount: localEnvironment.loadedFiles.length,
+  };
 }
 
 async function graphAppHealth() {
@@ -641,7 +730,13 @@ async function graphAppHealth() {
   }
 }
 
-function healthRecommendations(setup, graphApp, approvalStore, projectStoreHealth) {
+function healthRecommendations(
+  setup,
+  graphApp,
+  approvalStore,
+  projectStoreHealth,
+  runtime,
+) {
   const recommendations = [];
   if (!setup.configured) {
     recommendations.push(`Complete missing server configuration: ${setup.missing.join(", ")}.`);
@@ -653,6 +748,11 @@ function healthRecommendations(setup, graphApp, approvalStore, projectStoreHealt
   }
   if (!graphApp.tokenAvailable) {
     recommendations.push("Verify the Microsoft client secret is current and has not expired.");
+  }
+  if (runtime.localFileKeyCount > 0) {
+    recommendations.push(
+      "Prefer Azure App Service Environment variables once portal or CLI access is available.",
+    );
   }
   if (!approvalStore.durable) {
     recommendations.push(
