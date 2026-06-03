@@ -80,6 +80,26 @@ Each activity row should include:
 10. Switch backend project storage to `TRACKER_PROJECT_STORE=microsoft-lists`.
 11. Add Power Automate flows only after live list writes and activity-log entries are stable.
 
+## Root Site Setup Script
+
+The repo includes a setup script for creating or reusing the seven tracker lists
+on a chosen SharePoint site:
+
+```bash
+node scripts/configureRootMicrosoftLists.mjs --site-url=https://mosaicint.sharepoint.com
+```
+
+The script reads Microsoft Graph credentials from `server.env`, creates missing
+lists, seeds approved tracker users and project rows when local seed files
+exist, and writes non-secret setup output to:
+
+```text
+deploy-artifacts/microsoft-lists-root-site.json
+```
+
+`deploy-artifacts/` is intentionally ignored by Git because the output contains
+environment-specific SharePoint site and list IDs.
+
 ## Why This Split Matters
 
 The main assignment list stays clean for dashboards and reporting. High-volume details such as comments, checklist rows, stage movements, and audit events stay in child lists. That gives Power BI cleaner tables, gives Power Automate reliable trigger points, and gives managers a defensible change history without overloading the main assignment row.

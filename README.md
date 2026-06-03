@@ -218,11 +218,17 @@ Target lists:
 
 Current practical path:
 
-1. Keep `TRACKER_USER_STORE=local` and `TRACKER_PROJECT_STORE=local` while testing live access.
-2. Create the Microsoft Lists from the exported schema/package.
-3. Add the required list IDs in Azure app settings.
+1. Confirm live Microsoft sign-in and admin approval with real accounts.
+2. Create or reuse the Microsoft Lists from the exported schema/package.
+3. Add the required site/list IDs in Azure app settings or the persistent Azure data env file.
 4. Switch `TRACKER_USER_STORE=microsoft-lists`.
 5. Switch `TRACKER_PROJECT_STORE=microsoft-lists`.
+
+The live root-site setup can be created/reused with:
+
+```bash
+node scripts/configureRootMicrosoftLists.mjs --site-url=https://mosaicint.sharepoint.com
+```
 
 Schema details:
 

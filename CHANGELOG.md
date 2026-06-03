@@ -16,6 +16,8 @@ other sensitive configuration values.
 - Added support for a persistent Azure data env file at
   `$HOME/data/tracker-server.env`, so live auth configuration can survive future
   Zip Deploy updates when Azure CLI/App Settings access is unavailable.
+- Added a root SharePoint site setup script for creating/reusing the tracker
+  Microsoft Lists and seeding initial live storage rows.
 
 ### Changed
 
@@ -25,12 +27,16 @@ other sensitive configuration values.
 - Tightened the data foundation language around the five real migration phases:
   secure sign-in, durable runtime config, approval storage, project storage, and
   activity logging.
+- Created the seven Microsoft Lists on the root SharePoint site and switched
+  live approval/project storage to Microsoft Lists.
 
 ### Verified
 
 - The live secure access config endpoint reported `configured: true` with no
   missing values after the Kudu runtime configuration fix.
 - GitHub Actions deployment succeeded for commit `541dc4b`.
+- The live secure access config endpoint later reported both `userStore` and
+  `projectStore` as `microsoft-lists` with no missing values.
 
 ### Follow-Up
 
