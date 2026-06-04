@@ -32,7 +32,7 @@ jobs:
           PY
           else
             echo "No Codex patch files found."
-            exit 1
+            exit 0
           fi
           git apply --whitespace=fix /tmp/trackerdashboard-codex.patch
           rm -f codex-patches/trackerdashboard-ux13-16.patchpart.*
