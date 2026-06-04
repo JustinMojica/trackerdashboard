@@ -25,6 +25,8 @@ other sensitive configuration values.
   and into Admin.
 - Updated README production notes to reflect live Microsoft Lists storage and
   archive behavior.
+- Updated GitHub workflows from Node 20-based maintained actions to
+  `actions/checkout@v5` and `actions/setup-node@v5`.
 
 ### Verified
 
