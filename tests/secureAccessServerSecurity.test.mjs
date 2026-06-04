@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHmac } from "node:crypto";
 import { once } from "node:events";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import test from "node:test";
 
 function base64Url(input) {
@@ -74,6 +74,7 @@ async function withAccessUsersFile(users, run) {
   const usersFile = resolve(process.cwd(), "server", "data", "access-users.json");
   const hadFile = existsSync(usersFile);
   const prior = hadFile ? readFileSync(usersFile, "utf8") : "";
+  mkdirSync(dirname(usersFile), { recursive: true });
   writeFileSync(usersFile, JSON.stringify({ users }, null, 2));
   try {
     await run(usersFile);
