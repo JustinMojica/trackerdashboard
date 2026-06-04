@@ -4,6 +4,35 @@ This log tracks practical production changes to the Audit Assignment Tracker.
 It intentionally excludes secrets, publish-profile values, client secrets, and
 other sensitive configuration values.
 
+## 2026-06-04
+
+### Added
+
+- Added focused app navigation for Dashboard, Assignments, Command Center,
+  Reports, and Admin so daily work is no longer mixed with backend controls.
+- Added an Admin workspace with separate Users, Audit log, Storage & data, and
+  System health tabs.
+- Added non-destructive project archiving and restore. Archived projects are
+  hidden from active boards and workload counts but remain stored for history.
+- Added an Admin data-safety panel documenting that code deployments do not
+  clear Microsoft Lists project records.
+
+### Changed
+
+- Cleaned up the sign-in screen language so Microsoft sign-in, access request,
+  email code confirmation, and admin approval are clearer.
+- Moved low-frequency storage/export/system controls out of the main work area
+  and into Admin.
+- Updated README production notes to reflect live Microsoft Lists storage and
+  archive behavior.
+
+### Verified
+
+- `npm run check`
+- `npm test`
+- `npm run build`
+- Local dev server returned `200` on `http://127.0.0.1:5174/`.
+
 ## 2026-06-03
 
 ### Added

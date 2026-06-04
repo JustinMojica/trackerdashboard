@@ -147,6 +147,7 @@ export type AuditProject = {
   statusHistory: StatusHistoryItem[];
   comments: ProjectComment[];
   activityEvents: AuditActivityEvent[];
+  archived?: boolean;
 };
 
 type Filters = {
@@ -166,6 +167,8 @@ type FilterPreset = {
 };
 
 type ViewMode = "kanban" | "table";
+type AppSection = "dashboard" | "assignments" | "command" | "reports" | "admin";
+type AdminTab = "users" | "activity" | "storage" | "health";
 type UserRole = "Admin" | "Audit Manager" | "Auditor" | "Finance" | "Read Only";
 type ProjectVisibility =
   | "Role Default"
@@ -496,6 +499,7 @@ const blankProject = (): AuditProject => ({
   statusHistory: [],
   comments: [],
   activityEvents: [],
+  archived: false,
 });
 
 export const requiredDocuments = [
@@ -898,6 +902,7 @@ export function withProjectDefaults(project: AuditProject): AuditProject {
     checklistCompletions: project.checklistCompletions ?? {},
     comments: project.comments ?? [],
     activityEvents: project.activityEvents ?? [],
+    archived: project.archived ?? false,
   };
 }
 
@@ -1816,6 +1821,8 @@ function App() {
   const [filters, setFilters] = useState<Filters>(defaultFilters);
   const [message, setMessage] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
+  const [activeSection, setActiveSection] = useState<AppSection>("dashboard");
+  const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>("users");
   const [durationRange, setDurationRange] = useState<DurationRange>("ytd");
   const [lastExportedAt, setLastExportedAt] = useState(
     () => localStorage.getItem(lastExportStorageKey) ?? "",
@@ -1881,6 +1888,12 @@ function App() {
   }, [signedInUser?.role, signedInUser?.email]);
 
   useEffect(() => {
+    if (activeSection === "admin" && signedInUser?.role !== "Admin") {
+      setActiveSection("dashboard");
+    }
+  }, [activeSection, signedInUser?.role]);
+
+  useEffect(() => {
     if (!signedInUser) return;
     let cancelled = false;
     setProjectStorageLoading(true);
@@ -1891,9 +1904,9 @@ function App() {
         setProjects(normalizedProjects);
         saveProjects(normalizedProjects);
         setSelectedId((currentId) =>
-          normalizedProjects.some((project) => project.id === currentId)
+          normalizedProjects.some((project) => project.id === currentId && !project.archived)
             ? currentId
-            : normalizedProjects[0]?.id ?? "",
+            : normalizedProjects.find((project) => !project.archived)?.id ?? "",
         );
       })
       .catch((error) => {
@@ -1936,9 +1949,17 @@ function App() {
         : [],
     [projects, signedInUser],
   );
+  const activeVisibleProjects = useMemo(
+    () => visibleProjects.filter((project) => !project.archived),
+    [visibleProjects],
+  );
+  const archivedVisibleProjects = useMemo(
+    () => visibleProjects.filter((project) => project.archived),
+    [visibleProjects],
+  );
   const zeroLoadAuditors = auditors.filter(
     (auditor) =>
-      !visibleProjects.some(
+      !activeVisibleProjects.some(
         (project) =>
           projectHasAuditor(project, auditor) && project.currentStage !== "Closed",
       ),
@@ -1954,7 +1975,7 @@ function App() {
 
   const filteredProjects = useMemo(
     () =>
-      visibleProjects.filter((project) => {
+      activeVisibleProjects.filter((project) => {
         if (filters.auditor && !projectHasAuditor(project, filters.auditor))
           return false;
         if (filters.stage && project.currentStage !== filters.stage)
@@ -1982,11 +2003,11 @@ function App() {
           return false;
         return true;
       }),
-    [visibleProjects, filters],
+    [activeVisibleProjects, filters],
   );
   const selectedProject =
-    visibleProjects.find((project) => project.id === selectedId) ??
-    visibleProjects[0];
+    activeVisibleProjects.find((project) => project.id === selectedId) ??
+    activeVisibleProjects[0];
   const confirmAccountEmail = async (verificationCode: string) => {
     try {
       await verifySecureAccessCode(verificationCode);
@@ -2077,7 +2098,7 @@ function App() {
 
   const handleExportOperationsReport = () => {
     downloadJsonFile(
-      buildOperationsReport(visibleProjects, signedInUser),
+      buildOperationsReport(activeVisibleProjects, signedInUser),
       `audit-operations-report-${new Date().toISOString().slice(0, 10)}.json`,
     );
     recordExport("Operations report");
@@ -2201,6 +2222,66 @@ function App() {
     persist(projects.map((item) => (item.id === project.id ? updated : item)));
     setSelectedId(project.id);
     setMessage(`${project.assignmentNumber} moved to ${targetStage}.`);
+  };
+
+  const archiveProject = (project: AuditProject) => {
+    if (!canEditProject(signedInUser, project)) {
+      setMessage("Your role cannot archive this project.");
+      return;
+    }
+    if (project.currentStage !== "Closed") {
+      setMessage("Move the project to Closed before archiving it.");
+      return;
+    }
+    const updatedProject = withProjectDefaults({
+      ...project,
+      archived: true,
+      assignmentStatus: "Completed",
+      lastUpdatedDate: new Date().toISOString().slice(0, 10),
+      activityEvents: [
+        ...(project.activityEvents ?? []),
+        createActivityEvent(
+          "stage",
+          "Project archived",
+          "Closed project was hidden from active operational views without deleting the record.",
+          signedInUser.fullName,
+        ),
+      ],
+    });
+    persist(
+      projects.map((item) => (item.id === project.id ? updatedProject : item)),
+      { successMessage: `${project.assignmentNumber} archived.` },
+    );
+    setSelectedId(
+      activeVisibleProjects.find((item) => item.id !== project.id)?.id ?? "",
+    );
+  };
+
+  const restoreProject = (project: AuditProject) => {
+    if (!hasFullProjectAccess(signedInUser)) {
+      setMessage("Only admins and audit managers can restore archived projects.");
+      return;
+    }
+    const updatedProject = withProjectDefaults({
+      ...project,
+      archived: false,
+      lastUpdatedDate: new Date().toISOString().slice(0, 10),
+      activityEvents: [
+        ...(project.activityEvents ?? []),
+        createActivityEvent(
+          "stage",
+          "Project restored",
+          "Archived project was restored to active operational views.",
+          signedInUser.fullName,
+        ),
+      ],
+    });
+    persist(
+      projects.map((item) => (item.id === project.id ? updatedProject : item)),
+      { successMessage: `${project.assignmentNumber} restored.` },
+    );
+    setSelectedId(project.id);
+    setActiveSection("assignments");
   };
 
   const removeProjectLabel = (project: AuditProject, label: ProjectLabel) => {
@@ -2580,169 +2661,211 @@ function App() {
         </div>
       )}
 
-      <AccessBanner user={signedInUser} visibleCount={visibleProjects.length} />
-      {signedInUser.role === "Admin" && (
-        <>
-          <SystemReadinessPanel
-            health={systemHealth}
-            loading={systemHealthLoading}
-            onRefresh={() => void refreshSystemHealth()}
-          />
-          <UserManagementPanel
-            accessUsers={managedAccessUsers}
-            pendingRequests={pendingAccessRequests}
-            onSaveUser={saveManagedUser}
-            onApproveRequest={approveUserRequest}
-            onRejectRequest={rejectUserRequest}
-          />
-          <AdminActivityPanel projects={visibleProjects} />
-        </>
-      )}
-      {hasFullProjectAccess(signedInUser) && (
-        <CentralStoragePanel
-          projects={visibleProjects}
-          users={signedInUser.role === "Admin" ? approvedAccessUsers : []}
-          exportedBy={signedInUser.fullName}
-          health={systemHealth}
-          onExport={handleExportMicrosoftListsPackage}
-        />
-      )}
-      <Dashboard projects={visibleProjects} />
-      <OperationsCommandCenter
-        projects={visibleProjects}
+      <AccessBanner
+        user={signedInUser}
+        visibleCount={activeVisibleProjects.length}
+      />
+      <AppNavigation
+        activeSection={activeSection}
+        setActiveSection={setActiveSection}
         currentUser={signedInUser}
-        onSelect={setSelectedId}
-        onExportReport={handleExportOperationsReport}
+        activeCount={activeVisibleProjects.length}
+        archivedCount={archivedVisibleProjects.length}
+        pendingRequestCount={pendingAccessRequests.length}
       />
-      <TodaysWork projects={visibleProjects} onSelect={setSelectedId} />
-      <CycleTimeDashboard
-        projects={visibleProjects}
-        range={durationRange}
-        setRange={setDurationRange}
-      />
-      <WorkloadCounts
-        projects={visibleProjects}
-        auditors={auditors}
-        hiddenAuditors={effectiveHiddenWorkloadAuditors}
-        toggleAuditorHidden={(auditor) => {
-          const isZeroLoad = zeroLoadAuditors.includes(auditor);
-          if (effectiveHiddenWorkloadAuditors.includes(auditor)) {
-            setHiddenWorkloadAuditors((current) =>
-              current.filter((item) => item !== auditor),
-            );
-            if (isZeroLoad) {
-              setShownZeroLoadAuditors((current) =>
+
+      {activeSection === "dashboard" && (
+        <>
+          <Dashboard projects={activeVisibleProjects} />
+          <TodaysWork projects={activeVisibleProjects} onSelect={(id) => {
+            setSelectedId(id);
+            setActiveSection("assignments");
+          }} />
+          <WorkloadCounts
+            projects={activeVisibleProjects}
+            auditors={auditors}
+            hiddenAuditors={effectiveHiddenWorkloadAuditors}
+            toggleAuditorHidden={(auditor) => {
+              const isZeroLoad = zeroLoadAuditors.includes(auditor);
+              if (effectiveHiddenWorkloadAuditors.includes(auditor)) {
+                setHiddenWorkloadAuditors((current) =>
+                  current.filter((item) => item !== auditor),
+                );
+                if (isZeroLoad) {
+                  setShownZeroLoadAuditors((current) =>
+                    current.includes(auditor) ? current : [...current, auditor],
+                  );
+                }
+                return;
+              }
+              setHiddenWorkloadAuditors((current) =>
                 current.includes(auditor) ? current : [...current, auditor],
               );
-            }
-            return;
-          }
-          setHiddenWorkloadAuditors((current) =>
-            current.includes(auditor) ? current : [...current, auditor],
-          );
-          if (isZeroLoad) {
-            setShownZeroLoadAuditors((current) =>
-              current.filter((item) => item !== auditor),
-            );
-          }
-        }}
-        showAllAuditors={() => {
-          setHiddenWorkloadAuditors([]);
-          setShownZeroLoadAuditors(zeroLoadAuditors);
-        }}
-      />
-      <FiltersPanel
-        filters={filters}
-        setFilters={setFilters}
-        presets={filterPresetsForUser(signedInUser)}
-        auditors={
-          hasFullProjectAccess(signedInUser) || signedInUser.role === "Read Only"
-            ? auditors
-            : auditors.filter((auditor) =>
-                visibleProjects.some((project) => projectHasAuditor(project, auditor)),
-              )
-        }
-      />
-      <div className="view-toolbar panel">
-        <div className="segmented">
-          <button
-            className={viewMode === "kanban" ? "active" : "secondary"}
-            onClick={() => setViewMode("kanban")}
-          >
-            Kanban view
-          </button>
-          <button
-            className={viewMode === "table" ? "active" : "secondary"}
-            onClick={() => setViewMode("table")}
-          >
-            Audit table
-          </button>
-        </div>
-        <button onClick={handleExportCsv}>
-          Export filtered CSV
-        </button>
-        <button
-          className="secondary"
-          onClick={handleExportJson}
-        >
-          Export JSON backup
-        </button>
-        <button
-          className="secondary"
-          disabled={!hasFullProjectAccess(signedInUser)}
-          onClick={handleExportMicrosoftListsPackage}
-        >
-          Export Lists package
-        </button>
-        <span className="last-export">
-          Last export: {formatDateTime(lastExportedAt)}
-        </span>
-        <label className="import-control">
-          Import JSON
-          <input
-            type="file"
-            accept="application/json,.json"
-            disabled={!hasFullProjectAccess(signedInUser)}
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) queueProjectImport(file);
-              event.currentTarget.value = "";
+              if (isZeroLoad) {
+                setShownZeroLoadAuditors((current) =>
+                  current.filter((item) => item !== auditor),
+                );
+              }
+            }}
+            showAllAuditors={() => {
+              setHiddenWorkloadAuditors([]);
+              setShownZeroLoadAuditors(zeroLoadAuditors);
             }}
           />
-        </label>
-      </div>
-      {viewMode === "kanban" ? (
-        <Kanban
-          projects={filteredProjects}
-          selectedId={selectedProject?.id}
-          onSelect={setSelectedId}
-          onMove={moveProject}
-          onRemoveLabel={removeProjectLabel}
-          currentUser={signedInUser}
-        />
-      ) : (
-        <ProjectTable projects={filteredProjects} onSelect={setSelectedId} />
+        </>
       )}
-      {selectedProject && (
-        <ProjectDetail
-          project={selectedProject}
-          onEdit={() => setEditing(selectedProject)}
-          onMove={moveProject}
-          onRemoveLabel={removeProjectLabel}
-          onAddComment={addProjectComment}
-          onToggleChecklist={toggleChecklistItem}
-          onDocumentWorkflowAction={updateProjectDocumentWorkflow}
-          auditors={auditors}
-          onAddSupportingAuditor={addSupportingAuditor}
+
+      {activeSection === "assignments" && (
+        <>
+          <FiltersPanel
+            filters={filters}
+            setFilters={setFilters}
+            presets={filterPresetsForUser(signedInUser)}
+            auditors={
+              hasFullProjectAccess(signedInUser) || signedInUser.role === "Read Only"
+                ? auditors
+                : auditors.filter((auditor) =>
+                    activeVisibleProjects.some((project) => projectHasAuditor(project, auditor)),
+                  )
+            }
+          />
+          <div className="view-toolbar panel">
+            <div className="segmented">
+              <button
+                className={viewMode === "kanban" ? "active" : "secondary"}
+                onClick={() => setViewMode("kanban")}
+              >
+                Kanban view
+              </button>
+              <button
+                className={viewMode === "table" ? "active" : "secondary"}
+                onClick={() => setViewMode("table")}
+              >
+                Audit table
+              </button>
+            </div>
+            <button onClick={handleExportCsv}>Export filtered CSV</button>
+            <button className="secondary" onClick={handleExportJson}>
+              Export JSON backup
+            </button>
+            <span className="last-export">
+              Last export: {formatDateTime(lastExportedAt)}
+            </span>
+            <label className="import-control">
+              Import JSON
+              <input
+                type="file"
+                accept="application/json,.json"
+                disabled={!hasFullProjectAccess(signedInUser)}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) queueProjectImport(file);
+                  event.currentTarget.value = "";
+                }}
+              />
+            </label>
+          </div>
+          {viewMode === "kanban" ? (
+            <Kanban
+              projects={filteredProjects}
+              selectedId={selectedProject?.id}
+              onSelect={setSelectedId}
+              onMove={moveProject}
+              onRemoveLabel={removeProjectLabel}
+              currentUser={signedInUser}
+            />
+          ) : (
+            <ProjectTable projects={filteredProjects} onSelect={setSelectedId} />
+          )}
+          {selectedProject && (
+            <ProjectDetail
+              project={selectedProject}
+              onEdit={() => setEditing(selectedProject)}
+              onMove={moveProject}
+              onArchive={archiveProject}
+              onRemoveLabel={removeProjectLabel}
+              onAddComment={addProjectComment}
+              onToggleChecklist={toggleChecklistItem}
+              onDocumentWorkflowAction={updateProjectDocumentWorkflow}
+              auditors={auditors}
+              onAddSupportingAuditor={addSupportingAuditor}
+              currentUser={signedInUser}
+              onUpdateFinance={updateProjectFinance}
+            />
+          )}
+          {!selectedProject && (
+            <section className="panel empty-state">
+              <h2>{emptyProjectState(signedInUser).title}</h2>
+              <p>{emptyProjectState(signedInUser).message}</p>
+            </section>
+          )}
+        </>
+      )}
+
+      {activeSection === "command" && (
+        <OperationsCommandCenter
+          projects={activeVisibleProjects}
           currentUser={signedInUser}
-          onUpdateFinance={updateProjectFinance}
+          onSelect={(id) => {
+            setSelectedId(id);
+            setActiveSection("assignments");
+          }}
+          onExportReport={handleExportOperationsReport}
         />
       )}
-      {!selectedProject && (
-        <section className="panel empty-state">
-          <h2>{emptyProjectState(signedInUser).title}</h2>
-          <p>{emptyProjectState(signedInUser).message}</p>
-        </section>
+
+      {activeSection === "reports" && (
+        <>
+          <CycleTimeDashboard
+            projects={activeVisibleProjects}
+            range={durationRange}
+            setRange={setDurationRange}
+          />
+          <WorkloadCounts
+            projects={activeVisibleProjects}
+            auditors={auditors}
+            hiddenAuditors={effectiveHiddenWorkloadAuditors}
+            toggleAuditorHidden={(auditor) =>
+              setHiddenWorkloadAuditors((current) =>
+                current.includes(auditor)
+                  ? current.filter((item) => item !== auditor)
+                  : [...current, auditor],
+              )
+            }
+            showAllAuditors={() => {
+              setHiddenWorkloadAuditors([]);
+              setShownZeroLoadAuditors(zeroLoadAuditors);
+            }}
+          />
+          <ArchivedProjectsPanel
+            projects={archivedVisibleProjects}
+            canRestore={hasFullProjectAccess(signedInUser)}
+            onRestore={restoreProject}
+          />
+        </>
+      )}
+
+      {activeSection === "admin" && signedInUser.role === "Admin" && (
+        <AdminWorkspace
+          activeTab={activeAdminTab}
+          setActiveTab={setActiveAdminTab}
+          health={systemHealth}
+          loading={systemHealthLoading}
+          onRefreshHealth={() => void refreshSystemHealth()}
+          accessUsers={managedAccessUsers}
+          pendingRequests={pendingAccessRequests}
+          onSaveUser={saveManagedUser}
+          onApproveRequest={approveUserRequest}
+          onRejectRequest={rejectUserRequest}
+          projects={visibleProjects}
+          activeProjects={activeVisibleProjects}
+          archivedProjects={archivedVisibleProjects}
+          users={approvedAccessUsers}
+          exportedBy={signedInUser.fullName}
+          onExport={handleExportMicrosoftListsPackage}
+          onClearProjects={clearProjectData}
+          onRestoreProject={restoreProject}
+        />
       )}
       {editing && (
         <ProjectForm
@@ -2812,9 +2935,9 @@ function LoginScreen({
             </span>
             <strong>Microsoft</strong>
           </div>
-          <h1>Sign in</h1>
+          <h1>Audit Assignment Tracker</h1>
           <p className="microsoft-login-copy">
-            Use your company Microsoft account to access the Audit Assignment Tracker.
+            Secure access uses your company Microsoft account. New users must request access, confirm the email code, and wait for admin approval.
           </p>
           {loading && <div className="toast">Checking secure access...</div>}
           {access?.status === "setup-required" && (
@@ -2863,32 +2986,32 @@ function LoginScreen({
           <div className="microsoft-login-actions">
             {setupRequired ? (
               <button type="button" className="microsoft-primary-link is-disabled" disabled>
-                Next
+                Sign in with Microsoft
               </button>
             ) : (
               <a className="microsoft-primary-link" href={signInUrl}>
-                Next
+                Sign in with Microsoft
               </a>
             )}
             <button type="button" className="secondary" onClick={onRefresh}>
-              Back
+              Refresh
             </button>
           </div>
           <p className="microsoft-create-line">
-            No account?{" "}
+            Need access?{" "}
             {setupRequired ? (
-              <span className="disabled-link">Create one!</span>
+              <span className="disabled-link">Request account approval</span>
             ) : (
-              <a href={requestAccessUrl}>Create one!</a>
+              <a href={requestAccessUrl}>Request account approval</a>
             )}
           </p>
           {setupRequired ? (
             <span className="microsoft-help-link disabled-link">
-              Request tracker access
+              Start access request
             </span>
           ) : (
             <a className="microsoft-help-link" href={requestAccessUrl}>
-              Request tracker access
+              Start access request
             </a>
           )}
         </div>
@@ -2973,6 +3096,304 @@ function AccessBanner({
         </div>
       </div>
       <strong>{visibleProjectMessage(user)}</strong>
+    </section>
+  );
+}
+
+function AppNavigation({
+  activeSection,
+  setActiveSection,
+  currentUser,
+  activeCount,
+  archivedCount,
+  pendingRequestCount,
+}: {
+  activeSection: AppSection;
+  setActiveSection: (section: AppSection) => void;
+  currentUser: PrototypeUser;
+  activeCount: number;
+  archivedCount: number;
+  pendingRequestCount: number;
+}) {
+  const items: { id: AppSection; label: string; helper: string; count?: number }[] = [
+    {
+      id: "dashboard",
+      label: "Dashboard",
+      helper: "Daily workload, due items, and auditor capacity.",
+      count: activeCount,
+    },
+    {
+      id: "assignments",
+      label: "Assignments",
+      helper: "Working board, filters, project detail, and intake/edit forms.",
+      count: activeCount,
+    },
+    {
+      id: "command",
+      label: "Command center",
+      helper: "SLA escalation, draft queue, and manager operating brief.",
+    },
+    {
+      id: "reports",
+      label: "Reports",
+      helper: "Cycle time, workload reporting, and archived project access.",
+      count: archivedCount,
+    },
+  ];
+  if (currentUser.role === "Admin") {
+    items.push({
+      id: "admin",
+      label: "Admin",
+      helper: "User approvals, audit log, storage controls, and system health.",
+      count: pendingRequestCount,
+    });
+  }
+
+  return (
+    <nav className="app-nav panel" aria-label="Primary tracker sections">
+      {items.map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          className={activeSection === item.id ? "active" : "secondary"}
+          onClick={() => setActiveSection(item.id)}
+          title={item.helper}
+        >
+          <span>{item.label}</span>
+          {typeof item.count === "number" && <small>{item.count}</small>}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+function AdminWorkspace({
+  activeTab,
+  setActiveTab,
+  health,
+  loading,
+  onRefreshHealth,
+  accessUsers,
+  pendingRequests,
+  onSaveUser,
+  onApproveRequest,
+  onRejectRequest,
+  projects,
+  activeProjects,
+  archivedProjects,
+  users,
+  exportedBy,
+  onExport,
+  onClearProjects,
+  onRestoreProject,
+}: {
+  activeTab: AdminTab;
+  setActiveTab: (tab: AdminTab) => void;
+  health: SecureSystemHealth | null;
+  loading: boolean;
+  onRefreshHealth: () => void;
+  accessUsers: PrototypeUser[];
+  pendingRequests: PrototypeUser[];
+  onSaveUser: (email: string, user: PrototypeUser) => void;
+  onApproveRequest: (username: string, update: AccessApprovalUpdate) => void;
+  onRejectRequest: (username: string) => void;
+  projects: AuditProject[];
+  activeProjects: AuditProject[];
+  archivedProjects: AuditProject[];
+  users: PrototypeUser[];
+  exportedBy: string;
+  onExport: () => void;
+  onClearProjects: () => void;
+  onRestoreProject: (project: AuditProject) => void;
+}) {
+  const tabs: { id: AdminTab; label: string; helper: string }[] = [
+    {
+      id: "users",
+      label: "Users",
+      helper: "Approve Microsoft accounts and control role/visibility.",
+    },
+    {
+      id: "activity",
+      label: "Audit log",
+      helper: "Review recent project changes across visible records.",
+    },
+    {
+      id: "storage",
+      label: "Storage & data",
+      helper: "Microsoft Lists status, backups, archive, and destructive controls.",
+    },
+    {
+      id: "health",
+      label: "System health",
+      helper: "Security, Graph consent, runtime, and deployment checks.",
+    },
+  ];
+
+  return (
+    <section className="admin-workspace">
+      <div className="panel admin-intro">
+        <div>
+          <p className="eyebrow dark">Admin workspace</p>
+          <h2>Production controls</h2>
+          <span>
+            Daily controls are separated from backend checks. Storage actions below
+            preserve Microsoft Lists data unless you explicitly clear or replace records.
+          </span>
+        </div>
+      </div>
+      <div className="admin-layout">
+        <aside className="panel admin-tabs" aria-label="Admin sections">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={activeTab === tab.id ? "active" : "secondary"}
+              onClick={() => setActiveTab(tab.id)}
+              title={tab.helper}
+            >
+              <strong>{tab.label}</strong>
+              <span>{tab.helper}</span>
+            </button>
+          ))}
+        </aside>
+        <div className="admin-tab-content">
+          {activeTab === "users" && (
+            <UserManagementPanel
+              accessUsers={accessUsers}
+              pendingRequests={pendingRequests}
+              onSaveUser={onSaveUser}
+              onApproveRequest={onApproveRequest}
+              onRejectRequest={onRejectRequest}
+            />
+          )}
+          {activeTab === "activity" && <AdminActivityPanel projects={projects} />}
+          {activeTab === "storage" && (
+            <>
+              <DataSafetyPanel
+                activeCount={activeProjects.length}
+                archivedCount={archivedProjects.length}
+                onClearProjects={onClearProjects}
+              />
+              <CentralStoragePanel
+                projects={projects}
+                users={users}
+                exportedBy={exportedBy}
+                health={health}
+                onExport={onExport}
+              />
+              <ArchivedProjectsPanel
+                projects={archivedProjects}
+                canRestore
+                onRestore={onRestoreProject}
+              />
+            </>
+          )}
+          {activeTab === "health" && (
+            <SystemReadinessPanel
+              health={health}
+              loading={loading}
+              onRefresh={onRefreshHealth}
+            />
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DataSafetyPanel({
+  activeCount,
+  archivedCount,
+  onClearProjects,
+}: {
+  activeCount: number;
+  archivedCount: number;
+  onClearProjects: () => void;
+}) {
+  return (
+    <section className="panel data-safety-panel">
+      <div className="section-title">
+        <div>
+          <p className="eyebrow dark">Data safety</p>
+          <h2>Deployments do not clear projects</h2>
+          <span>
+            Code updates replace the app files only. Project records stay in Microsoft Lists
+            unless an admin intentionally clears data or imports a replacement JSON file.
+          </span>
+        </div>
+        <button type="button" className="danger-button" onClick={onClearProjects}>
+          Clear all projects
+        </button>
+      </div>
+      <div className="storage-stats">
+        <span>
+          <strong>{activeCount}</strong>
+          Active records
+        </span>
+        <span>
+          <strong>{archivedCount}</strong>
+          Archived records
+        </span>
+        <span>
+          <strong>0</strong>
+          Automatic deletes on deploy
+        </span>
+        <span>
+          <strong>2</strong>
+          Guarded destructive actions
+        </span>
+      </div>
+    </section>
+  );
+}
+
+function ArchivedProjectsPanel({
+  projects,
+  canRestore,
+  onRestore,
+}: {
+  projects: AuditProject[];
+  canRestore: boolean;
+  onRestore: (project: AuditProject) => void;
+}) {
+  return (
+    <section className="panel archived-projects">
+      <div className="section-title">
+        <div>
+          <p className="eyebrow dark">Archive</p>
+          <h2>Archived projects</h2>
+          <span>
+            Archived records are hidden from active boards and workload counts but
+            remain saved for history and reporting.
+          </span>
+        </div>
+        <span className="archive-count">{projects.length}</span>
+      </div>
+      {projects.length === 0 ? (
+        <p className="muted-note">No archived projects yet.</p>
+      ) : (
+        <div className="archive-list">
+          {projects.map((project) => (
+            <article key={project.id} className="archive-row">
+              <div>
+                <strong>{project.assignmentNumber}</strong>
+                <span>{project.auditEntity || project.clientCoverholderCode || "No entity"}</span>
+                <small>
+                  {project.currentStage} | {formatAuditTeam(project)} | updated {project.lastUpdatedDate}
+                </small>
+              </div>
+              <button
+                type="button"
+                className="secondary"
+                disabled={!canRestore}
+                onClick={() => onRestore(project)}
+              >
+                Restore
+              </button>
+            </article>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -4591,6 +5012,7 @@ function ProjectDetail({
   project,
   onEdit,
   onMove,
+  onArchive,
   onRemoveLabel,
   onAddComment,
   onToggleChecklist,
@@ -4603,6 +5025,7 @@ function ProjectDetail({
   project: AuditProject;
   onEdit: () => void;
   onMove: (project: AuditProject, stage: Stage) => void;
+  onArchive: (project: AuditProject) => void;
   onRemoveLabel: (project: AuditProject, label: ProjectLabel) => void;
   onAddComment: (project: AuditProject, comment: ProjectComment) => void;
   onToggleChecklist: (project: AuditProject, key: string) => void;
@@ -4629,7 +5052,18 @@ function ProjectDetail({
       <article className="panel detail">
         <div className="section-title">
           <h2>{project.assignmentNumber}</h2>
-          {canEdit && <button onClick={onEdit}>Edit project</button>}
+          <div className="detail-actions">
+            {canEdit && <button onClick={onEdit}>Edit project</button>}
+            {canEdit && project.currentStage === "Closed" && !project.archived && (
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => onArchive(project)}
+              >
+                Archive project
+              </button>
+            )}
+          </div>
         </div>
         {project.labels.length > 0 && (
           <div className="label-strip">

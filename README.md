@@ -9,7 +9,7 @@ The current app is no longer a browser-storage-only prototype. It has:
 - Admin approval before tracker access.
 - Signed HTTP-only session cookies.
 - Role-based project visibility and edit controls.
-- Server-backed project storage with optional Microsoft Lists persistence.
+- Server-backed project storage with Microsoft Lists persistence in production.
 - Microsoft Lists schema/export support for assignments, team members, comments, checklist items, status history, activity log, and tracker users.
 - GitHub Actions deployment to Azure App Service.
 - Admin health reporting for auth, Graph consent, runtime config source, storage mode, and live deployment metadata.
@@ -122,11 +122,11 @@ SCM_DO_BUILD_DURING_DEPLOYMENT
 WEBSITE_NODE_DEFAULT_VERSION
 ```
 
-Recommended current storage settings until Microsoft Lists IDs are ready:
+Current production storage settings:
 
 ```text
-TRACKER_USER_STORE=local
-TRACKER_PROJECT_STORE=local
+TRACKER_USER_STORE=microsoft-lists
+TRACKER_PROJECT_STORE=microsoft-lists
 SCM_DO_BUILD_DURING_DEPLOYMENT=true
 WEBSITE_NODE_DEFAULT_VERSION=22
 ```
@@ -216,13 +216,13 @@ Target lists:
 
 `Audit Assignments` includes `TrackerProjectJson`, allowing the backend to store the full project object in Microsoft Lists while still exposing clean reporting columns.
 
-Current practical path:
+Current production state:
 
-1. Confirm live Microsoft sign-in and admin approval with real accounts.
-2. Create or reuse the Microsoft Lists from the exported schema/package.
-3. Add the required site/list IDs in Azure app settings or the persistent Azure data env file.
-4. Switch `TRACKER_USER_STORE=microsoft-lists`.
-5. Switch `TRACKER_PROJECT_STORE=microsoft-lists`.
+- The root SharePoint site is used for the tracker Microsoft Lists.
+- `Tracker Users` stores approved Microsoft account profiles.
+- `Audit Assignments` stores project records, including the full `TrackerProjectJson` payload.
+- Code deployments update the application files only; they do not clear Microsoft Lists records.
+- Destructive data actions are limited to explicit admin clear/import replacement flows.
 
 The live root-site setup can be created/reused with:
 
@@ -259,6 +259,8 @@ Important operational requirement:
 - Role-based visibility: Admin, Audit Manager, Auditor, Finance, Read Only.
 - Guided project intake with required-field checks.
 - Assignment dashboard, Today queue, workload, cycle-time reporting, filters, Kanban/table views.
+- Focused app navigation for Dashboard, Assignments, Command Center, Reports, and Admin.
+- Project archive/restore so completed work can leave active views without being deleted.
 - Operating system command center for workflow gates, SLA escalation, role consoles, draft queue, and AI-ready assistant brief.
 - Per-project workflow controls for stage gates, workspace folder planning, and communication draft review.
 - Document readiness workflow and broker follow-up actions.
@@ -273,6 +275,5 @@ Important operational requirement:
 3. Test the live sign-in flow with your account.
 4. Have one coworker request access, confirm the email code, and wait for admin approval.
 5. Enter real test assignments and validate the intake fields.
-6. Create the Microsoft Lists and move approval storage first.
-7. Move project storage to Microsoft Lists after the Audit Assignments list has `TrackerProjectJson`.
-8. Add Power Automate only after live records and activity logging are stable.
+6. Validate archive/restore on a completed test assignment before production rollout.
+7. Add Power Automate only after live records and activity logging are stable.
