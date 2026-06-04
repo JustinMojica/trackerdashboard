@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHmac } from "node:crypto";
 import { once } from "node:events";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
+import { resolve } from "node:path";
 import test from "node:test";
 
 function base64Url(input) {
@@ -68,6 +70,22 @@ async function stopSecureServer(child) {
   await once(child, "exit");
 }
 
+async function withAccessUsersFile(users, run) {
+  const usersFile = resolve(process.cwd(), "server", "data", "access-users.json");
+  const hadFile = existsSync(usersFile);
+  const prior = hadFile ? readFileSync(usersFile, "utf8") : "";
+  writeFileSync(usersFile, JSON.stringify({ users }, null, 2));
+  try {
+    await run(usersFile);
+  } finally {
+    if (hadFile) {
+      writeFileSync(usersFile, prior);
+    } else {
+      rmSync(usersFile, { force: true });
+    }
+  }
+}
+
 test("admin APIs fail closed when the session secret is weak", async () => {
   const { baseUrl, child } = await startSecureServer({
     MICROSOFT_TENANT_ID: "11111111-1111-1111-1111-111111111111",
@@ -99,4 +117,64 @@ test("admin APIs fail closed when the session secret is weak", async () => {
   } finally {
     await stopSecureServer(child);
   }
+});
+
+test("configured admin email is repaired if stored as a non-admin", async () => {
+  await withAccessUsersFile(
+    [
+      {
+        email: "admin@example.com",
+        username: "admin",
+        fullName: "Admin User",
+        role: "Auditor",
+        permissionGroup: "Auditor",
+        active: false,
+        defaultVisibility: "Assigned Projects",
+        emailVerified: false,
+        accessRequestStatus: "Pending Approval",
+        requestedAt: "2026-06-01T00:00:00.000Z",
+        approvedAt: "",
+        approvedBy: "",
+        rejectionReason: "",
+        verificationCodeHash: "stale",
+        verificationSentAt: "2026-06-01T00:00:00.000Z",
+      },
+    ],
+    async () => {
+      const sessionSecret = "this-is-a-strong-test-session-secret-value";
+      const { baseUrl, child } = await startSecureServer({
+        MICROSOFT_TENANT_ID: "11111111-1111-1111-1111-111111111111",
+        MICROSOFT_CLIENT_ID: "22222222-2222-2222-2222-222222222222",
+        MICROSOFT_CLIENT_SECRET: "configured-client-secret",
+        MICROSOFT_MAIL_FROM: "tracker@example.com",
+        TRACKER_SESSION_SECRET: sessionSecret,
+        TRACKER_ALLOWED_EMAIL_DOMAINS: "example.com",
+        TRACKER_ADMIN_EMAILS: "admin@example.com",
+        TRACKER_USER_STORE: "local",
+        TRACKER_USERS_SITE_ID: "",
+        TRACKER_USERS_LIST_ID: "",
+      });
+
+      try {
+        const cookie = forgedSessionCookie(sessionSecret, {
+          email: "admin@example.com",
+          status: "approved",
+        });
+        const response = await fetch(`${baseUrl}/api/auth/me`, {
+          headers: { cookie },
+        });
+        const body = await response.json();
+
+        assert.equal(response.status, 200);
+        assert.equal(body.authenticated, true);
+        assert.equal(body.user.role, "Admin");
+        assert.equal(body.user.permissionGroup, "Admin");
+        assert.equal(body.user.active, true);
+        assert.equal(body.user.accessRequestStatus, "Approved");
+        assert.ok(Array.isArray(body.managedUsers));
+      } finally {
+        await stopSecureServer(child);
+      }
+    },
+  );
 });

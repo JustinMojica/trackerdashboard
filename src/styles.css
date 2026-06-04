@@ -170,6 +170,30 @@ main {
   color: #0067b8;
   text-decoration: none;
 }
+.request-access-link {
+  font-weight: 800;
+}
+.access-instructions {
+  background: #f8fbff;
+  border: 1px solid #dfe7f2;
+  border-radius: 12px;
+  color: #172033;
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.85rem 1rem;
+}
+.access-instructions ol {
+  color: #40506a;
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding-left: 1.25rem;
+}
+.access-warning {
+  background: #fff7e8;
+  border-color: #e9cb83;
+  color: #55420a;
+}
 .microsoft-login-actions {
   align-items: center;
   display: flex;

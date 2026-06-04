@@ -1012,14 +1012,16 @@ async function loadUserStore() {
 }
 
 async function saveUserStore(store) {
+  seedAdmins(store);
   await accessUserStore.save(store);
 }
 
 function seedAdmins(store) {
   let changed = false;
   for (const email of config.adminEmails) {
-    if (!email || findUser(store, email)) continue;
-    store.users.push({
+    if (!email) continue;
+    const existingUser = findUser(store, email);
+    const adminFields = {
       email,
       username: usernameFromEmail(email),
       fullName: nameFromEmail(email),
@@ -1035,10 +1037,57 @@ function seedAdmins(store) {
       rejectionReason: "",
       verificationCodeHash: "",
       verificationSentAt: "",
-    });
-    changed = true;
+    };
+    if (!existingUser) {
+      store.users.push(adminFields);
+      changed = true;
+      continue;
+    }
+    const nextUser = {
+      ...existingUser,
+      role: "Admin",
+      permissionGroup: "Admin",
+      active: true,
+      defaultVisibility: "All Projects",
+      emailVerified: true,
+      accessRequestStatus: "Approved",
+      approvedAt: existingUser.approvedAt || new Date().toISOString(),
+      approvedBy:
+        existingUser.role === "Admin" && existingUser.approvedBy
+          ? existingUser.approvedBy
+          : "server-config",
+      rejectionReason: "",
+      verificationCodeHash: "",
+      verificationSentAt: "",
+    };
+    if (JSON.stringify(existingUser) !== JSON.stringify(nextUser)) {
+      Object.assign(existingUser, nextUser);
+      changed = true;
+    }
   }
   return changed;
+}
+
+function isConfiguredAdminEmail(email) {
+  return config.adminEmails.includes(String(email || "").toLowerCase());
+}
+
+function enforceConfiguredAdmin(user) {
+  if (!user || !isConfiguredAdminEmail(user.email)) return user;
+  user.role = "Admin";
+  user.permissionGroup = "Admin";
+  user.active = true;
+  user.defaultVisibility = "All Projects";
+  user.emailVerified = true;
+  user.accessRequestStatus = "Approved";
+  user.rejectionReason = "";
+  user.verificationCodeHash = "";
+  user.verificationSentAt = "";
+  if (!user.approvedAt) user.approvedAt = new Date().toISOString();
+  if (!user.approvedBy || user.approvedBy !== "server-config") {
+    user.approvedBy = "server-config";
+  }
+  return user;
 }
 
 async function serveStatic(request, response, url) {

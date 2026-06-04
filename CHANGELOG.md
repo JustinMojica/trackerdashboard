@@ -27,6 +27,11 @@ other sensitive configuration values.
   archive behavior.
 - Updated GitHub workflows from Node 20-based maintained actions to
   `actions/checkout@v5` and `actions/setup-node@v5`.
+- Hardened configured admin handling so emails listed in
+  `TRACKER_ADMIN_EMAILS` are repaired back to active Admin access if their
+  Microsoft Lists user row is accidentally downgraded.
+- Made the sign-in screen clearer for unapproved users by emphasizing that they
+  must request account approval before normal sign-in.
 
 ### Verified
 
@@ -34,6 +39,7 @@ other sensitive configuration values.
 - `npm test`
 - `npm run build`
 - Local dev server returned `200` on `http://127.0.0.1:5174/`.
+- Added regression coverage for configured admin repair.
 
 ## 2026-06-03
 

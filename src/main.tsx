@@ -2912,6 +2912,7 @@ function LoginScreen({
   const signInUrl = access?.signInUrl ?? secureAccessUrl("/api/auth/start?mode=signin");
   const requestAccessUrl =
     access?.requestAccessUrl ?? secureAccessUrl("/api/auth/start?mode=request");
+  const authStatus = new URLSearchParams(window.location.search).get("auth");
   const pendingVerification =
     access?.status === "pending-verification" ||
     access?.user?.accessRequestStatus === "Pending Verification";
@@ -2921,6 +2922,10 @@ function LoginScreen({
   const rejected =
     access?.status === "rejected" || access?.user?.accessRequestStatus === "Rejected";
   const setupRequired = access?.status === "setup-required";
+  const requestRequired =
+    authStatus === "request-required" ||
+    access?.status === "request-required" ||
+    access?.status === "not-requested";
 
   return (
     <main className="login-shell">
@@ -2937,9 +2942,28 @@ function LoginScreen({
           </div>
           <h1>Audit Assignment Tracker</h1>
           <p className="microsoft-login-copy">
-            Secure access uses your company Microsoft account. New users must request access, confirm the email code, and wait for admin approval.
+            Secure access uses your company Microsoft account. If you are new or
+            unapproved, start with account approval before trying normal sign-in.
           </p>
+          <div className="access-instructions">
+            <strong>New users must do this first:</strong>
+            <ol>
+              <li>Click Request account approval.</li>
+              <li>Sign in with your company Microsoft account.</li>
+              <li>Enter the email verification code.</li>
+              <li>Wait for an admin to approve the profile.</li>
+            </ol>
+          </div>
           {loading && <div className="toast">Checking secure access...</div>}
+          {requestRequired && (
+            <div className="secure-setup-box access-warning">
+              <strong>Access request required.</strong>
+              <span>
+                This Microsoft account is not approved for the tracker yet.
+                Use Request account approval first, then confirm the emailed code.
+              </span>
+            </div>
+          )}
           {access?.status === "setup-required" && (
             <div className="secure-setup-box">
               <strong>Secure access server is not configured.</strong>
@@ -2998,11 +3022,13 @@ function LoginScreen({
             </button>
           </div>
           <p className="microsoft-create-line">
-            Need access?{" "}
+            New or unapproved user?{" "}
             {setupRequired ? (
               <span className="disabled-link">Request account approval</span>
             ) : (
-              <a href={requestAccessUrl}>Request account approval</a>
+              <a className="request-access-link" href={requestAccessUrl}>
+                Request account approval
+              </a>
             )}
           </p>
           {setupRequired ? (
