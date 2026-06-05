@@ -27,6 +27,8 @@ export type AssignmentStatus =
   | "Blocked"
   | "On Hold"
   | "Completed";
+export type AssignmentType = "DCA" | "CH" | "MGA" | "Company Contract";
+export type AuditStructure = "Solo" | "Coordinated";
 export type QuoteStatus =
   | "Not Started"
   | "Drafting"
@@ -44,6 +46,39 @@ export type AuditTeamMember = {
   role: AuditTeamRole;
 };
 
+export type ProjectDocumentKey =
+  | "baaReceived"
+  | "endorsementsReceived"
+  | "premiumBdxReceived"
+  | "dcaAgreementReceived"
+  | "claimsBdxReceived";
+
+export type RequiredDocument = {
+  key: ProjectDocumentKey;
+  label: string;
+};
+
+export type ManagingAgentWorkstream = {
+  id: string;
+  managingAgentName: string;
+  managingAgentCode: string;
+  leadAuditor: string;
+  supportAuditors: string[];
+  currentStage: Stage;
+  assignmentStatus: AssignmentStatus;
+  dueDate: string;
+  documentRequestStatus: ProgressStatus;
+  baaReceived: boolean;
+  endorsementsReceived: boolean;
+  premiumBdxReceived: boolean;
+  dcaAgreementReceived: boolean;
+  claimsBdxReceived: boolean;
+  blockers: string;
+  nextAction: string;
+  completed: boolean;
+  waived: boolean;
+};
+
 export type StatusHistoryItem = {
   changedAt: string;
   fromStage: Stage;
@@ -53,6 +88,10 @@ export type StatusHistoryItem = {
 export type DurationRange = "ytd" | "90d" | "7d";
 
 export type LogicProject = {
+  id?: string;
+  assignmentType?: AssignmentType;
+  auditStructure?: AuditStructure;
+  managingAgentWorkstreams?: ManagingAgentWorkstream[];
   assignedAuditor: string;
   auditTeam: AuditTeamMember[];
   currentStage: Stage;
@@ -61,6 +100,8 @@ export type LogicProject = {
   baaReceived: boolean;
   endorsementsReceived: boolean;
   premiumBdxReceived: boolean;
+  dcaAgreementReceived?: boolean;
+  claimsBdxReceived?: boolean;
   preAuditQuestionnaireStatus: ProgressStatus;
   documentRequestStatus: ProgressStatus;
   documentRequestDate: string;
@@ -90,10 +131,15 @@ export const stages: Stage[] = [
   "Closed",
 ];
 
-export const requiredDocuments = [
+export const requiredDocuments: readonly RequiredDocument[] = [
   { key: "baaReceived", label: "BAA received" },
   { key: "endorsementsReceived", label: "Endorsements received" },
   { key: "premiumBdxReceived", label: "Premium BDX received" },
+] as const;
+
+export const dcaRequiredDocuments: readonly RequiredDocument[] = [
+  { key: "dcaAgreementReceived", label: "DCA Agreement received" },
+  { key: "claimsBdxReceived", label: "Claims BDX received" },
 ] as const;
 
 export function normalizeAuditTeam(project: LogicProject): AuditTeamMember[] {
@@ -141,6 +187,102 @@ export function assignedAuditorNames(project: LogicProject) {
 
 export function projectHasAuditor(project: LogicProject, auditor: string) {
   return assignedAuditorNames(project).includes(auditor);
+}
+
+function isDcaProject(project: Pick<LogicProject, "assignmentType">) {
+  return project.assignmentType === "DCA";
+}
+
+export function requiredDocumentsForProject(
+  project: Pick<LogicProject, "assignmentType">,
+) {
+  return isDcaProject(project) ? dcaRequiredDocuments : requiredDocuments;
+}
+
+function defaultWorkstreamFromProject(project: LogicProject): ManagingAgentWorkstream {
+  const team = normalizeAuditTeam(project);
+  return {
+    id: `${project.id || "audit"}-ma-1`,
+    managingAgentName: "Primary workstream",
+    managingAgentCode: "",
+    leadAuditor: team.find((member) => member.role === "Lead Auditor")?.person ?? project.assignedAuditor,
+    supportAuditors: team
+      .filter((member) => member.role === "Supporting Auditor")
+      .map((member) => member.person),
+    currentStage: project.currentStage,
+    assignmentStatus: project.assignmentStatus,
+    dueDate: project.dueDate ?? "",
+    documentRequestStatus: project.documentRequestStatus,
+    baaReceived: project.baaReceived,
+    endorsementsReceived: project.endorsementsReceived,
+    premiumBdxReceived: project.premiumBdxReceived,
+    dcaAgreementReceived: project.dcaAgreementReceived ?? false,
+    claimsBdxReceived: project.claimsBdxReceived ?? false,
+    blockers: project.blockers,
+    nextAction: project.nextAction,
+    completed:
+      project.assignmentStatus === "Completed" || project.currentStage === "Closed",
+    waived: false,
+  };
+}
+
+export function normalizeManagingAgentWorkstreams(
+  project: LogicProject,
+): ManagingAgentWorkstream[] {
+  const source =
+    project.managingAgentWorkstreams?.length
+      ? project.managingAgentWorkstreams
+      : [defaultWorkstreamFromProject(project)];
+  const fallback = defaultWorkstreamFromProject(project);
+  return source.map((workstream, index) => ({
+    ...fallback,
+    ...workstream,
+    id: workstream.id || `${project.id || "audit"}-ma-${index + 1}`,
+    managingAgentName:
+      workstream.managingAgentName?.trim() || `Managing agent ${index + 1}`,
+    supportAuditors: workstream.supportAuditors ?? [],
+    completed:
+      workstream.completed ??
+      (workstream.assignmentStatus === "Completed" ||
+        workstream.currentStage === "Closed"),
+    waived: workstream.waived ?? false,
+  }));
+}
+
+function getMissingDocumentsForWorkstream(
+  project: LogicProject,
+  workstream: ManagingAgentWorkstream,
+) {
+  return requiredDocumentsForProject(project)
+    .filter((doc) => !workstream[doc.key])
+    .map((doc) => doc.label);
+}
+
+export function coordinatedWorkstreamSummary(project: LogicProject) {
+  const workstreams = normalizeManagingAgentWorkstreams(project);
+  const active = workstreams.filter(
+    (workstream) => !workstream.completed && !workstream.waived,
+  );
+  const blocked = active.filter(
+    (workstream) =>
+      workstream.assignmentStatus === "Blocked" ||
+      Boolean(workstream.blockers.trim()),
+  );
+  const missingDocs = active.filter(
+    (workstream) => getMissingDocumentsForWorkstream(project, workstream).length > 0,
+  );
+  const dueSoon = active.filter((workstream) => daysUntil(workstream.dueDate) <= 3);
+  return {
+    total: workstreams.length,
+    active: active.length,
+    complete: workstreams.filter((workstream) => workstream.completed).length,
+    waived: workstreams.filter((workstream) => workstream.waived).length,
+    blocked: blocked.length,
+    missingDocs: missingDocs.length,
+    dueSoon: dueSoon.length,
+    needsAttention: new Set([...blocked, ...missingDocs, ...dueSoon]).size,
+    allResolved: active.length === 0,
+  };
 }
 
 
@@ -193,13 +335,14 @@ function addUniqueLabel(labels: ProjectLabel[], label: ProjectLabel) {
 }
 
 export function getMissingDocuments(project: LogicProject) {
-  return requiredDocuments
+  return requiredDocumentsForProject(project)
     .filter((doc) => !project[doc.key])
     .map((doc) => doc.label);
 }
 
 export function computedBlockers(project: LogicProject) {
   const blockers: string[] = [...getMissingDocuments(project)];
+  const workstreamSummary = coordinatedWorkstreamSummary(project);
   if (
     stages.indexOf(project.currentStage) >= stages.indexOf("Quote") &&
     project.quoteStatus !== "Accepted"
@@ -208,9 +351,24 @@ export function computedBlockers(project: LogicProject) {
   }
   if (
     stages.indexOf(project.currentStage) >= stages.indexOf("File Selection") &&
+    project.assignmentType === "DCA" &&
+    !project.claimsBdxReceived
+  ) {
+    blockers.push("Claims BDX required before file selection");
+  }
+  if (
+    stages.indexOf(project.currentStage) >= stages.indexOf("File Selection") &&
+    project.assignmentType !== "DCA" &&
     !project.premiumBdxReceived
   ) {
     blockers.push("Premium BDX required before file selection");
+  }
+  if (project.auditStructure === "Coordinated" && workstreamSummary.needsAttention > 0) {
+    blockers.push(
+      `${workstreamSummary.needsAttention} managing agent workstream${
+        workstreamSummary.needsAttention === 1 ? "" : "s"
+      } need attention`,
+    );
   }
   if (
     stages.indexOf(project.currentStage) >= stages.indexOf("Findings") &&
@@ -234,6 +392,14 @@ export function canMoveToStage(project: LogicProject, targetStage: Stage) {
   }
   if (
     targetIndex >= stages.indexOf("File Selection") &&
+    project.assignmentType === "DCA" &&
+    !project.claimsBdxReceived
+  ) {
+    return "Claims BDX must be received before moving to File Selection.";
+  }
+  if (
+    targetIndex >= stages.indexOf("File Selection") &&
+    project.assignmentType !== "DCA" &&
     !project.premiumBdxReceived
   ) {
     return "Premium BDX must be received before moving to File Selection.";
@@ -335,13 +501,14 @@ export function recommendedNextSteps(
 }
 
 export function documentReadiness(project: LogicProject) {
-  const requiredComplete = requiredDocuments.filter((doc) => project[doc.key]).length;
+  const projectRequiredDocuments = requiredDocumentsForProject(project);
+  const requiredComplete = projectRequiredDocuments.filter((doc) => project[doc.key]).length;
   const workflowComplete = [
     project.preAuditQuestionnaireStatus === "Complete",
     project.documentRequestStatus === "Complete",
   ].filter(Boolean).length;
   const completeCount = requiredComplete + workflowComplete;
-  const totalCount = requiredDocuments.length + 2;
+  const totalCount = projectRequiredDocuments.length + 2;
   return {
     completeCount,
     totalCount,
@@ -396,9 +563,30 @@ export function applyDocumentWorkflowAction(
   }
   return {
     ...project,
-    baaReceived: true,
-    endorsementsReceived: true,
-    premiumBdxReceived: true,
+    baaReceived: isDcaProject(project) ? project.baaReceived : true,
+    endorsementsReceived: isDcaProject(project) ? project.endorsementsReceived : true,
+    premiumBdxReceived: isDcaProject(project) ? project.premiumBdxReceived : true,
+    dcaAgreementReceived: isDcaProject(project) ? true : project.dcaAgreementReceived,
+    claimsBdxReceived: isDcaProject(project) ? true : project.claimsBdxReceived,
+    managingAgentWorkstreams: normalizeManagingAgentWorkstreams(project).map(
+      (workstream) => ({
+        ...workstream,
+        baaReceived: isDcaProject(project) ? workstream.baaReceived : true,
+        endorsementsReceived: isDcaProject(project)
+          ? workstream.endorsementsReceived
+          : true,
+        premiumBdxReceived: isDcaProject(project)
+          ? workstream.premiumBdxReceived
+          : true,
+        dcaAgreementReceived: isDcaProject(project)
+          ? true
+          : workstream.dcaAgreementReceived,
+        claimsBdxReceived: isDcaProject(project)
+          ? true
+          : workstream.claimsBdxReceived,
+        documentRequestStatus: "Complete",
+      }),
+    ),
     preAuditQuestionnaireStatus: "Complete",
     documentRequestStatus: "Complete",
     labels: project.labels.filter((label) => label !== "Waiting on Broker"),

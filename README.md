@@ -11,6 +11,8 @@ The current app is no longer a browser-storage-only prototype. It has:
 - Role-based project visibility and edit controls.
 - Server-backed project storage with Microsoft Lists persistence in production.
 - Microsoft Lists schema/export support for assignments, team members, comments, checklist items, status history, activity log, and tracker users.
+- Solo and Coordinated audit structures, including multiple managing-agent workstreams under one parent audit card.
+- DCA-specific readiness tracking for DCA Agreement and Claims BDX requirements.
 - GitHub Actions deployment to Azure App Service.
 - Admin health reporting for auth, Graph consent, runtime config source, storage mode, and live deployment metadata.
 

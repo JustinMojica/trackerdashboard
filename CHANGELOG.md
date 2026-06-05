@@ -4,6 +4,31 @@ This log tracks practical production changes to the Audit Assignment Tracker.
 It intentionally excludes secrets, publish-profile values, client secrets, and
 other sensitive configuration values.
 
+## 2026-06-05
+
+### Added
+
+- Added Solo vs Coordinated audit structure support so one parent audit card can
+  track multiple managing-agent workstreams without duplicating Kanban cards.
+- Added managing-agent workstream rollups for active, complete, waived, blocked,
+  missing-document, and needs-attention counts.
+- Added DCA-specific document readiness: DCA Agreement and Claims BDX are now
+  the required readiness documents for DCA assignments.
+
+### Changed
+
+- Kept coordinated audits as one Kanban card with managing-agent summary chips
+  instead of creating separate cards per managing agent.
+- Updated project detail and intake/edit screens to show managing-agent
+  workstreams when an audit is Coordinated or DCA.
+- Prevented coordinated audits from being archived until all managing-agent
+  workstreams are complete or waived.
+
+### Verified
+
+- Added regression coverage for DCA document rules and ten-workstream
+  coordinated audit rollups.
+
 ## 2026-06-04
 
 ### Added

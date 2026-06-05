@@ -30,6 +30,7 @@ import "./styles.css";
 export type AssignmentSource = "Email" | "DAM";
 export type AssignmentType = "DCA" | "CH" | "MGA" | "Company Contract";
 export type AuditType = "Remote" | "Onsite";
+export type AuditStructure = "Solo" | "Coordinated";
 export type Stage =
   | "Intake"
   | "Registration"
@@ -105,6 +106,39 @@ export type AuditTeamMember = {
   role: AuditTeamRole;
 };
 
+export type ProjectDocumentKey =
+  | "baaReceived"
+  | "endorsementsReceived"
+  | "premiumBdxReceived"
+  | "dcaAgreementReceived"
+  | "claimsBdxReceived";
+
+export type RequiredDocument = {
+  key: ProjectDocumentKey;
+  label: string;
+};
+
+export type ManagingAgentWorkstream = {
+  id: string;
+  managingAgentName: string;
+  managingAgentCode: string;
+  leadAuditor: string;
+  supportAuditors: string[];
+  currentStage: Stage;
+  assignmentStatus: AssignmentStatus;
+  dueDate: string;
+  documentRequestStatus: ProgressStatus;
+  baaReceived: boolean;
+  endorsementsReceived: boolean;
+  premiumBdxReceived: boolean;
+  dcaAgreementReceived: boolean;
+  claimsBdxReceived: boolean;
+  blockers: string;
+  nextAction: string;
+  completed: boolean;
+  waived: boolean;
+};
+
 export type AuditProject = {
   id: string;
   assignmentNumber: string;
@@ -115,6 +149,8 @@ export type AuditProject = {
   broker: string;
   assignedAuditor: string;
   auditTeam: AuditTeamMember[];
+  auditStructure: AuditStructure;
+  managingAgentWorkstreams: ManagingAgentWorkstream[];
   currentStage: Stage;
   assignmentStatus: AssignmentStatus;
   quoteStatus: QuoteStatus;
@@ -125,6 +161,8 @@ export type AuditProject = {
   baaReceived: boolean;
   endorsementsReceived: boolean;
   premiumBdxReceived: boolean;
+  dcaAgreementReceived: boolean;
+  claimsBdxReceived: boolean;
   preAuditQuestionnaireStatus: ProgressStatus;
   documentRequestStatus: ProgressStatus;
   documentRequestDate: string;
@@ -295,6 +333,8 @@ const assignmentTypeOptions: AssignmentType[] = [
   "MGA",
   "Company Contract",
 ];
+
+const auditStructureOptions: AuditStructure[] = ["Solo", "Coordinated"];
 
 const assignmentStatusOptions: AssignmentStatus[] = [
   "New",
@@ -467,6 +507,8 @@ const blankProject = (): AuditProject => ({
   broker: "",
   assignedAuditor: "",
   auditTeam: [],
+  auditStructure: "Solo",
+  managingAgentWorkstreams: [],
   currentStage: "Intake",
   assignmentStatus: "New",
   quoteStatus: "Not Started",
@@ -477,6 +519,8 @@ const blankProject = (): AuditProject => ({
   baaReceived: false,
   endorsementsReceived: false,
   premiumBdxReceived: false,
+  dcaAgreementReceived: false,
+  claimsBdxReceived: false,
   preAuditQuestionnaireStatus: "Not Started",
   documentRequestStatus: "Not Started",
   documentRequestDate: "",
@@ -502,10 +546,15 @@ const blankProject = (): AuditProject => ({
   archived: false,
 });
 
-export const requiredDocuments = [
+export const requiredDocuments: readonly RequiredDocument[] = [
   { key: "baaReceived", label: "BAA received" },
   { key: "endorsementsReceived", label: "Endorsements received" },
   { key: "premiumBdxReceived", label: "Premium BDX received" },
+] as const;
+
+export const dcaRequiredDocuments: readonly RequiredDocument[] = [
+  { key: "dcaAgreementReceived", label: "DCA Agreement received" },
+  { key: "claimsBdxReceived", label: "Claims BDX received" },
 ] as const;
 
 const checklistByStage: Record<Stage, string[]> = {
@@ -643,6 +692,125 @@ function formatAuditTeam(project: AuditProject) {
 
 function auditTeamRole(project: AuditProject, auditor: string) {
   return normalizeAuditTeam(project).find((member) => member.person === auditor)?.role;
+}
+
+function isDcaProject(project: Pick<AuditProject, "assignmentType">) {
+  return project.assignmentType === "DCA";
+}
+
+export function requiredDocumentsForProject(
+  project: Pick<AuditProject, "assignmentType">,
+) {
+  return isDcaProject(project) ? dcaRequiredDocuments : requiredDocuments;
+}
+
+function defaultWorkstreamFromProject(project: AuditProject): ManagingAgentWorkstream {
+  const team = normalizeAuditTeam(project);
+  return {
+    id: `${project.id || `audit-${Date.now()}`}-ma-1`,
+    managingAgentName:
+      project.broker?.trim() ||
+      project.auditEntity?.trim() ||
+      (isDcaProject(project) ? "Managing agent" : "Primary workstream"),
+    managingAgentCode: project.clientCoverholderCode ?? "",
+    leadAuditor: primaryAuditor(project),
+    supportAuditors: team
+      .filter((member) => member.role === "Supporting Auditor")
+      .map((member) => member.person),
+    currentStage: project.currentStage ?? "Intake",
+    assignmentStatus: project.assignmentStatus ?? "New",
+    dueDate: project.dueDate ?? "",
+    documentRequestStatus: project.documentRequestStatus ?? "Not Started",
+    baaReceived: project.baaReceived ?? false,
+    endorsementsReceived: project.endorsementsReceived ?? false,
+    premiumBdxReceived: project.premiumBdxReceived ?? false,
+    dcaAgreementReceived: project.dcaAgreementReceived ?? false,
+    claimsBdxReceived: project.claimsBdxReceived ?? false,
+    blockers: project.blockers ?? "",
+    nextAction: project.nextAction ?? "",
+    completed:
+      project.assignmentStatus === "Completed" || project.currentStage === "Closed",
+    waived: false,
+  };
+}
+
+function normalizeManagingAgentWorkstreams(
+  project: AuditProject,
+): ManagingAgentWorkstream[] {
+  const source =
+    project.managingAgentWorkstreams?.length > 0
+      ? project.managingAgentWorkstreams
+      : [defaultWorkstreamFromProject(project)];
+  const fallback = defaultWorkstreamFromProject(project);
+  return source.map((workstream, index) => ({
+    ...fallback,
+    ...workstream,
+    id: workstream.id || `${project.id || `audit-${Date.now()}`}-ma-${index + 1}`,
+    managingAgentName:
+      workstream.managingAgentName?.trim() ||
+      (index === 0 ? fallback.managingAgentName : `Managing agent ${index + 1}`),
+    managingAgentCode: workstream.managingAgentCode ?? "",
+    leadAuditor: workstream.leadAuditor || fallback.leadAuditor,
+    supportAuditors: (workstream.supportAuditors ?? fallback.supportAuditors)
+      .filter((auditor) => auditor.trim())
+      .filter((auditor, itemIndex, list) => list.indexOf(auditor) === itemIndex),
+    currentStage: workstream.currentStage ?? fallback.currentStage,
+    assignmentStatus: workstream.assignmentStatus ?? fallback.assignmentStatus,
+    dueDate: workstream.dueDate ?? fallback.dueDate,
+    documentRequestStatus:
+      workstream.documentRequestStatus ?? fallback.documentRequestStatus,
+    baaReceived: workstream.baaReceived ?? fallback.baaReceived,
+    endorsementsReceived:
+      workstream.endorsementsReceived ?? fallback.endorsementsReceived,
+    premiumBdxReceived:
+      workstream.premiumBdxReceived ?? fallback.premiumBdxReceived,
+    dcaAgreementReceived:
+      workstream.dcaAgreementReceived ?? fallback.dcaAgreementReceived,
+    claimsBdxReceived: workstream.claimsBdxReceived ?? fallback.claimsBdxReceived,
+    blockers: workstream.blockers ?? "",
+    nextAction: workstream.nextAction ?? "",
+    completed:
+      workstream.completed ??
+      (workstream.assignmentStatus === "Completed" ||
+        workstream.currentStage === "Closed"),
+    waived: workstream.waived ?? false,
+  }));
+}
+
+function getMissingDocumentsForWorkstream(
+  project: AuditProject,
+  workstream: ManagingAgentWorkstream,
+) {
+  return requiredDocumentsForProject(project)
+    .filter((doc) => !workstream[doc.key])
+    .map((doc) => doc.label);
+}
+
+export function coordinatedWorkstreamSummary(project: AuditProject) {
+  const workstreams = normalizeManagingAgentWorkstreams(project);
+  const active = workstreams.filter(
+    (workstream) => !workstream.completed && !workstream.waived,
+  );
+  const blocked = active.filter(
+    (workstream) =>
+      workstream.assignmentStatus === "Blocked" ||
+      Boolean(workstream.blockers.trim()),
+  );
+  const missingDocs = active.filter(
+    (workstream) => getMissingDocumentsForWorkstream(project, workstream).length > 0,
+  );
+  const dueSoon = active.filter((workstream) => daysUntil(workstream.dueDate) <= 3);
+  return {
+    total: workstreams.length,
+    active: active.length,
+    complete: workstreams.filter((workstream) => workstream.completed).length,
+    waived: workstreams.filter((workstream) => workstream.waived).length,
+    blocked: blocked.length,
+    missingDocs: missingDocs.length,
+    dueSoon: dueSoon.length,
+    needsAttention: new Set([...blocked, ...missingDocs, ...dueSoon]).size,
+    allResolved: active.length === 0,
+  };
 }
 
 function hasFullProjectAccess(user: PrototypeUser) {
@@ -887,12 +1055,20 @@ function stageDurationMetrics(projects: AuditProject[], range: DurationRange) {
 
 export function withProjectDefaults(project: AuditProject): AuditProject {
   const auditTeam = normalizeAuditTeam(project);
-  return {
+  const auditStructure =
+    project.auditStructure ??
+    ((project.managingAgentWorkstreams?.length ?? 0) > 1
+      ? "Coordinated"
+      : "Solo");
+  const normalizedProject = {
     ...project,
     assignmentType: project.assignmentType ?? "CH",
     auditEntity: project.auditEntity ?? "",
     assignedAuditor: primaryAuditor({ ...project, auditTeam }),
     auditTeam,
+    auditStructure,
+    dcaAgreementReceived: project.dcaAgreementReceived ?? false,
+    claimsBdxReceived: project.claimsBdxReceived ?? false,
     paymentReceived:
       project.paymentReceived ?? project.invoiceStatus === "Paid",
     labels: project.labels ?? [],
@@ -903,6 +1079,11 @@ export function withProjectDefaults(project: AuditProject): AuditProject {
     comments: project.comments ?? [],
     activityEvents: project.activityEvents ?? [],
     archived: project.archived ?? false,
+  };
+  return {
+    ...normalizedProject,
+    managingAgentWorkstreams:
+      normalizeManagingAgentWorkstreams(normalizedProject),
   };
 }
 
@@ -1008,13 +1189,14 @@ function checklistKey(stage: Stage, item: string) {
 }
 
 export function getMissingDocuments(project: AuditProject) {
-  return requiredDocuments
+  return requiredDocumentsForProject(project)
     .filter((doc) => !project[doc.key])
     .map((doc) => doc.label);
 }
 
 export function computedBlockers(project: AuditProject) {
   const blockers: string[] = [...getMissingDocuments(project)];
+  const workstreamSummary = coordinatedWorkstreamSummary(project);
   if (
     stages.indexOf(project.currentStage) >= stages.indexOf("Quote") &&
     project.quoteStatus !== "Accepted"
@@ -1023,9 +1205,24 @@ export function computedBlockers(project: AuditProject) {
   }
   if (
     stages.indexOf(project.currentStage) >= stages.indexOf("File Selection") &&
+    isDcaProject(project) &&
+    !project.claimsBdxReceived
+  ) {
+    blockers.push("Claims BDX required before file selection");
+  }
+  if (
+    stages.indexOf(project.currentStage) >= stages.indexOf("File Selection") &&
+    !isDcaProject(project) &&
     !project.premiumBdxReceived
   ) {
     blockers.push("Premium BDX required before file selection");
+  }
+  if (project.auditStructure === "Coordinated" && workstreamSummary.needsAttention > 0) {
+    blockers.push(
+      `${workstreamSummary.needsAttention} managing agent workstream${
+        workstreamSummary.needsAttention === 1 ? "" : "s"
+      } need attention`,
+    );
   }
   if (
     stages.indexOf(project.currentStage) >= stages.indexOf("Findings") &&
@@ -1100,6 +1297,14 @@ export function canMoveToStage(project: AuditProject, targetStage: Stage) {
   }
   if (
     targetIndex >= stages.indexOf("File Selection") &&
+    project.assignmentType === "DCA" &&
+    !project.claimsBdxReceived
+  ) {
+    return "Claims BDX must be received before moving to File Selection.";
+  }
+  if (
+    targetIndex >= stages.indexOf("File Selection") &&
+    project.assignmentType !== "DCA" &&
     !project.premiumBdxReceived
   ) {
     return "Premium BDX must be received before moving to File Selection.";
@@ -1240,13 +1445,14 @@ function addUniqueLabel(labels: ProjectLabel[], label: ProjectLabel) {
 }
 
 export function documentReadiness(project: AuditProject) {
-  const requiredComplete = requiredDocuments.filter((doc) => project[doc.key]).length;
+  const projectRequiredDocuments = requiredDocumentsForProject(project);
+  const requiredComplete = projectRequiredDocuments.filter((doc) => project[doc.key]).length;
   const workflowComplete = [
     project.preAuditQuestionnaireStatus === "Complete",
     project.documentRequestStatus === "Complete",
   ].filter(Boolean).length;
   const completeCount = requiredComplete + workflowComplete;
-  const totalCount = requiredDocuments.length + 2;
+  const totalCount = projectRequiredDocuments.length + 2;
   return {
     completeCount,
     totalCount,
@@ -1302,9 +1508,30 @@ export function applyDocumentWorkflowAction(
   }
   return withProjectDefaults({
     ...project,
-    baaReceived: true,
-    endorsementsReceived: true,
-    premiumBdxReceived: true,
+    baaReceived: isDcaProject(project) ? project.baaReceived : true,
+    endorsementsReceived: isDcaProject(project) ? project.endorsementsReceived : true,
+    premiumBdxReceived: isDcaProject(project) ? project.premiumBdxReceived : true,
+    dcaAgreementReceived: isDcaProject(project) ? true : project.dcaAgreementReceived,
+    claimsBdxReceived: isDcaProject(project) ? true : project.claimsBdxReceived,
+    managingAgentWorkstreams: normalizeManagingAgentWorkstreams(project).map(
+      (workstream) => ({
+        ...workstream,
+        baaReceived: isDcaProject(project) ? workstream.baaReceived : true,
+        endorsementsReceived: isDcaProject(project)
+          ? workstream.endorsementsReceived
+          : true,
+        premiumBdxReceived: isDcaProject(project)
+          ? workstream.premiumBdxReceived
+          : true,
+        dcaAgreementReceived: isDcaProject(project)
+          ? true
+          : workstream.dcaAgreementReceived,
+        claimsBdxReceived: isDcaProject(project)
+          ? true
+          : workstream.claimsBdxReceived,
+        documentRequestStatus: "Complete",
+      }),
+    ),
     preAuditQuestionnaireStatus: "Complete",
     documentRequestStatus: "Complete",
     labels: project.labels.filter((label) => label !== "Waiting on Broker"),
@@ -2231,6 +2458,15 @@ function App() {
     }
     if (project.currentStage !== "Closed") {
       setMessage("Move the project to Closed before archiving it.");
+      return;
+    }
+    const workstreamSummary = coordinatedWorkstreamSummary(project);
+    if (project.auditStructure === "Coordinated" && !workstreamSummary.allResolved) {
+      setMessage(
+        `Resolve or waive ${workstreamSummary.active} active managing agent workstream${
+          workstreamSummary.active === 1 ? "" : "s"
+        } before archiving.`,
+      );
       return;
     }
     const updatedProject = withProjectDefaults({
@@ -4933,6 +5169,7 @@ function Kanban({
               {stageProjects.map((project) => {
                 const due = dueLabel(project);
                 const editable = canEditProject(currentUser, project);
+                const workstreamSummary = coordinatedWorkstreamSummary(project);
                 return (
                   <article
                     draggable={editable}
@@ -4950,6 +5187,21 @@ function Kanban({
                       {formatAuditTeam(project)}
                     </span>
                     <span className="pill muted">{project.assignmentType}</span>
+                    <span className="pill muted">
+                      {project.auditStructure}
+                      {project.auditStructure === "Coordinated"
+                        ? ` | ${workstreamSummary.total} managing agents`
+                        : ""}
+                    </span>
+                    {project.auditStructure === "Coordinated" && (
+                      <span
+                        className={`pill ${
+                          workstreamSummary.needsAttention > 0 ? "warning" : "ok"
+                        }`}
+                      >
+                        {workstreamSummary.needsAttention} need attention
+                      </span>
+                    )}
                     {project.labels.map((label) => (
                       <LabelChip
                         label={label}
@@ -5105,6 +5357,7 @@ function ProjectDetail({
         <div className="meta-grid">
           <Meta label="Source" value={project.assignmentSource} />
           <Meta label="Assignment type" value={project.assignmentType} />
+          <Meta label="Audit structure" value={project.auditStructure} />
           <Meta label="Audit entity" value={project.auditEntity || "Not set"} />
           <Meta
             label="Client / coverholder code"
@@ -5170,6 +5423,7 @@ function ProjectDetail({
           </div>
         )}
       </article>
+      <ManagingAgentWorkstreamsPanel project={project} />
       <AuditTeamPanel
         project={project}
         auditors={auditors}
@@ -5211,6 +5465,70 @@ function Meta({ label, value }: { label: string; value: string }) {
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
+  );
+}
+
+function ManagingAgentWorkstreamsPanel({
+  project,
+}: {
+  project: AuditProject;
+}) {
+  const workstreams = normalizeManagingAgentWorkstreams(project);
+  const summary = coordinatedWorkstreamSummary(project);
+  return (
+    <article className="panel managing-agent-panel">
+      <div className="section-title">
+        <div>
+          <h2>Managing agent workstreams</h2>
+          <span>
+            {project.auditStructure === "Coordinated"
+              ? `${summary.total} managing agents tracked under this one audit card.`
+              : "Solo audit workstream derived from the parent assignment."}
+          </span>
+        </div>
+      </div>
+      <div className="workstream-summary-grid">
+        <Meta label="Active" value={String(summary.active)} />
+        <Meta label="Complete" value={String(summary.complete)} />
+        <Meta label="Waived" value={String(summary.waived)} />
+        <Meta label="Need attention" value={String(summary.needsAttention)} />
+      </div>
+      <div className="workstream-list">
+        {workstreams.map((workstream) => {
+          const missing = getMissingDocumentsForWorkstream(project, workstream);
+          const resolved = workstream.completed || workstream.waived;
+          return (
+            <div className="workstream-row" key={workstream.id}>
+              <div>
+                <strong>{workstream.managingAgentName}</strong>
+                <span>
+                  {workstream.managingAgentCode || "No code"} |{" "}
+                  {workstream.leadAuditor || "No lead assigned"}
+                </span>
+              </div>
+              <div>
+                <span className={`pill ${resolved ? "ok" : "muted"}`}>
+                  {workstream.waived
+                    ? "Waived"
+                    : workstream.completed
+                      ? "Complete"
+                      : workstream.assignmentStatus}
+                </span>
+                <span className="pill muted">{workstream.currentStage}</span>
+                {missing.length > 0 && (
+                  <span className="pill warning">
+                    Missing {missing.length}: {missing.join(", ")}
+                  </span>
+                )}
+                {workstream.blockers.trim() && (
+                  <span className="pill danger">{workstream.blockers.trim()}</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </article>
   );
 }
 
@@ -5316,7 +5634,7 @@ function DocumentReadiness({
         <span style={{ width: `${readiness.percent}%` }} />
       </div>
       <div className="document-status-grid">
-        {requiredDocuments.map((doc) => {
+        {requiredDocumentsForProject(project).map((doc) => {
           const shortLabel = doc.label.replace(" received", "");
           const complete = Boolean(project[doc.key]);
           return (
@@ -5760,7 +6078,7 @@ function Checklist({
       </ul>
       <h3>Document readiness</h3>
       <ul className="document-list">
-        {requiredDocuments.map((doc) => (
+        {requiredDocumentsForProject(project).map((doc) => (
           <li
             key={doc.key}
             className={project[doc.key] ? "complete" : "missing"}
@@ -5851,6 +6169,178 @@ function Comments({
   );
 }
 
+function ManagingAgentWorkstreamEditor({
+  project,
+  auditorOptions,
+  onChange,
+}: {
+  project: AuditProject;
+  auditorOptions: string[];
+  onChange: (workstreams: ManagingAgentWorkstream[]) => void;
+}) {
+  const workstreams = normalizeManagingAgentWorkstreams(project);
+  const projectRequiredDocuments = requiredDocumentsForProject(project);
+  const updateWorkstream = (
+    id: string,
+    patch: Partial<ManagingAgentWorkstream>,
+  ) => {
+    onChange(
+      workstreams.map((workstream) =>
+        workstream.id === id ? { ...workstream, ...patch } : workstream,
+      ),
+    );
+  };
+  const addWorkstream = () => {
+    onChange([
+      ...workstreams,
+      {
+        ...defaultWorkstreamFromProject(project),
+        id: `${project.id}-ma-${Date.now()}`,
+        managingAgentName: `Managing agent ${workstreams.length + 1}`,
+        managingAgentCode: "",
+        blockers: "",
+        nextAction: "",
+        completed: false,
+        waived: false,
+      },
+    ]);
+  };
+  const removeWorkstream = (id: string) => {
+    if (workstreams.length <= 1) return;
+    onChange(workstreams.filter((workstream) => workstream.id !== id));
+  };
+
+  return (
+    <div className="workstream-editor">
+      <div className="inline-heading">
+        <div>
+          <strong>Managing agent workstreams</strong>
+          <span>
+            {project.assignmentType === "DCA"
+              ? "DCA audits require a managing agent, DCA Agreement, and Claims BDX."
+              : "Use this when one audit is coordinated across multiple managing agents."}
+          </span>
+        </div>
+        <button
+          type="button"
+          className="secondary"
+          disabled={project.auditStructure !== "Coordinated"}
+          onClick={addWorkstream}
+        >
+          Add managing agent
+        </button>
+      </div>
+      {workstreams.map((workstream, index) => (
+        <div className="workstream-editor-row" key={workstream.id}>
+          <div className="workstream-row-heading">
+            <strong>
+              {project.auditStructure === "Coordinated"
+                ? `Managing agent ${index + 1}`
+                : "Managing agent"}
+            </strong>
+            <button
+              type="button"
+              className="text-button"
+              disabled={workstreams.length <= 1}
+              onClick={() => removeWorkstream(workstream.id)}
+            >
+              Remove
+            </button>
+          </div>
+          <div className="form-grid wizard-grid compact-form-grid">
+            <Input
+              label="Managing agent"
+              value={workstream.managingAgentName}
+              onChange={(value) =>
+                updateWorkstream(workstream.id, { managingAgentName: value })
+              }
+            />
+            <Input
+              label="MA / client code"
+              value={workstream.managingAgentCode}
+              onChange={(value) =>
+                updateWorkstream(workstream.id, { managingAgentCode: value })
+              }
+            />
+            <Select
+              label="Lead auditor"
+              value={workstream.leadAuditor}
+              options={auditorOptions}
+              placeholder="Select lead auditor"
+              onChange={(value) =>
+                updateWorkstream(workstream.id, { leadAuditor: value })
+              }
+            />
+            <Input
+              label="Due date"
+              type="date"
+              value={workstream.dueDate}
+              onChange={(value) =>
+                updateWorkstream(workstream.id, { dueDate: value })
+              }
+            />
+            <Select
+              label="Stage"
+              value={workstream.currentStage}
+              options={stages}
+              placeholder="Select stage"
+              onChange={(value) =>
+                updateWorkstream(workstream.id, { currentStage: value as Stage })
+              }
+            />
+            <Select
+              label="Status"
+              value={workstream.assignmentStatus}
+              options={assignmentStatusOptions}
+              placeholder="Select status"
+              onChange={(value) =>
+                updateWorkstream(workstream.id, {
+                  assignmentStatus: value as AssignmentStatus,
+                })
+              }
+            />
+            {projectRequiredDocuments.map((doc) => (
+              <Check
+                key={doc.key}
+                label={doc.label}
+                checked={Boolean(workstream[doc.key])}
+                onChange={(value) =>
+                  updateWorkstream(workstream.id, { [doc.key]: value })
+                }
+              />
+            ))}
+            <Check
+              label="Workstream complete"
+              checked={workstream.completed}
+              onChange={(value) =>
+                updateWorkstream(workstream.id, { completed: value })
+              }
+            />
+            <Check
+              label="Waived / not applicable"
+              checked={workstream.waived}
+              onChange={(value) =>
+                updateWorkstream(workstream.id, { waived: value })
+              }
+            />
+          </div>
+          <label>
+            Workstream blockers
+            <textarea
+              value={workstream.blockers}
+              onChange={(event) =>
+                updateWorkstream(workstream.id, {
+                  blockers: event.target.value,
+                })
+              }
+            />
+          </label>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function History({ project }: { project: AuditProject }) {
   return (
     <article className="panel history">
@@ -5888,7 +6378,7 @@ function ProjectForm({
   onCancel: () => void;
   auditorOptions: string[];
 }) {
-  const [draft, setDraft] = useState(project);
+  const [draft, setDraft] = useState(withProjectDefaults(project));
   const [step, setStep] = useState(0);
   const [attemptedSave, setAttemptedSave] = useState(false);
   const isNewProject = project.statusHistory.length === 0;
@@ -5902,6 +6392,33 @@ function ProjectForm({
     key: K,
     value: AuditProject[K],
   ) => setDraft({ ...draft, [key]: value });
+  const updateAssignmentType = (value: string) => {
+    setDraft(
+      withProjectDefaults({
+        ...draft,
+        assignmentType: value as AssignmentType,
+      }),
+    );
+  };
+  const updateAuditStructure = (value: string) => {
+    setDraft(
+      withProjectDefaults({
+        ...draft,
+        auditStructure: value as AuditStructure,
+      }),
+    );
+  };
+  const updateDocumentField = (key: ProjectDocumentKey, value: boolean) => {
+    setDraft(
+      withProjectDefaults({
+        ...draft,
+        [key]: value,
+        managingAgentWorkstreams: normalizeManagingAgentWorkstreams(draft).map(
+          (workstream) => ({ ...workstream, [key]: value }),
+        ),
+      }),
+    );
+  };
   const toggleLabel = (label: ProjectLabel) => {
     update(
       "labels",
@@ -5954,7 +6471,7 @@ function ProjectForm({
     }
     setAttemptedSave(true);
     if (requiredIssues.length > 0) return;
-    onSave(draft);
+    onSave(withProjectDefaults(draft));
   };
 
   const basics = (
@@ -5986,9 +6503,14 @@ function ProjectForm({
           value={draft.assignmentType}
           options={assignmentTypeOptions}
           placeholder="Select type"
-          onChange={(value) =>
-            update("assignmentType", value as AssignmentType)
-          }
+          onChange={updateAssignmentType}
+        />
+        <Select
+          label="Audit structure"
+          value={draft.auditStructure}
+          options={auditStructureOptions}
+          placeholder="Select structure"
+          onChange={updateAuditStructure}
         />
         <Input
           label="Audit Entity"
@@ -6023,6 +6545,15 @@ function ProjectForm({
           ))}
         </div>
       </div>
+      {(draft.auditStructure === "Coordinated" || draft.assignmentType === "DCA") && (
+        <ManagingAgentWorkstreamEditor
+          project={draft}
+          auditorOptions={auditorOptions}
+          onChange={(workstreams) =>
+            update("managingAgentWorkstreams", workstreams)
+          }
+        />
+      )}
     </section>
   );
 
@@ -6149,21 +6680,14 @@ function ProjectForm({
           type="number"
           onChange={(value) => update("quoteAmount", Number(value))}
         />
-        <Check
-          label="BAA received"
-          checked={draft.baaReceived}
-          onChange={(value) => update("baaReceived", value)}
-        />
-        <Check
-          label="Endorsements received"
-          checked={draft.endorsementsReceived}
-          onChange={(value) => update("endorsementsReceived", value)}
-        />
-        <Check
-          label="Premium BDX received"
-          checked={draft.premiumBdxReceived}
-          onChange={(value) => update("premiumBdxReceived", value)}
-        />
+        {requiredDocumentsForProject(draft).map((doc) => (
+          <Check
+            key={doc.key}
+            label={doc.label}
+            checked={Boolean(draft[doc.key])}
+            onChange={(value) => updateDocumentField(doc.key, value)}
+          />
+        ))}
         <Select
           label="Pre-audit questionnaire"
           value={draft.preAuditQuestionnaireStatus}
