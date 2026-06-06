@@ -2139,6 +2139,25 @@ function App() {
   }, [activeSection, signedInUser?.role]);
 
   useEffect(() => {
+    if (
+      activeSection === "admin" &&
+      activeAdminTab === "contacts" &&
+      signedInUser?.role === "Admin" &&
+      !contactSources &&
+      !contactSourcesLoading
+    ) {
+      void refreshContactSources();
+    }
+  }, [
+    activeSection,
+    activeAdminTab,
+    signedInUser?.role,
+    signedInUser?.email,
+    contactSources,
+    contactSourcesLoading,
+  ]);
+
+  useEffect(() => {
     if (!signedInUser) return;
     let cancelled = false;
     setProjectStorageLoading(true);
@@ -3717,6 +3736,7 @@ function ContactSourcesPanel({
     (total, contact) => total + contact.specialInstructions.length,
     0,
   );
+  const hasRefreshed = Boolean(contactSources);
   const visibleContacts = contacts.slice(0, 30);
   return (
     <section className="panel contact-sources-panel">
@@ -3754,7 +3774,11 @@ function ContactSourcesPanel({
         <ReadinessCard
           label="Loaded contacts"
           ready={contacts.length > 0}
-          detail={`${contacts.length} contacts, ${instructionsCount} special instruction field values.`}
+          detail={
+            hasRefreshed
+              ? `${contacts.length} contacts, ${instructionsCount} special instruction field values.`
+              : "Not refreshed yet. Open this tab or use Refresh contacts to read the workbook links."
+          }
         />
       </div>
       {contactSources && (
