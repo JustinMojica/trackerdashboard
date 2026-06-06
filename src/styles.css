@@ -442,6 +442,19 @@ main {
   margin: 0.45rem 0 0;
   padding-left: 1.1rem;
 }
+.inline-alert {
+  background: #fff7e8;
+  border: 1px solid #e9cb83;
+  border-radius: 14px;
+  color: #55420a;
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.85rem 1rem;
+}
+.inline-alert span,
+.inline-alert small {
+  color: inherit;
+}
 .contact-sources-panel {
   display: grid;
   gap: 1rem;
@@ -1489,6 +1502,45 @@ textarea {
   gap: 0.75rem;
   margin-top: 0.85rem;
 }
+.template-context-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 0.85rem;
+}
+.receiver-card {
+  background: #f8fbff;
+  border: 1px solid #dfe7f2;
+  border-radius: 14px;
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  padding: 0.85rem;
+}
+.receiver-card.ready {
+  background: #ecf8f1;
+  border-color: #aadbbc;
+}
+.receiver-card.blocked {
+  background: #fff7e8;
+  border-color: #e9cb83;
+}
+.receiver-card span {
+  color: #53637a;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.receiver-card strong,
+.receiver-card p,
+.receiver-card small {
+  overflow-wrap: anywhere;
+}
+.receiver-card p,
+.receiver-card small {
+  color: #53637a;
+  margin: 0;
+}
 .template-preview textarea {
   min-height: 240px;
   resize: vertical;
@@ -1706,7 +1758,8 @@ textarea {
   .ops-role-grid,
   .ops-grid,
   .workflow-gates,
-  .workflow-columns {
+  .workflow-columns,
+  .template-context-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .hero {
@@ -1745,7 +1798,8 @@ textarea {
   .ops-role-grid,
   .ops-grid,
   .workflow-gates,
-  .workflow-columns {
+  .workflow-columns,
+  .template-context-grid {
     grid-template-columns: 1fr;
   }
   .modal-backdrop {

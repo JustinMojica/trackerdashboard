@@ -267,14 +267,26 @@ export async function getSecureSystemHealth(): Promise<SecureSystemHealth> {
 }
 
 export async function getLinkedContactSources(): Promise<LinkedContactSourcesResponse> {
-  const response = await fetch(secureAccessUrl("/api/admin/contact-sources"), {
-    credentials: "include",
-  });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.message || payload.error || "Contact source refresh failed.");
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 25000);
+  try {
+    const response = await fetch(secureAccessUrl("/api/admin/contact-sources"), {
+      credentials: "include",
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.message || payload.error || "Contact source refresh failed.");
+    }
+    return response.json();
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("Contact source refresh timed out. Retry after checking workbook access.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
   }
-  return response.json();
 }
 
 async function decideSecureAccessRequest(

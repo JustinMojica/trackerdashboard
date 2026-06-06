@@ -4,6 +4,30 @@ This log tracks practical production changes to the Audit Assignment Tracker.
 It intentionally excludes secrets, publish-profile values, client secrets, and
 other sensitive configuration values.
 
+## 2026-06-06
+
+### Added
+
+- Added receiver-aware template previews that show the expected recipient,
+  email address, routing rule, workbook source, and Outlook signature guidance.
+- Added DCA-aware document request wording so DCA projects request DCA
+  Agreement and Claims BDX instead of the standard coverholder document set.
+
+### Changed
+
+- Prevented the linked spreadsheet Contacts tab from retrying instantly after a
+  failed auto-refresh; admins can still retry manually with Refresh contacts.
+- Added a contact refresh timeout and visible stopped-state message so workbook
+  or Graph issues do not leave the UI spinning indefinitely.
+- Expanded template copy actions with receiver, subject, body, and full-draft
+  copy options for cleaner Outlook handoff.
+
+### Verified
+
+- `npm run check`
+- `npm test`
+- `npm run build`
+
 ## 2026-06-05
 
 ### Added

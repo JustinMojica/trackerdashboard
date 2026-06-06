@@ -1,4 +1,4 @@
-import React, { FormEvent, useEffect, useMemo, useState } from "react";
+import React, { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   canApproveAccessRequest,
@@ -15,6 +15,7 @@ import {
   updateSecureAccessUser,
   verifySecureAccessCode,
   type AccessApprovalUpdate,
+  type LinkedContact,
   type LinkedContactSourcesResponse,
   type SecureAccessState,
   type SecureAccessUser,
@@ -248,6 +249,23 @@ type CommunicationTemplate = {
   purpose: string;
   subject: (project: AuditProject) => string;
   body: (project: AuditProject) => string;
+};
+
+type TemplateReceiverKind =
+  | "DCA contact"
+  | "Coverholder contact"
+  | "Invoice contact"
+  | "Report contact"
+  | "Project contact";
+
+type TemplateReceiver = {
+  kind: TemplateReceiverKind;
+  name: string;
+  email: string;
+  company: string;
+  source: string;
+  confidence: "Matched workbook" | "Needs review";
+  guidance: string;
 };
 
 type WorkflowGate = {
@@ -1643,16 +1661,170 @@ function sourceTasks(project: AuditProject) {
       ];
 }
 
+function requiredDocumentRequestLabels(project: AuditProject) {
+  return requiredDocumentsForProject(project).map((document) =>
+    document.label.replace(/\s+received$/i, ""),
+  );
+}
+
+function templateReceiverKind(
+  project: AuditProject,
+  template: CommunicationTemplate,
+): TemplateReceiverKind {
+  if (template.id === "invoice-note") return "Invoice contact";
+  if (template.id === "findings-follow-up") return "Report contact";
+  if (isDcaProject(project)) return "DCA contact";
+  if (["document-request", "pre-audit-questionnaire", "quote-email"].includes(template.id)) {
+    return "Coverholder contact";
+  }
+  return "Project contact";
+}
+
+function normalizedToken(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function projectContactSearchTerms(project: AuditProject) {
+  return [
+    project.auditEntity,
+    project.clientCoverholderCode,
+    project.broker,
+    ...normalizeManagingAgentWorkstreams(project).flatMap((workstream) => [
+      workstream.managingAgentName,
+      workstream.managingAgentCode,
+    ]),
+  ]
+    .map(normalizedToken)
+    .filter((term) => term.length >= 3)
+    .filter((term, index, list) => list.indexOf(term) === index);
+}
+
+function contactSearchText(contact: LinkedContact) {
+  return normalizedToken(
+    [
+      contact.company,
+      contact.coverholder,
+      contact.managingAgent,
+      contact.broker,
+      contact.contactName,
+      contact.email,
+      contact.worksheetName,
+      contact.workbookName,
+      ...Object.values(contact.raw ?? {}),
+    ].join(" "),
+  );
+}
+
+function scoreContactMatch(contact: LinkedContact, project: AuditProject) {
+  const searchText = contactSearchText(contact);
+  return projectContactSearchTerms(project).reduce((score, term) => {
+    if (searchText.includes(term)) return score + 2;
+    const compactTerm = term.replace(/\s+/g, "");
+    if (compactTerm.length >= 4 && searchText.replace(/\s+/g, "").includes(compactTerm)) {
+      return score + 1;
+    }
+    return score;
+  }, 0);
+}
+
+function extractEmailsFromText(value: string) {
+  return Array.from(
+    new Set(
+      value
+        .match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)
+        ?.map((email) => email.toLowerCase()) ?? [],
+    ),
+  );
+}
+
+function extractPhoneFromText(value: string) {
+  return value.match(/(?:\+?\d[\d().\-\s]{7,}\d)/)?.[0]?.trim() ?? "";
+}
+
+function extractNameFromContactBlock(value: string) {
+  return (
+    value
+      .split(/\r?\n|;/)
+      .map((part) => part.trim())
+      .find(
+        (part) =>
+          part &&
+          !part.includes("@") &&
+          !/^(title|email|tel|phone|contact|n\/a|na)$/i.test(part) &&
+          !extractPhoneFromText(part),
+      ) ?? ""
+  );
+}
+
+function contactBlockForReceiver(contact: LinkedContact, kind: TemplateReceiverKind) {
+  if (kind === "DCA contact") return contact.raw?.dcaContact ?? "";
+  if (kind === "Coverholder contact") return contact.raw?.coverholderContact ?? "";
+  if (kind === "Invoice contact") return contact.raw?.invoiceSubmission ?? "";
+  if (kind === "Report contact") return contact.raw?.reportSubmission ?? "";
+  return "";
+}
+
+function resolveTemplateReceiver(
+  project: AuditProject,
+  template: CommunicationTemplate,
+  contacts: LinkedContact[] = [],
+): TemplateReceiver {
+  const kind = templateReceiverKind(project, template);
+  const rankedContacts = contacts
+    .map((contact) => ({ contact, score: scoreContactMatch(contact, project) }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score);
+  const matchedContact = rankedContacts[0]?.contact;
+  const block = matchedContact ? contactBlockForReceiver(matchedContact, kind) : "";
+  const blockEmails = extractEmailsFromText(block);
+  const contactEmails = matchedContact
+    ? extractEmailsFromText(matchedContact.email || Object.values(matchedContact.raw ?? {}).join(" "))
+    : [];
+  const email = blockEmails[0] || contactEmails[0] || "";
+  const name =
+    extractNameFromContactBlock(block) ||
+    matchedContact?.contactName ||
+    matchedContact?.company ||
+    project.auditEntity ||
+    kind;
+  const company =
+    matchedContact?.company ||
+    matchedContact?.coverholder ||
+    matchedContact?.managingAgent ||
+    project.auditEntity ||
+    "Not set";
+  return {
+    kind,
+    name,
+    email,
+    company,
+    source: matchedContact
+      ? `${matchedContact.workbookName} / ${matchedContact.worksheetName}`
+      : "No linked workbook match",
+    confidence: matchedContact && email ? "Matched workbook" : "Needs review",
+    guidance:
+      kind === "DCA contact"
+        ? "DCA audits should route document and quote requests to the DCA contact."
+        : kind === "Coverholder contact"
+          ? "Coverholder audits should route requests to the coverholder contact."
+          : kind === "Invoice contact"
+            ? "Use the invoice submission contact or finance handoff address from the client instruction sheet."
+            : kind === "Report contact"
+              ? "Use the report submission contact when sending findings or final report follow-up."
+              : "Review the linked workbook before sending.",
+  };
+}
+
 const communicationTemplates: CommunicationTemplate[] = [
   {
     id: "document-request",
     label: "Document request",
     kind: "Email",
-    purpose: "Send the first document package request to the broker/contact owner.",
+    purpose: "Send the first document package request to the correct DCA or coverholder contact.",
     subject: (project) =>
       `Document request - ${project.assignmentNumber} - ${project.auditEntity}`,
     body: (project) =>
-      `Hello,\n\nPlease provide the required audit support for ${project.auditEntity} (${project.clientCoverholderCode}).\n\nRequired items:\n- Binding authority agreement\n- Endorsements\n- Premium bordereaux\n- Completed pre-audit questionnaire, if applicable\n\nRequested by: ${project.documentRequestDate || todayIso()}\nExpected response: ${project.brokerExpectedResponseDate || "TBD"}\n\nAudit team: ${formatAuditTeam(project)}\n\nThank you.`,
+      `Hello,\n\nPlease provide the required audit support for ${project.auditEntity} (${project.clientCoverholderCode || "code TBD"}).\n\nRequired items:\n${requiredDocumentRequestLabels(project).map((label) => `- ${label}`).join("\n")}\n- Completed pre-audit questionnaire, if applicable\n\nRequested by: ${project.documentRequestDate || todayIso()}\nExpected response: ${project.brokerExpectedResponseDate || "TBD"}\n\nAudit team: ${formatAuditTeam(project)}\n\nThank you,`,
   },
   {
     id: "pre-audit-questionnaire",
@@ -1672,7 +1844,7 @@ const communicationTemplates: CommunicationTemplate[] = [
     subject: (project) =>
       `Quote for ${project.assignmentNumber} - ${project.auditEntity}`,
     body: (project) =>
-      `Hello,\n\nPlease find the audit quote details for ${project.auditEntity}.\n\nAssignment: ${project.assignmentNumber}\nAssignment type: ${project.assignmentType}\nAudit type: ${project.auditType}\nQuote status: ${project.quoteStatus}\nQuote amount: ${formatCurrency(project.quoteAmount)}\nTentative audit week: ${project.tentativeAuditWeek || "TBD"}\n\nPlease confirm acceptance or advise if any changes are required.\n\nThank you.`,
+      `Hello,\n\nPlease find the audit quote details for ${project.auditEntity}.\n\nAssignment: ${project.assignmentNumber}\nAssignment type: ${project.assignmentType}\nAudit type: ${project.auditType}\nQuote status: ${project.quoteStatus}\nQuote amount: ${formatCurrency(project.quoteAmount)}\nTentative audit week: ${project.tentativeAuditWeek || "TBD"}\n\nPlease confirm acceptance or advise if any changes are required.\n\nThank you,`,
   },
   {
     id: "findings-follow-up",
@@ -1682,7 +1854,7 @@ const communicationTemplates: CommunicationTemplate[] = [
     subject: (project) =>
       `Findings response requested - ${project.assignmentNumber} - ${project.auditEntity}`,
     body: (project) =>
-      `Hello,\n\nFindings have been issued for ${project.auditEntity}.\n\nAssignment: ${project.assignmentNumber}\nFindings sent: ${project.findingsSentDate || todayIso()}\nCoverholder response received: ${project.coverholderResponseReceivedDate || "Not yet received"}\n\nPlease provide responses and supporting evidence for each finding so the audit team can continue report finalization.\n\nThank you.`,
+      `Hello,\n\nFindings have been issued for ${project.auditEntity}.\n\nAssignment: ${project.assignmentNumber}\nFindings sent: ${project.findingsSentDate || todayIso()}\nCoverholder response received: ${project.coverholderResponseReceivedDate || "Not yet received"}\n\nPlease provide responses and supporting evidence for each finding so the audit team can continue report finalization.\n\nThank you,`,
   },
   {
     id: "invoice-note",
@@ -2047,6 +2219,8 @@ function App() {
   const [contactSources, setContactSources] =
     useState<LinkedContactSourcesResponse | null>(null);
   const [contactSourcesLoading, setContactSourcesLoading] = useState(false);
+  const [contactSourcesError, setContactSourcesError] = useState("");
+  const contactSourcesAutoLoadedFor = useRef("");
   const [projectStorageLoading, setProjectStorageLoading] = useState(false);
   const [selectedId, setSelectedId] = useState(projects[0]?.id ?? "");
   const [editing, setEditing] = useState<AuditProject | null>(null);
@@ -2087,10 +2261,14 @@ function App() {
   const refreshContactSources = async () => {
     if (signedInUser?.role !== "Admin") return;
     setContactSourcesLoading(true);
+    setContactSourcesError("");
     try {
       setContactSources(await getLinkedContactSources());
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Contact source refresh failed.");
+      const errorMessage =
+        error instanceof Error ? error.message : "Contact source refresh failed.";
+      setContactSourcesError(errorMessage);
+      setMessage(errorMessage);
     } finally {
       setContactSourcesLoading(false);
     }
@@ -2129,6 +2307,7 @@ function App() {
     } else {
       setSystemHealth(null);
       setContactSources(null);
+      setContactSourcesError("");
     }
   }, [signedInUser?.role, signedInUser?.email]);
 
@@ -2139,13 +2318,16 @@ function App() {
   }, [activeSection, signedInUser?.role]);
 
   useEffect(() => {
+    const autoLoadKey = `${signedInUser?.email || ""}:contacts`;
     if (
       activeSection === "admin" &&
       activeAdminTab === "contacts" &&
       signedInUser?.role === "Admin" &&
       !contactSources &&
-      !contactSourcesLoading
+      !contactSourcesLoading &&
+      contactSourcesAutoLoadedFor.current !== autoLoadKey
     ) {
+      contactSourcesAutoLoadedFor.current = autoLoadKey;
       void refreshContactSources();
     }
   }, [
@@ -3064,6 +3246,7 @@ function App() {
               onAddSupportingAuditor={addSupportingAuditor}
               currentUser={signedInUser}
               onUpdateFinance={updateProjectFinance}
+              contactSources={contactSources}
             />
           )}
           {!selectedProject && (
@@ -3127,6 +3310,7 @@ function App() {
           onRefreshHealth={() => void refreshSystemHealth()}
           contactSources={contactSources}
           contactSourcesLoading={contactSourcesLoading}
+          contactSourcesError={contactSourcesError}
           onRefreshContactSources={() => void refreshContactSources()}
           accessUsers={managedAccessUsers}
           pendingRequests={pendingAccessRequests}
@@ -3477,6 +3661,7 @@ function AdminWorkspace({
   onRefreshHealth,
   contactSources,
   contactSourcesLoading,
+  contactSourcesError,
   onRefreshContactSources,
   accessUsers,
   pendingRequests,
@@ -3499,6 +3684,7 @@ function AdminWorkspace({
   onRefreshHealth: () => void;
   contactSources: LinkedContactSourcesResponse | null;
   contactSourcesLoading: boolean;
+  contactSourcesError: string;
   onRefreshContactSources: () => void;
   accessUsers: PrototypeUser[];
   pendingRequests: PrototypeUser[];
@@ -3583,6 +3769,7 @@ function AdminWorkspace({
             <ContactSourcesPanel
               contactSources={contactSources}
               loading={contactSourcesLoading}
+              error={contactSourcesError}
               health={health}
               onRefresh={onRefreshContactSources}
             />
@@ -3722,11 +3909,13 @@ function ArchivedProjectsPanel({
 function ContactSourcesPanel({
   contactSources,
   loading,
+  error,
   health,
   onRefresh,
 }: {
   contactSources: LinkedContactSourcesResponse | null;
   loading: boolean;
+  error: string;
   health: SecureSystemHealth | null;
   onRefresh: () => void;
 }) {
@@ -3781,6 +3970,13 @@ function ContactSourcesPanel({
           }
         />
       </div>
+      {error && (
+        <div className="inline-alert">
+          <strong>Refresh stopped</strong>
+          <span>{error}</span>
+          <small>Use Refresh contacts to retry after the workbook or Graph issue is corrected.</small>
+        </div>
+      )}
       {contactSources && (
         <div className="contact-source-grid">
           {contactSources.sources.map((source) => (
@@ -5495,6 +5691,7 @@ function ProjectDetail({
   onAddSupportingAuditor,
   currentUser,
   onUpdateFinance,
+  contactSources,
 }: {
   project: AuditProject;
   onEdit: () => void;
@@ -5515,6 +5712,7 @@ function ProjectDetail({
     invoiceStatus: InvoiceStatus,
     paymentReceived: boolean,
   ) => void;
+  contactSources: LinkedContactSourcesResponse | null;
 }) {
   const blockers = computedBlockers(project);
   const nextSteps = recommendedNextSteps(project);
@@ -5649,7 +5847,7 @@ function ProjectDetail({
         canAddComment={canComment(currentUser, project)}
         onAddComment={onAddComment}
       />
-      <TemplateLibrary project={project} />
+      <TemplateLibrary project={project} contactSources={contactSources} />
       <ActivityTimeline project={project} />
     </section>
   );
@@ -6071,7 +6269,13 @@ function WorkflowEnginePanel({ project }: { project: AuditProject }) {
   );
 }
 
-function TemplateLibrary({ project }: { project: AuditProject }) {
+function TemplateLibrary({
+  project,
+  contactSources,
+}: {
+  project: AuditProject;
+  contactSources: LinkedContactSourcesResponse | null;
+}) {
   const [selectedTemplateId, setSelectedTemplateId] = useState(
     communicationTemplates[0].id,
   );
@@ -6081,6 +6285,21 @@ function TemplateLibrary({ project }: { project: AuditProject }) {
     communicationTemplates[0];
   const subject = template.subject(project);
   const body = template.body(project);
+  const receiver = resolveTemplateReceiver(
+    project,
+    template,
+    contactSources?.contacts ?? [],
+  );
+  const outlookBody = `${body}\n\n[Paste above your Outlook signature]`;
+  const fullDraft = [
+    `To: ${receiver.email || `[${receiver.kind} email needed]`}`,
+    `Receiver: ${receiver.name} (${receiver.kind})`,
+    `Subject: ${subject}`,
+    "",
+    body,
+    "",
+    "Signature: paste this body above your normal Outlook signature before sending.",
+  ].join("\n");
 
   const copyText = async (label: string, value: string) => {
     try {
@@ -6114,17 +6333,50 @@ function TemplateLibrary({ project }: { project: AuditProject }) {
           }
         />
       </div>
+      <div className="template-context-grid">
+        <article className={`receiver-card ${receiver.confidence === "Matched workbook" ? "ready" : "blocked"}`}>
+          <span>Receiver</span>
+          <strong>{receiver.name}</strong>
+          <p>{receiver.email || "No email found yet"}</p>
+          <small>
+            {receiver.kind} | {receiver.confidence}
+          </small>
+          <small>{receiver.source}</small>
+        </article>
+        <article className="receiver-card">
+          <span>Routing rule</span>
+          <strong>{project.assignmentType} audit</strong>
+          <p>{receiver.guidance}</p>
+        </article>
+        <article className="receiver-card">
+          <span>Signature</span>
+          <strong>Use Outlook signature</strong>
+          <p>Copy the body into Outlook above your existing signature. The tracker does not replace your signature.</p>
+        </article>
+      </div>
       <div className="template-preview">
+        <label>
+          To
+          <input readOnly value={receiver.email || `${receiver.kind} email not found`} />
+        </label>
         <label>
           Subject
           <input readOnly value={subject} />
         </label>
         <label>
           Body
-          <textarea readOnly rows={10} value={body} />
+          <textarea readOnly rows={10} value={outlookBody} />
         </label>
       </div>
       <div className="template-actions">
+        <button
+          type="button"
+          className="secondary"
+          disabled={!receiver.email}
+          onClick={() => void copyText("Receiver", receiver.email)}
+        >
+          Copy receiver
+        </button>
         <button
           type="button"
           className="secondary"
@@ -6134,6 +6386,13 @@ function TemplateLibrary({ project }: { project: AuditProject }) {
         </button>
         <button type="button" onClick={() => void copyText("Body", body)}>
           Copy body
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => void copyText("Full draft", fullDraft)}
+        >
+          Copy full draft
         </button>
         {copyMessage && <span>{copyMessage}</span>}
       </div>
