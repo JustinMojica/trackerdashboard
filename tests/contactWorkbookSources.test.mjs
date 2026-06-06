@@ -49,3 +49,67 @@ test("worksheet parser maps contact fields and special instructions", () => {
     },
   ]);
 });
+
+test("worksheet parser supports client instruction sheet layout", () => {
+  const parsed = parseWorksheetRows({
+    source: { id: "workbook-1", label: "Workbook 1" },
+    workbookName: "Client Instructions (A-C).xlsx",
+    worksheetName: "Ascot",
+    values: [
+      [
+        "Client Name/Address/Tel#",
+        "DCA Primary Contact/Title/Email/Tel#",
+        "COVER HOLDER Primary Contact/Title/Email/Tel#",
+        "Audit Scope",
+        "Deliverables",
+        "TOBA",
+      ],
+      [
+        "Ascot Group\n20 Fenchurch Street",
+        "Danny Sambridge\nEmail: danny.sambridge@ascotgroup.com",
+        "Daisy Murphy\nEmail: daisy.murphy@ascotgroup.com",
+        "LMA",
+        "Copy AscotDAAudit@ascotgroup.com on future correspondence.",
+        "None provided",
+      ],
+      [],
+      [
+        "Report Submission Email",
+        "Invoice Submission Email",
+        "Onsite/Remote Preference",
+        "Fees and Payment Terms",
+        "Other",
+        "Notes/Comments",
+      ],
+      [
+        "AscotDAAudit@ascotgroup.com",
+        "AscotDAAudit@ascotgroup.com",
+        "Remote preferred",
+        "",
+        "",
+        "Use the centralized inbox.",
+      ],
+    ],
+  });
+
+  assert.equal(parsed.contacts.length, 1);
+  assert.equal(parsed.contacts[0].company, "Ascot Group");
+  assert.equal(parsed.contacts[0].managingAgent, "Ascot Group");
+  assert.equal(parsed.contacts[0].contactName, "Danny Sambridge");
+  assert.equal(
+    parsed.contacts[0].email,
+    "danny.sambridge@ascotgroup.com; daisy.murphy@ascotgroup.com; AscotDAAudit@ascotgroup.com",
+  );
+  assert.equal(
+    parsed.contacts[0].specialInstructions.some(
+      (instruction) => instruction.label === "Deliverables",
+    ),
+    true,
+  );
+  assert.equal(
+    parsed.contacts[0].specialInstructions.some(
+      (instruction) => instruction.label === "Notes/Comments",
+    ),
+    true,
+  );
+});

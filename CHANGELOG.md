@@ -28,6 +28,9 @@ other sensitive configuration values.
 - Kept workbook URLs in server/Azure configuration via
   `TRACKER_CONTACT_WORKBOOK_LINKS` instead of hard-coding links into the
   frontend or GitHub.
+- Updated linked workbook parsing for Mosaic client-instruction sheets, using a
+  bounded cell range, request timeouts, and parallel workbook refreshes to avoid
+  the Contacts tab getting stuck on large Excel files.
 
 ### Verified
 

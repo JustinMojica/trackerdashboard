@@ -1,4 +1,6 @@
 const graphRoot = "https://graph.microsoft.com/v1.0";
+const instructionSheetSampleRange = "A1:J8";
+const graphRequestTimeoutMs = 12000;
 
 const fieldMatchers = [
   { key: "email", patterns: [/e-?mail/i, /email address/i] },
@@ -48,17 +50,33 @@ export async function readLinkedContactWorkbooks({
   fetchImpl = fetch,
 }) {
   const token = await getAccessToken();
-  const sourceResults = [];
-  const contacts = [];
-  const warnings = [];
+  const results = await Promise.all(
+    sources.map(async (source) => {
+      try {
+        return await readWorkbookSource({ source, token, fetchImpl });
+      } catch (error) {
+        return {
+          source: {
+            id: source.id,
+            label: source.label,
+            status: "error",
+            workbookName: "",
+            worksheetCount: 0,
+            rowCount: 0,
+            error: error instanceof Error ? error.message : "Workbook read failed.",
+          },
+          contacts: [],
+          warnings: [],
+        };
+      }
+    }),
+  );
+  const sourceResults = results.map((result) => result.source);
+  const contacts = results.flatMap((result) => result.contacts);
+  const warnings = results.flatMap((result) => result.warnings);
 
   for (const source of sources) {
-    try {
-      const result = await readWorkbookSource({ source, token, fetchImpl });
-      sourceResults.push(result.source);
-      contacts.push(...result.contacts);
-      warnings.push(...result.warnings);
-    } catch (error) {
+    if (!sourceResults.some((result) => result.id === source.id)) {
       sourceResults.push({
         id: source.id,
         label: source.label,
@@ -66,7 +84,7 @@ export async function readLinkedContactWorkbooks({
         workbookName: "",
         worksheetCount: 0,
         rowCount: 0,
-        error: error instanceof Error ? error.message : "Workbook read failed.",
+        error: "Workbook read did not return a result.",
       });
     }
   }
@@ -105,13 +123,14 @@ async function readWorkbookSource({ source, token, fetchImpl }) {
   for (const worksheet of worksheetList) {
     const worksheetId = worksheet.id || worksheet.name;
     if (!worksheetId) continue;
+    if (isNonContactWorksheet(worksheet.name || worksheetId)) continue;
     try {
       const range = await graphGet(
         `/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(
           itemId,
         )}/workbook/worksheets/${encodeURIComponent(
           worksheetId,
-        )}/usedRange(valuesOnly=true)`,
+        )}/range(address='${instructionSheetSampleRange}')`,
         token,
         fetchImpl,
       );
@@ -159,6 +178,14 @@ export function parseWorksheetRows({
   const nonEmptyRows = values.filter((row) =>
     Array.isArray(row) && row.some((cell) => String(cell ?? "").trim()),
   );
+  if (isClientInstructionSheet(nonEmptyRows)) {
+    return parseClientInstructionSheet({
+      source,
+      workbookName,
+      worksheetName,
+      rows: nonEmptyRows,
+    });
+  }
   if (nonEmptyRows.length < 2) {
     return {
       contacts: [],
@@ -215,6 +242,81 @@ export function parseWorksheetRows({
   return { contacts, warnings };
 }
 
+function parseClientInstructionSheet({
+  source,
+  workbookName,
+  worksheetName,
+  rows,
+}) {
+  const primaryHeaders = rows[0] ?? [];
+  const primaryValues = rows[1] ?? [];
+  const secondaryHeaderIndex = rows.findIndex((row) =>
+    String(row[0] ?? "").toLowerCase().includes("report submission email"),
+  );
+  const secondaryHeaders = secondaryHeaderIndex >= 0 ? rows[secondaryHeaderIndex] : [];
+  const secondaryValues =
+    secondaryHeaderIndex >= 0 ? rows[secondaryHeaderIndex + 1] ?? [] : [];
+  const clientBlock = cleanCell(primaryValues[0]);
+  const dcaContactBlock = cleanCell(primaryValues[1]);
+  const coverholderContactBlock = cleanCell(primaryValues[2]);
+  const company = firstLine(clientBlock) || worksheetName;
+  const reportSubmission = cleanCell(secondaryValues[0]);
+  const invoiceSubmission = cleanCell(secondaryValues[1]);
+  const email = uniqueEmails([
+    ...extractEmails(dcaContactBlock),
+    ...extractEmails(coverholderContactBlock),
+    ...extractEmails(reportSubmission),
+    ...extractEmails(invoiceSubmission),
+  ]).join("; ");
+  const instructions = [];
+  addInstruction(instructions, primaryHeaders[3], primaryValues[3]);
+  addInstruction(instructions, primaryHeaders[4], primaryValues[4]);
+  addInstruction(instructions, primaryHeaders[5], primaryValues[5]);
+  addInstruction(instructions, secondaryHeaders[0], secondaryValues[0]);
+  addInstruction(instructions, secondaryHeaders[1], secondaryValues[1]);
+  addInstruction(instructions, secondaryHeaders[2], secondaryValues[2]);
+  addInstruction(instructions, secondaryHeaders[3], secondaryValues[3]);
+  addInstruction(instructions, secondaryHeaders[4], secondaryValues[4]);
+  addInstruction(instructions, secondaryHeaders[5], secondaryValues[5]);
+
+  return {
+    contacts: [
+      {
+        id: contactId(source.id, worksheetName, email, company, worksheetName),
+        sourceId: source.id,
+        sourceLabel: source.label,
+        workbookName,
+        worksheetName,
+        company,
+        coverholder: contactNameFromBlock(coverholderContactBlock),
+        managingAgent: company,
+        broker: "",
+        contactName: contactNameFromBlock(dcaContactBlock) || company,
+        email,
+        phone: firstPhone([clientBlock, dcaContactBlock, coverholderContactBlock]),
+        role: "Client instruction sheet",
+        specialInstructions: instructions,
+        raw: {
+          client: clientBlock,
+          dcaContact: dcaContactBlock,
+          coverholderContact: coverholderContactBlock,
+          reportSubmission,
+          invoiceSubmission,
+        },
+      },
+    ],
+    warnings: email
+      ? []
+      : [
+          {
+            sourceId: source.id,
+            worksheetName,
+            message: "Instruction sheet loaded but no email address was detected.",
+          },
+        ],
+  };
+}
+
 function rowToObject(headers, row) {
   const raw = {};
   headers.forEach((header, index) => {
@@ -243,6 +345,84 @@ function instructionValues(raw) {
       label: header,
       value: String(value).trim(),
     }));
+}
+
+function isClientInstructionSheet(rows) {
+  return String(rows[0]?.[0] ?? "")
+    .toLowerCase()
+    .includes("client name/address");
+}
+
+function isNonContactWorksheet(name) {
+  const normalized = String(name).toLowerCase();
+  return (
+    normalized.includes("london calls") ||
+    normalized.includes("instructions") ||
+    normalized.includes("template")
+  );
+}
+
+function cleanCell(value) {
+  return String(value ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function firstLine(value) {
+  return cleanCell(value)
+    .split(/\n/)
+    .map((line) => line.trim())
+    .find(Boolean) || "";
+}
+
+function addInstruction(instructions, label, value) {
+  const cleanedValue = cleanCell(value);
+  const cleanedLabel = cleanCell(label);
+  if (!cleanedLabel || !cleanedValue) return;
+  if (/^none( specified| received| provided)?$/i.test(cleanedValue)) return;
+  instructions.push({
+    label: cleanedLabel,
+    value: cleanedValue,
+  });
+}
+
+function extractEmails(value) {
+  return cleanCell(value).match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) ?? [];
+}
+
+function uniqueEmails(values) {
+  const seen = new Set();
+  return values
+    .map((value) => value.trim().replace(/[.;,]+$/, ""))
+    .filter((value) => {
+      const key = value.toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function contactNameFromBlock(value) {
+  const lines = cleanCell(value)
+    .split(/\n/)
+    .map((line) =>
+      line
+        .replace(/^email:\s*/i, "")
+        .replace(/^e:\s*/i, "")
+        .trim(),
+    )
+    .filter(Boolean)
+    .filter((line) => !isLikelyEmail(line) && !/^tel|^d:|^m:/i.test(line));
+  return lines[0] ?? "";
+}
+
+function firstPhone(values) {
+  const match = values
+    .map(cleanCell)
+    .join("\n")
+    .match(/(?:tel(?:ephone)?|direct|d|m)?[:\s]*(\+?\d[\d\s().-]{6,}\d)/i);
+  return match?.[1]?.trim() ?? "";
 }
 
 function dedupeContacts(contacts) {
@@ -279,9 +459,17 @@ function shareIdFromUrl(url) {
 }
 
 async function graphGet(path, token, fetchImpl) {
-  const response = await fetchImpl(`${graphRoot}${path}`, {
-    headers: { authorization: `Bearer ${token}` },
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), graphRequestTimeoutMs);
+  let response;
+  try {
+    response = await fetchImpl(`${graphRoot}${path}`, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!response.ok) {
     throw new Error(`Graph ${response.status}: ${await response.text()}`);
   }
