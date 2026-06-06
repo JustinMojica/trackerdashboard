@@ -13,6 +13,7 @@ The current app is no longer a browser-storage-only prototype. It has:
 - Microsoft Lists schema/export support for assignments, team members, comments, checklist items, status history, activity log, and tracker users.
 - Solo and Coordinated audit structures, including multiple managing-agent workstreams under one parent audit card.
 - DCA-specific readiness tracking for DCA Agreement and Claims BDX requirements.
+- Admin-only linked contact spreadsheet preview from OneDrive/SharePoint Excel workbooks, including special-instructions columns.
 - GitHub Actions deployment to Azure App Service.
 - Admin health reporting for auth, Graph consent, runtime config source, storage mode, and live deployment metadata.
 
@@ -120,6 +121,7 @@ TRACKER_USERS_LIST_ID
 TRACKER_PROJECT_STORE
 TRACKER_PROJECTS_SITE_ID
 TRACKER_PROJECTS_LIST_ID
+TRACKER_CONTACT_WORKBOOK_LINKS
 SCM_DO_BUILD_DURING_DEPLOYMENT
 WEBSITE_NODE_DEFAULT_VERSION
 ```
@@ -136,6 +138,10 @@ WEBSITE_NODE_DEFAULT_VERSION=22
 Use a long random value for `TRACKER_SESSION_SECRET`. Do not use `dev`, `secret`, `password`, or any placeholder value.
 
 Do not commit `server.env`, publish profiles, client secrets, or generated deployment artifacts.
+
+`TRACKER_CONTACT_WORKBOOK_LINKS` is optional until the contact directory is enabled.
+Use newline-separated OneDrive/SharePoint Excel workbook links in Azure App
+Service settings. Keep the actual workbook URLs in Azure settings, not in Git.
 
 If Azure CLI or portal access is unavailable, the server can also read a
 persistent Azure data env file:

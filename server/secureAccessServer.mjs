@@ -9,6 +9,11 @@ import {
   accessUserStoreStatus,
   createAccessUserStore,
 } from "./accessUserStore.mjs";
+import {
+  contactWorkbookStatus,
+  parseWorkbookLinks,
+  readLinkedContactWorkbooks,
+} from "./contactWorkbookSources.mjs";
 import { createProjectStore, projectStoreStatus } from "./projectStore.mjs";
 
 const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -58,11 +63,13 @@ const config = {
   projectStoreMode: process.env.TRACKER_PROJECT_STORE || "local",
   projectStoreSiteId: process.env.TRACKER_PROJECTS_SITE_ID || "",
   projectStoreListId: process.env.TRACKER_PROJECTS_LIST_ID || "",
+  contactWorkbookLinksRaw: process.env.TRACKER_CONTACT_WORKBOOK_LINKS || "",
 };
 
 const authority = `https://login.microsoftonline.com/${config.tenantId}/oauth2/v2.0`;
 const userStoreStatus = accessUserStoreStatus(config);
 const currentProjectStoreStatus = projectStoreStatus(config);
+const currentContactWorkbookStatus = contactWorkbookStatus(config);
 const accessUserStore = createAccessUserStore({
   mode: userStoreStatus.mode,
   usersFile,
@@ -133,6 +140,9 @@ async function route(request, response) {
   if (url.pathname === "/api/admin/system-health") {
     return systemHealth(request, response);
   }
+  if (url.pathname === "/api/admin/contact-sources") {
+    return contactSources(request, response);
+  }
   if (url.pathname === "/api/projects" && request.method === "GET") {
     return listProjects(request, response);
   }
@@ -182,6 +192,7 @@ function accessConfigStatus(request) {
     frontendOrigin,
     userStore: userStoreStatus,
     projectStore: currentProjectStoreStatus,
+    contactSources: currentContactWorkbookStatus,
   };
 }
 
@@ -592,6 +603,16 @@ async function systemHealth(request, response) {
           ? `Project storage is set to Microsoft Lists but missing: ${currentProjectStoreStatus.missing.join(", ")}.`
         : "Project records are still stored on this app server.",
   };
+  const contactSources = {
+    configured: currentContactWorkbookStatus.configured,
+    count: currentContactWorkbookStatus.count,
+    missing: currentContactWorkbookStatus.missing,
+    status: currentContactWorkbookStatus.configured
+      ? `${currentContactWorkbookStatus.count} linked contact workbook${
+          currentContactWorkbookStatus.count === 1 ? "" : "s"
+        } configured.`
+      : "Linked contact workbooks are not configured.",
+  };
   return sendJson(request, response, 200, {
     generatedAt: new Date().toISOString(),
     deployment,
@@ -619,12 +640,14 @@ async function systemHealth(request, response) {
     },
     approvalStore,
     projectStore: projectStoreHealth,
+    contactSources,
     recommendations: healthRecommendations(
       setup,
       graphApp,
       approvalStore,
       projectStoreHealth,
       runtime,
+      contactSources,
     ),
   });
 }
@@ -736,6 +759,7 @@ function healthRecommendations(
   approvalStore,
   projectStoreHealth,
   runtime,
+  contactSources,
 ) {
   const recommendations = [];
   if (!setup.configured) {
@@ -829,6 +853,40 @@ async function saveProjects(request, response) {
   return sendJson(request, response, 200, {
     ok: true,
     projects: store.projects.filter((project) => canViewProjectForUser(user, project)),
+  });
+}
+
+async function contactSources(request, response) {
+  const user = await requireAdmin(request, response);
+  if (!user) return;
+  const sources = parseWorkbookLinks(config.contactWorkbookLinksRaw);
+  if (sources.length === 0) {
+    return sendJson(request, response, 200, {
+      generatedAt: new Date().toISOString(),
+      configured: false,
+      sources: [],
+      contacts: [],
+      warnings: [
+        {
+          sourceId: "configuration",
+          worksheetName: "",
+          message: "TRACKER_CONTACT_WORKBOOK_LINKS is not configured.",
+        },
+      ],
+    });
+  }
+  if (!contactSources.configured) {
+    recommendations.push(
+      "Add TRACKER_CONTACT_WORKBOOK_LINKS to connect live OneDrive contact spreadsheets.",
+    );
+  }
+  const result = await readLinkedContactWorkbooks({
+    sources,
+    getAccessToken: getGraphAppToken,
+  });
+  return sendJson(request, response, 200, {
+    configured: true,
+    ...result,
   });
 }
 

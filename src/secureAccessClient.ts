@@ -116,7 +116,60 @@ export type SecureSystemHealth = {
     durable: boolean;
     status: string;
   };
+  contactSources?: {
+    configured: boolean;
+    count: number;
+    missing: string[];
+    status: string;
+  };
   recommendations: string[];
+};
+
+export type LinkedContactInstruction = {
+  label: string;
+  value: string;
+};
+
+export type LinkedContact = {
+  id: string;
+  sourceId: string;
+  sourceLabel: string;
+  workbookName: string;
+  worksheetName: string;
+  company: string;
+  coverholder: string;
+  managingAgent: string;
+  broker: string;
+  contactName: string;
+  email: string;
+  phone: string;
+  role: string;
+  specialInstructions: LinkedContactInstruction[];
+  raw: Record<string, string>;
+};
+
+export type LinkedContactSource = {
+  id: string;
+  label: string;
+  status: "ok" | "error";
+  workbookName: string;
+  worksheetCount: number;
+  rowCount: number;
+  error?: string;
+};
+
+export type LinkedContactWarning = {
+  sourceId: string;
+  worksheetName: string;
+  message: string;
+};
+
+export type LinkedContactSourcesResponse = {
+  configured: boolean;
+  generatedAt: string;
+  sources: LinkedContactSource[];
+  contacts: LinkedContact[];
+  warnings: LinkedContactWarning[];
 };
 
 export type AccessApprovalUpdate = {
@@ -209,6 +262,17 @@ export async function getSecureSystemHealth(): Promise<SecureSystemHealth> {
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
     throw new Error(payload.message || payload.error || "System health check failed.");
+  }
+  return response.json();
+}
+
+export async function getLinkedContactSources(): Promise<LinkedContactSourcesResponse> {
+  const response = await fetch(secureAccessUrl("/api/admin/contact-sources"), {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.message || payload.error || "Contact source refresh failed.");
   }
   return response.json();
 }

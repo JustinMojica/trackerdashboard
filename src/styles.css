@@ -442,6 +442,77 @@ main {
   margin: 0.45rem 0 0;
   padding-left: 1.1rem;
 }
+.contact-sources-panel {
+  display: grid;
+  gap: 1rem;
+}
+.contact-source-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+.contact-source-card,
+.contact-preview-card {
+  background: #f8fbff;
+  border: 1px solid #dfe7f2;
+  border-radius: 14px;
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.9rem 1rem;
+}
+.contact-source-card.ready {
+  background: #ecf8f1;
+  border-color: #aadbbc;
+}
+.contact-source-card.blocked {
+  background: #fff7e8;
+  border-color: #e9cb83;
+}
+.contact-source-card span,
+.contact-preview-card span,
+.contact-preview-card small {
+  color: #53637a;
+}
+.contact-source-card > span {
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.contact-preview-list {
+  display: grid;
+  gap: 0.75rem;
+}
+.contact-preview-card {
+  grid-template-columns: minmax(220px, 0.8fr) minmax(220px, 1fr);
+}
+.contact-tags {
+  align-content: start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.contact-tags span {
+  background: #eef4ff;
+  border: 1px solid #c6d6f0;
+  border-radius: 999px;
+  color: #15386d;
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 0.28rem 0.55rem;
+}
+.special-instructions {
+  background: #fff7e8;
+  border: 1px solid #e9cb83;
+  border-radius: 12px;
+  display: grid;
+  gap: 0.25rem;
+  grid-column: 1 / -1;
+  padding: 0.7rem;
+}
+.special-instructions p {
+  color: #55420a;
+  margin: 0;
+}
 .runtime-summary {
   color: #53637a;
   display: flex;

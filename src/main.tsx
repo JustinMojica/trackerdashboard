@@ -6,6 +6,7 @@ import {
 } from "./accessRequests";
 import {
   approveSecureAccessRequest,
+  getLinkedContactSources,
   getSecureAccessState,
   getSecureSystemHealth,
   logoutSecureAccess,
@@ -14,6 +15,7 @@ import {
   updateSecureAccessUser,
   verifySecureAccessCode,
   type AccessApprovalUpdate,
+  type LinkedContactSourcesResponse,
   type SecureAccessState,
   type SecureAccessUser,
   type SecureSystemHealth,
@@ -206,7 +208,7 @@ type FilterPreset = {
 
 type ViewMode = "kanban" | "table";
 type AppSection = "dashboard" | "assignments" | "command" | "reports" | "admin";
-type AdminTab = "users" | "activity" | "storage" | "health";
+type AdminTab = "users" | "contacts" | "activity" | "storage" | "health";
 type UserRole = "Admin" | "Audit Manager" | "Auditor" | "Finance" | "Read Only";
 type ProjectVisibility =
   | "Role Default"
@@ -2042,6 +2044,9 @@ function App() {
     null,
   );
   const [systemHealthLoading, setSystemHealthLoading] = useState(false);
+  const [contactSources, setContactSources] =
+    useState<LinkedContactSourcesResponse | null>(null);
+  const [contactSourcesLoading, setContactSourcesLoading] = useState(false);
   const [projectStorageLoading, setProjectStorageLoading] = useState(false);
   const [selectedId, setSelectedId] = useState(projects[0]?.id ?? "");
   const [editing, setEditing] = useState<AuditProject | null>(null);
@@ -2079,6 +2084,18 @@ function App() {
     }
   };
 
+  const refreshContactSources = async () => {
+    if (signedInUser?.role !== "Admin") return;
+    setContactSourcesLoading(true);
+    try {
+      setContactSources(await getLinkedContactSources());
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Contact source refresh failed.");
+    } finally {
+      setContactSourcesLoading(false);
+    }
+  };
+
   const refreshSecureAccess = async () => {
     setSecureAccessLoading(true);
     try {
@@ -2111,6 +2128,7 @@ function App() {
       void refreshSystemHealth();
     } else {
       setSystemHealth(null);
+      setContactSources(null);
     }
   }, [signedInUser?.role, signedInUser?.email]);
 
@@ -3088,6 +3106,9 @@ function App() {
           health={systemHealth}
           loading={systemHealthLoading}
           onRefreshHealth={() => void refreshSystemHealth()}
+          contactSources={contactSources}
+          contactSourcesLoading={contactSourcesLoading}
+          onRefreshContactSources={() => void refreshContactSources()}
           accessUsers={managedAccessUsers}
           pendingRequests={pendingAccessRequests}
           onSaveUser={saveManagedUser}
@@ -3435,6 +3456,9 @@ function AdminWorkspace({
   health,
   loading,
   onRefreshHealth,
+  contactSources,
+  contactSourcesLoading,
+  onRefreshContactSources,
   accessUsers,
   pendingRequests,
   onSaveUser,
@@ -3454,6 +3478,9 @@ function AdminWorkspace({
   health: SecureSystemHealth | null;
   loading: boolean;
   onRefreshHealth: () => void;
+  contactSources: LinkedContactSourcesResponse | null;
+  contactSourcesLoading: boolean;
+  onRefreshContactSources: () => void;
   accessUsers: PrototypeUser[];
   pendingRequests: PrototypeUser[];
   onSaveUser: (email: string, user: PrototypeUser) => void;
@@ -3473,6 +3500,11 @@ function AdminWorkspace({
       id: "users",
       label: "Users",
       helper: "Approve Microsoft accounts and control role/visibility.",
+    },
+    {
+      id: "contacts",
+      label: "Contacts",
+      helper: "Preview linked OneDrive spreadsheet contacts and instructions.",
     },
     {
       id: "activity",
@@ -3526,6 +3558,14 @@ function AdminWorkspace({
               onSaveUser={onSaveUser}
               onApproveRequest={onApproveRequest}
               onRejectRequest={onRejectRequest}
+            />
+          )}
+          {activeTab === "contacts" && (
+            <ContactSourcesPanel
+              contactSources={contactSources}
+              loading={contactSourcesLoading}
+              health={health}
+              onRefresh={onRefreshContactSources}
             />
           )}
           {activeTab === "activity" && <AdminActivityPanel projects={projects} />}
@@ -3652,6 +3692,138 @@ function ArchivedProjectsPanel({
               >
                 Restore
               </button>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ContactSourcesPanel({
+  contactSources,
+  loading,
+  health,
+  onRefresh,
+}: {
+  contactSources: LinkedContactSourcesResponse | null;
+  loading: boolean;
+  health: SecureSystemHealth | null;
+  onRefresh: () => void;
+}) {
+  const sourceStatus = health?.contactSources;
+  const contacts = contactSources?.contacts ?? [];
+  const instructionsCount = contacts.reduce(
+    (total, contact) => total + contact.specialInstructions.length,
+    0,
+  );
+  const visibleContacts = contacts.slice(0, 30);
+  return (
+    <section className="panel contact-sources-panel">
+      <div className="section-title">
+        <div>
+          <p className="eyebrow dark">Contact directory</p>
+          <h2>Linked spreadsheet contacts</h2>
+          <span>
+            OneDrive/SharePoint workbooks stay the source of truth. Refresh pulls
+            current rows and special instructions through Microsoft Graph.
+          </span>
+        </div>
+        <button type="button" disabled={loading} onClick={onRefresh}>
+          {loading ? "Refreshing..." : "Refresh contacts"}
+        </button>
+      </div>
+      <div className="readiness-grid">
+        <ReadinessCard
+          label="Workbook links"
+          ready={Boolean(sourceStatus?.configured)}
+          detail={
+            sourceStatus?.status ||
+            "Add TRACKER_CONTACT_WORKBOOK_LINKS to Azure App Service settings."
+          }
+        />
+        <ReadinessCard
+          label="Graph access"
+          ready={Boolean(health?.sharePoint.permissionGranted)}
+          detail={
+            health?.sharePoint.permissionGranted
+              ? "Sites.ReadWrite.All is available for workbook reads."
+              : "Waiting for Microsoft Graph SharePoint permission."
+          }
+        />
+        <ReadinessCard
+          label="Loaded contacts"
+          ready={contacts.length > 0}
+          detail={`${contacts.length} contacts, ${instructionsCount} special instruction field values.`}
+        />
+      </div>
+      {contactSources && (
+        <div className="contact-source-grid">
+          {contactSources.sources.map((source) => (
+            <article
+              key={source.id}
+              className={`contact-source-card ${source.status === "ok" ? "ready" : "blocked"}`}
+            >
+              <span>{source.status === "ok" ? "Connected" : "Needs review"}</span>
+              <strong>{source.workbookName || source.label}</strong>
+              <p>
+                {source.status === "ok"
+                  ? `${source.worksheetCount} worksheets, ${source.rowCount} contact rows.`
+                  : source.error || "Workbook could not be read."}
+              </p>
+            </article>
+          ))}
+        </div>
+      )}
+      {contactSources?.warnings.length ? (
+        <div className="readiness-next">
+          <strong>Warnings</strong>
+          <ul>
+            {contactSources.warnings.slice(0, 8).map((warning) => (
+              <li key={`${warning.sourceId}-${warning.worksheetName}-${warning.message}`}>
+                {warning.worksheetName ? `${warning.worksheetName}: ` : ""}
+                {warning.message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {contactSources && contacts.length === 0 ? (
+        <p className="muted-note">
+          No contacts loaded yet. If workbook links are configured, confirm the
+          files have a header row and at least one contact/data row.
+        </p>
+      ) : null}
+      {visibleContacts.length > 0 && (
+        <div className="contact-preview-list">
+          {visibleContacts.map((contact) => (
+            <article key={contact.id} className="contact-preview-card">
+              <div>
+                <strong>{contact.contactName || contact.company || "Unnamed contact"}</strong>
+                <span>
+                  {contact.email || "No email"} |{" "}
+                  {contact.company || contact.coverholder || contact.managingAgent || "No company"}
+                </span>
+                <small>
+                  {contact.workbookName} / {contact.worksheetName}
+                </small>
+              </div>
+              <div className="contact-tags">
+                {contact.broker && <span>Broker: {contact.broker}</span>}
+                {contact.managingAgent && <span>MA: {contact.managingAgent}</span>}
+                {contact.coverholder && <span>Coverholder: {contact.coverholder}</span>}
+                {contact.role && <span>{contact.role}</span>}
+              </div>
+              {contact.specialInstructions.length > 0 && (
+                <div className="special-instructions">
+                  <strong>Special instructions</strong>
+                  {contact.specialInstructions.map((instruction) => (
+                    <p key={`${contact.id}-${instruction.label}`}>
+                      {instruction.label}: {instruction.value}
+                    </p>
+                  ))}
+                </div>
+              )}
             </article>
           ))}
         </div>

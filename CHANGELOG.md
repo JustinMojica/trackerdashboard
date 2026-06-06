@@ -14,6 +14,8 @@ other sensitive configuration values.
   missing-document, and needs-attention counts.
 - Added DCA-specific document readiness: DCA Agreement and Claims BDX are now
   the required readiness documents for DCA assignments.
+- Added an admin-only linked contact spreadsheet preview foundation for
+  OneDrive/SharePoint Excel workbooks, including special-instructions columns.
 
 ### Changed
 
@@ -23,11 +25,16 @@ other sensitive configuration values.
   workstreams when an audit is Coordinated or DCA.
 - Prevented coordinated audits from being archived until all managing-agent
   workstreams are complete or waived.
+- Kept workbook URLs in server/Azure configuration via
+  `TRACKER_CONTACT_WORKBOOK_LINKS` instead of hard-coding links into the
+  frontend or GitHub.
 
 ### Verified
 
 - Added regression coverage for DCA document rules and ten-workstream
   coordinated audit rollups.
+- Added parser coverage for linked workbook contact fields and special
+  instructions.
 
 ## 2026-06-04
 
