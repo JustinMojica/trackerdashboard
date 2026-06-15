@@ -270,7 +270,7 @@ export async function getLinkedContactSources(): Promise<LinkedContactSourcesRes
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), 25000);
   try {
-    const response = await fetch(secureAccessUrl("/api/admin/contact-sources"), {
+    const response = await fetch(secureAccessUrl("/api/contact-sources"), {
       credentials: "include",
       signal: controller.signal,
     });

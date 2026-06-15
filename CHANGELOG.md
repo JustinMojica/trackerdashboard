@@ -6,8 +6,22 @@ other sensitive configuration values.
 
 ## 2026-06-15
 
+### Added
+
+- Added Mosaic branding with a transparent-background logo on the sign-in and
+  signed-in tracker header.
+- Added a Scheduling & Capacity workspace with audit calendar cards, schedule
+  notes, calendar sync status, near-term capacity counts, and conflict warnings.
+- Added linked workbook contact selection to project intake so live spreadsheet
+  contacts can prefill client/contact context, scheduling notes, and audit type
+  hints.
+
 ### Changed
 
+- Opened linked spreadsheet contact refresh to approved users, not only admins,
+  so project intake can use contacts without exposing backend admin controls.
+- Expanded CSV exports and project detail metadata with scheduling and linked
+  contact fields.
 - Refined the main UI shell with a cleaner production background, stronger
   header hierarchy, clearer navigation states, and more polished action buttons.
 - Improved dashboard, Kanban, workflow, admin, contact, template, and table

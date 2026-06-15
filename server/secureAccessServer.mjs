@@ -140,7 +140,7 @@ async function route(request, response) {
   if (url.pathname === "/api/admin/system-health") {
     return systemHealth(request, response);
   }
-  if (url.pathname === "/api/admin/contact-sources") {
+  if (url.pathname === "/api/contact-sources" || url.pathname === "/api/admin/contact-sources") {
     return contactSources(request, response);
   }
   if (url.pathname === "/api/projects" && request.method === "GET") {
@@ -857,7 +857,7 @@ async function saveProjects(request, response) {
 }
 
 async function contactSources(request, response) {
-  const user = await requireAdmin(request, response);
+  const user = await requireApprovedUser(request, response);
   if (!user) return;
   const sources = parseWorkbookLinks(config.contactWorkbookLinksRaw);
   if (sources.length === 0) {
@@ -874,11 +874,6 @@ async function contactSources(request, response) {
         },
       ],
     });
-  }
-  if (!contactSources.configured) {
-    recommendations.push(
-      "Add TRACKER_CONTACT_WORKBOOK_LINKS to connect live OneDrive contact spreadsheets.",
-    );
   }
   const result = await readLinkedContactWorkbooks({
     sources,
@@ -919,6 +914,10 @@ function normalizeProjectRecord(project) {
     assignedAuditor,
     auditTeam,
     currentStage: String(record.currentStage || "Intake"),
+    schedulingNotes: String(record.schedulingNotes || ""),
+    calendarSyncStatus: String(record.calendarSyncStatus || "Not Synced"),
+    linkedContactId: String(record.linkedContactId || ""),
+    linkedContactSource: String(record.linkedContactSource || ""),
     invoiceStatus: String(record.invoiceStatus || "Not Started"),
     reportStatus: String(record.reportStatus || "Not Started"),
     paymentReceived: Boolean(record.paymentReceived),

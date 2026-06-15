@@ -28,12 +28,18 @@ import {
   getServerProjects,
   saveServerProjects,
 } from "./projectDataClient";
+import mosaicLogoUrl from "./assets/mosaic-logo-transparent.png";
 import "./styles.css";
 
 export type AssignmentSource = "Email" | "DAM";
 export type AssignmentType = "DCA" | "CH" | "MGA" | "Company Contract";
 export type AuditType = "Remote" | "Onsite";
 export type AuditStructure = "Solo" | "Coordinated";
+export type CalendarSyncStatus =
+  | "Not Synced"
+  | "Ready to Sync"
+  | "Synced"
+  | "Conflict Review";
 export type Stage =
   | "Intake"
   | "Registration"
@@ -160,6 +166,10 @@ export type AuditProject = {
   quoteAmount: number;
   tentativeAuditWeek: string;
   confirmedAuditDate: string;
+  schedulingNotes: string;
+  calendarSyncStatus: CalendarSyncStatus;
+  linkedContactId: string;
+  linkedContactSource: string;
   auditType: AuditType;
   baaReceived: boolean;
   endorsementsReceived: boolean;
@@ -208,7 +218,13 @@ type FilterPreset = {
 };
 
 type ViewMode = "kanban" | "table";
-type AppSection = "dashboard" | "assignments" | "command" | "reports" | "admin";
+type AppSection =
+  | "dashboard"
+  | "assignments"
+  | "scheduling"
+  | "command"
+  | "reports"
+  | "admin";
 type AdminTab = "users" | "contacts" | "activity" | "storage" | "health";
 type UserRole = "Admin" | "Audit Manager" | "Auditor" | "Finance" | "Read Only";
 type ProjectVisibility =
@@ -355,6 +371,12 @@ const assignmentTypeOptions: AssignmentType[] = [
 ];
 
 const auditStructureOptions: AuditStructure[] = ["Solo", "Coordinated"];
+const calendarSyncStatusOptions: CalendarSyncStatus[] = [
+  "Not Synced",
+  "Ready to Sync",
+  "Synced",
+  "Conflict Review",
+];
 
 const assignmentStatusOptions: AssignmentStatus[] = [
   "New",
@@ -535,6 +557,10 @@ const blankProject = (): AuditProject => ({
   quoteAmount: 0,
   tentativeAuditWeek: "",
   confirmedAuditDate: "",
+  schedulingNotes: "",
+  calendarSyncStatus: "Not Synced",
+  linkedContactId: "",
+  linkedContactSource: "",
   auditType: "Remote",
   baaReceived: false,
   endorsementsReceived: false,
@@ -1095,6 +1121,10 @@ export function withProjectDefaults(project: AuditProject): AuditProject {
     documentRequestDate: project.documentRequestDate ?? "",
     brokerLastChasedDate: project.brokerLastChasedDate ?? "",
     brokerExpectedResponseDate: project.brokerExpectedResponseDate ?? "",
+    schedulingNotes: project.schedulingNotes ?? "",
+    calendarSyncStatus: project.calendarSyncStatus ?? "Not Synced",
+    linkedContactId: project.linkedContactId ?? "",
+    linkedContactSource: project.linkedContactSource ?? "",
     checklistCompletions: project.checklistCompletions ?? {},
     comments: project.comments ?? [],
     activityEvents: project.activityEvents ?? [],
@@ -1300,6 +1330,7 @@ function intakeWarningIssues(project: AuditProject) {
   }
   if (
     stageIndex >= stages.indexOf("File Selection") &&
+    !isDcaProject(project) &&
     !project.premiumBdxReceived
   ) {
     warnings.push("File selection needs Premium BDX before moving forward.");
@@ -1353,6 +1384,52 @@ export function dueLabel(project: AuditProject) {
   if (days === 0) return { text: "Due today", className: "warning" };
   if (days <= 3) return { text: `Due in ${days}d`, className: "warning" };
   return { text: `Due ${project.dueDate}`, className: "ok" };
+}
+
+function projectScheduleDate(project: AuditProject) {
+  return project.confirmedAuditDate || project.dueDate || "";
+}
+
+function schedulingConflictWarnings(
+  project: AuditProject,
+  projects: AuditProject[],
+) {
+  const warnings: string[] = [];
+  const scheduleDate = projectScheduleDate(project);
+  if (!project.confirmedAuditDate && project.tentativeAuditWeek) {
+    warnings.push("Tentative week set, but confirmed audit date is still blank.");
+  }
+  if (!project.tentativeAuditWeek && !project.confirmedAuditDate) {
+    warnings.push("No scheduling target recorded yet.");
+  }
+  if (project.quoteStatus !== "Accepted") {
+    warnings.push("Quote is not accepted yet.");
+  }
+  if (project.calendarSyncStatus === "Conflict Review") {
+    warnings.push("Marked for calendar conflict review.");
+  }
+  if (scheduleDate) {
+    const projectAuditors = assignedAuditorNames(project);
+    const sameDayConflicts = projects.filter(
+      (candidate) =>
+        candidate.id !== project.id &&
+        !candidate.archived &&
+        candidate.currentStage !== "Closed" &&
+        projectScheduleDate(candidate) === scheduleDate &&
+        assignedAuditorNames(candidate).some((auditor) =>
+          projectAuditors.includes(auditor),
+        ),
+    );
+    if (sameDayConflicts.length > 0) {
+      warnings.push(
+        `Same-day auditor conflict with ${sameDayConflicts
+          .slice(0, 2)
+          .map((candidate) => candidate.assignmentNumber)
+          .join(", ")}.`,
+      );
+    }
+  }
+  return warnings;
 }
 
 function pushUnique(items: string[], item: string) {
@@ -1811,8 +1888,82 @@ function resolveTemplateReceiver(
             ? "Use the invoice submission contact or finance handoff address from the client instruction sheet."
             : kind === "Report contact"
               ? "Use the report submission contact when sending findings or final report follow-up."
-              : "Review the linked workbook before sending.",
+      : "Review the linked workbook before sending.",
   };
+}
+
+function linkedContactName(contact: LinkedContact) {
+  return (
+    contact.company ||
+    contact.coverholder ||
+    contact.managingAgent ||
+    contact.worksheetName ||
+    contact.contactName ||
+    "Linked contact"
+  );
+}
+
+function linkedContactLabel(contact: LinkedContact) {
+  const name = linkedContactName(contact);
+  const source = contact.workbookName
+    ? contact.workbookName.replace(/^Client Instructions\s*/i, "Instructions ")
+    : contact.sourceLabel;
+  return `${name} - ${source}`;
+}
+
+function instructionValue(contact: LinkedContact, label: string) {
+  const normalizedLabel = label.toLowerCase();
+  return (
+    contact.specialInstructions.find((instruction) =>
+      instruction.label.toLowerCase().includes(normalizedLabel),
+    )?.value ?? ""
+  );
+}
+
+function auditTypeFromContact(contact: LinkedContact): AuditType | "" {
+  const preference = instructionValue(contact, "onsite");
+  if (/onsite/i.test(preference)) return "Onsite";
+  if (/remote/i.test(preference)) return "Remote";
+  return "";
+}
+
+function contactSchedulingNotes(contact: LinkedContact) {
+  return [
+    instructionValue(contact, "Onsite/Remote Preference"),
+    instructionValue(contact, "Fees and Payment Terms"),
+    instructionValue(contact, "Other"),
+    instructionValue(contact, "Notes/Comments"),
+  ]
+    .filter(Boolean)
+    .map((value) => value.trim())
+    .filter((value, index, list) => list.indexOf(value) === index)
+    .join("\n");
+}
+
+function projectWithLinkedContact(project: AuditProject, contact: LinkedContact) {
+  const auditTypePreference = auditTypeFromContact(contact);
+  const contactNotes = contactSchedulingNotes(contact);
+  const existingNotes = project.schedulingNotes.trim();
+  const mergedNotes =
+    contactNotes && !existingNotes.includes(contactNotes)
+      ? [existingNotes, contactNotes].filter(Boolean).join("\n\n")
+      : project.schedulingNotes;
+  return withProjectDefaults({
+    ...project,
+    linkedContactId: contact.id,
+    linkedContactSource: `${contact.workbookName} / ${contact.worksheetName}`,
+    auditEntity: project.auditEntity.trim() || linkedContactName(contact),
+    clientCoverholderCode:
+      project.clientCoverholderCode.trim() || contact.worksheetName || "",
+    broker:
+      project.broker.trim() ||
+      contact.managingAgent ||
+      contact.broker ||
+      contact.company ||
+      "",
+    auditType: auditTypePreference || project.auditType,
+    schedulingNotes: mergedNotes,
+  });
 }
 
 const communicationTemplates: CommunicationTemplate[] = [
@@ -2130,6 +2281,11 @@ function exportProjectsToCsv(projects: AuditProject[]) {
     ["Quote Status", (project) => project.quoteStatus],
     ["Quote Amount", (project) => project.quoteAmount],
     ["Due Date", (project) => project.dueDate],
+    ["Tentative Audit Week", (project) => project.tentativeAuditWeek],
+    ["Confirmed Audit Date", (project) => project.confirmedAuditDate],
+    ["Calendar Sync Status", (project) => project.calendarSyncStatus],
+    ["Linked Contact Source", (project) => project.linkedContactSource],
+    ["Scheduling Notes", (project) => project.schedulingNotes],
     ["Labels", (project) => project.labels.join("; ")],
     ["Payment Received", (project) => project.paymentReceived],
     ["Next Action", (project) => project.nextAction],
@@ -2220,7 +2376,7 @@ function App() {
     useState<LinkedContactSourcesResponse | null>(null);
   const [contactSourcesLoading, setContactSourcesLoading] = useState(false);
   const [contactSourcesError, setContactSourcesError] = useState("");
-  const contactSourcesAutoLoadedFor = useRef("");
+  const contactSourcesAutoLoadedFor = useRef<Set<string>>(new Set());
   const [projectStorageLoading, setProjectStorageLoading] = useState(false);
   const [selectedId, setSelectedId] = useState(projects[0]?.id ?? "");
   const [editing, setEditing] = useState<AuditProject | null>(null);
@@ -2247,7 +2403,7 @@ function App() {
       : null;
 
   const refreshSystemHealth = async () => {
-    if (signedInUser?.role !== "Admin") return;
+    if (!signedInUser) return;
     setSystemHealthLoading(true);
     try {
       setSystemHealth(await getSecureSystemHealth());
@@ -2322,12 +2478,11 @@ function App() {
     if (
       activeSection === "admin" &&
       activeAdminTab === "contacts" &&
-      signedInUser?.role === "Admin" &&
       !contactSources &&
       !contactSourcesLoading &&
-      contactSourcesAutoLoadedFor.current !== autoLoadKey
+      !contactSourcesAutoLoadedFor.current.has(autoLoadKey)
     ) {
-      contactSourcesAutoLoadedFor.current = autoLoadKey;
+      contactSourcesAutoLoadedFor.current.add(autoLoadKey);
       void refreshContactSources();
     }
   }, [
@@ -2335,6 +2490,25 @@ function App() {
     activeAdminTab,
     signedInUser?.role,
     signedInUser?.email,
+    contactSources,
+    contactSourcesLoading,
+  ]);
+
+  useEffect(() => {
+    const autoLoadKey = `${signedInUser?.email || ""}:project-form-contacts`;
+    if (
+      signedInUser &&
+      editing &&
+      !contactSources &&
+      !contactSourcesLoading &&
+      !contactSourcesAutoLoadedFor.current.has(autoLoadKey)
+    ) {
+      contactSourcesAutoLoadedFor.current.add(autoLoadKey);
+      void refreshContactSources();
+    }
+  }, [
+    signedInUser?.email,
+    editing,
     contactSources,
     contactSourcesLoading,
   ]);
@@ -2944,6 +3118,43 @@ function App() {
     setMessage(`${project.assignmentNumber} finance fields updated.`);
   };
 
+  const updateProjectScheduling = (
+    project: AuditProject,
+    update: Partial<
+      Pick<
+        AuditProject,
+        | "calendarSyncStatus"
+        | "schedulingNotes"
+        | "confirmedAuditDate"
+        | "tentativeAuditWeek"
+      >
+    >,
+  ) => {
+    if (!canEditProject(signedInUser, project)) {
+      setMessage("Your role cannot update scheduling for this project.");
+      return;
+    }
+    const updatedProject = withProjectDefaults({
+      ...project,
+      ...update,
+      lastUpdatedDate: new Date().toISOString().slice(0, 10),
+      activityEvents: [
+        ...(project.activityEvents ?? []),
+        createActivityEvent(
+          "field",
+          "Scheduling updated",
+          "Scheduling notes, calendar sync status, or audit dates were updated.",
+          signedInUser.fullName,
+        ),
+      ],
+    });
+    persist(
+      projects.map((item) => (item.id === project.id ? updatedProject : item)),
+    );
+    setSelectedId(project.id);
+    setMessage(`${project.assignmentNumber} scheduling updated.`);
+  };
+
   const importProjectsFromFile = async (file: File) => {
     if (!hasFullProjectAccess(signedInUser)) {
       setMessage("Only admins and audit managers can import project data.");
@@ -3082,13 +3293,16 @@ function App() {
   return (
     <main>
       <header className="hero">
-        <div>
-          <p className="eyebrow">Signed in: {signedInUser.role}</p>
-          <h1>Audit Assignment Tracker</h1>
-          <p>
-            Intake, document readiness, workload, client contacts, and close-out
-            in one operating view.
-          </p>
+        <div className="hero-branding">
+          <img src={mosaicLogoUrl} alt="Mosaic International Insurance Professionals" />
+          <div>
+            <p className="eyebrow">Signed in: {signedInUser.role}</p>
+            <h1>Audit Assignment Tracker</h1>
+            <p>
+              Intake, document readiness, workload, client contacts, and close-out
+              in one operating view.
+            </p>
+          </div>
         </div>
         <div className="hero-actions">
           {canCreateProject(signedInUser) && (
@@ -3258,6 +3472,19 @@ function App() {
         </>
       )}
 
+      {activeSection === "scheduling" && (
+        <SchedulingCapacity
+          projects={activeVisibleProjects}
+          auditors={auditors}
+          onSelect={(id) => {
+            setSelectedId(id);
+            setActiveSection("assignments");
+          }}
+          onUpdateScheduling={updateProjectScheduling}
+          currentUser={signedInUser}
+        />
+      )}
+
       {activeSection === "command" && (
         <OperationsCommandCenter
           projects={activeVisibleProjects}
@@ -3333,6 +3560,7 @@ function App() {
           onCancel={() => setEditing(null)}
           onSave={upsertProject}
           auditorOptions={auditorOptions}
+          contactSources={contactSources}
         />
       )}
       {confirmation && (
@@ -3390,6 +3618,10 @@ function LoginScreen({
   return (
     <main className="login-shell">
       <section className="microsoft-login-stack">
+        <div className="login-company-brand">
+          <img src={mosaicLogoUrl} alt="Mosaic International Insurance Professionals" />
+          <span>Audit Assignment Tracker</span>
+        </div>
         <div className="microsoft-login-card">
           <div className="microsoft-brand">
             <span className="microsoft-mark" aria-hidden="true">
@@ -3613,6 +3845,11 @@ function AppNavigation({
       label: "Assignments",
       helper: "Working board, filters, project detail, and intake/edit forms.",
       count: activeCount,
+    },
+    {
+      id: "scheduling",
+      label: "Scheduling",
+      helper: "Audit calendar, notes, sync status, and conflict warnings.",
     },
     {
       id: "command",
@@ -4849,6 +5086,275 @@ function Dashboard({ projects }: { projects: AuditProject[] }) {
   );
 }
 
+function SchedulingCapacity({
+  projects,
+  auditors,
+  currentUser,
+  onSelect,
+  onUpdateScheduling,
+}: {
+  projects: AuditProject[];
+  auditors: string[];
+  currentUser: PrototypeUser;
+  onSelect: (id: string) => void;
+  onUpdateScheduling: (
+    project: AuditProject,
+    update: Partial<
+      Pick<
+        AuditProject,
+        | "calendarSyncStatus"
+        | "schedulingNotes"
+        | "confirmedAuditDate"
+        | "tentativeAuditWeek"
+      >
+    >,
+  ) => void;
+}) {
+  const scheduledProjects = projects
+    .filter((project) => project.currentStage !== "Closed")
+    .slice()
+    .sort((a, b) =>
+      (projectScheduleDate(a) || "9999-12-31").localeCompare(
+        projectScheduleDate(b) || "9999-12-31",
+      ),
+    );
+  const unscheduled = scheduledProjects.filter(
+    (project) => !projectScheduleDate(project) && !project.tentativeAuditWeek,
+  );
+  const conflictCount = scheduledProjects.filter(
+    (project) => schedulingConflictWarnings(project, projects).length > 0,
+  ).length;
+  const readyToSync = scheduledProjects.filter(
+    (project) => project.calendarSyncStatus === "Ready to Sync",
+  ).length;
+  const capacityRows = auditors
+    .map((auditor) => {
+      const auditorProjects = scheduledProjects.filter((project) =>
+        projectHasAuditor(project, auditor),
+      );
+      const conflictProjects = auditorProjects.filter(
+        (project) => schedulingConflictWarnings(project, projects).length > 0,
+      );
+      return {
+        auditor,
+        total: auditorProjects.length,
+        nextSeven: auditorProjects.filter(
+          (project) => daysUntil(projectScheduleDate(project)) >= 0 && daysUntil(projectScheduleDate(project)) <= 7,
+        ).length,
+        conflicts: conflictProjects.length,
+      };
+    })
+    .filter((row) => row.total > 0 || row.conflicts > 0)
+    .sort((a, b) => b.conflicts - a.conflicts || b.nextSeven - a.nextSeven);
+
+  return (
+    <section className="scheduling-workspace">
+      <article className="panel scheduling-hero">
+        <div>
+          <p className="eyebrow dark">Microsoft 365 scheduling readiness</p>
+          <h2>Scheduling & Capacity</h2>
+          <span>
+            First-phase audit calendar, scheduling notes, sync status, and conflict warnings.
+          </span>
+        </div>
+        <div className="scheduling-stats">
+          <SummaryCard label="Scheduled" value={scheduledProjects.length - unscheduled.length} />
+          <SummaryCard label="Needs date" value={unscheduled.length} tone="warning" />
+          <SummaryCard label="Warnings" value={conflictCount} tone="danger" />
+          <SummaryCard label="Ready to sync" value={readyToSync} />
+        </div>
+      </article>
+      <div className="scheduling-grid">
+        <article className="panel audit-calendar-panel">
+          <div className="section-title">
+            <div>
+              <h2>Audit calendar</h2>
+              <span>Sorted by confirmed audit date, then due date, then unscheduled items.</span>
+            </div>
+          </div>
+          <div className="calendar-list">
+            {scheduledProjects.length === 0 ? (
+              <p className="muted-note">No open projects to schedule yet.</p>
+            ) : (
+              scheduledProjects.map((project) => (
+                <SchedulingProjectCard
+                  key={project.id}
+                  project={project}
+                  allProjects={projects}
+                  canUpdate={canEditProject(currentUser, project)}
+                  onSelect={onSelect}
+                  onUpdateScheduling={onUpdateScheduling}
+                />
+              ))
+            )}
+          </div>
+        </article>
+        <aside className="panel capacity-panel">
+          <div className="section-title">
+            <div>
+              <h2>Capacity view</h2>
+              <span>Near-term workload and conflict pressure by auditor.</span>
+            </div>
+          </div>
+          <div className="capacity-list">
+            {capacityRows.length === 0 ? (
+              <p className="muted-note">No scheduled auditor workload yet.</p>
+            ) : (
+              capacityRows.map((row) => (
+                <article className="capacity-row" key={row.auditor}>
+                  <span className="avatar">
+                    {row.auditor
+                      .split(" ")
+                      .map((part) => part[0])
+                      .slice(0, 2)
+                      .join("")}
+                  </span>
+                  <div>
+                    <strong>{row.auditor}</strong>
+                    <small>{row.total} open scheduled assignments</small>
+                  </div>
+                  <div className="capacity-metrics">
+                    <span>{row.nextSeven} next 7d</span>
+                    <span className={row.conflicts ? "warning" : "ok"}>
+                      {row.conflicts} warnings
+                    </span>
+                  </div>
+                </article>
+              ))
+            )}
+          </div>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function SchedulingProjectCard({
+  project,
+  allProjects,
+  canUpdate,
+  onSelect,
+  onUpdateScheduling,
+}: {
+  project: AuditProject;
+  allProjects: AuditProject[];
+  canUpdate: boolean;
+  onSelect: (id: string) => void;
+  onUpdateScheduling: (
+    project: AuditProject,
+    update: Partial<
+      Pick<
+        AuditProject,
+        | "calendarSyncStatus"
+        | "schedulingNotes"
+        | "confirmedAuditDate"
+        | "tentativeAuditWeek"
+      >
+    >,
+  ) => void;
+}) {
+  const [notes, setNotes] = useState(project.schedulingNotes);
+  const [confirmedDate, setConfirmedDate] = useState(project.confirmedAuditDate);
+  const [tentativeWeek, setTentativeWeek] = useState(project.tentativeAuditWeek);
+  useEffect(() => {
+    setNotes(project.schedulingNotes);
+    setConfirmedDate(project.confirmedAuditDate);
+    setTentativeWeek(project.tentativeAuditWeek);
+  }, [project.id, project.schedulingNotes, project.confirmedAuditDate, project.tentativeAuditWeek]);
+  const warnings = schedulingConflictWarnings(project, allProjects);
+  const scheduleDate = projectScheduleDate(project);
+  const statusClass =
+    project.calendarSyncStatus === "Synced"
+      ? "ok"
+      : project.calendarSyncStatus === "Conflict Review"
+        ? "danger"
+        : project.calendarSyncStatus === "Ready to Sync"
+          ? "warning"
+          : "muted";
+  const saveDates = () => {
+    if (
+      confirmedDate !== project.confirmedAuditDate ||
+      tentativeWeek !== project.tentativeAuditWeek
+    ) {
+      onUpdateScheduling(project, {
+        confirmedAuditDate: confirmedDate,
+        tentativeAuditWeek: tentativeWeek,
+      });
+    }
+  };
+  const saveNotes = () => {
+    if (notes !== project.schedulingNotes) {
+      onUpdateScheduling(project, { schedulingNotes: notes });
+    }
+  };
+
+  return (
+    <article className={`calendar-card ${warnings.length ? "has-warning" : ""}`}>
+      <div className="calendar-date">
+        <strong>{scheduleDate ? scheduleDate.slice(5) : "TBD"}</strong>
+        <span>{project.confirmedAuditDate ? "Confirmed" : project.tentativeAuditWeek || "No target"}</span>
+      </div>
+      <div className="calendar-main">
+        <button type="button" className="link calendar-title" onClick={() => onSelect(project.id)}>
+          {project.assignmentNumber} - {project.auditEntity || "No entity"}
+        </button>
+        <div className="calendar-meta">
+          <span>{project.assignmentType}</span>
+          <span>{project.auditType}</span>
+          <span>{formatAuditTeam(project) || "No audit team"}</span>
+          <span className={`pill ${statusClass}`}>{project.calendarSyncStatus}</span>
+        </div>
+        {warnings.length > 0 && (
+          <ul className="calendar-warnings">
+            {warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        )}
+        <div className="schedule-edit-grid">
+          <Input
+            label="Tentative week"
+            value={tentativeWeek}
+            placeholder="2026-W21"
+            onChange={setTentativeWeek}
+          />
+          <Input
+            label="Confirmed date"
+            type="date"
+            value={confirmedDate}
+            onChange={setConfirmedDate}
+          />
+          <Select
+            label="Calendar sync"
+            value={project.calendarSyncStatus}
+            options={calendarSyncStatusOptions}
+            placeholder="Select status"
+            onChange={(value) => {
+              if (!canUpdate) return;
+              onUpdateScheduling(project, {
+                calendarSyncStatus: value as CalendarSyncStatus,
+              });
+            }}
+          />
+          <button type="button" className="secondary" disabled={!canUpdate} onClick={saveDates}>
+            Save dates
+          </button>
+        </div>
+        <label>
+          Scheduling notes
+          <textarea
+            disabled={!canUpdate}
+            value={notes}
+            placeholder="Availability, travel constraints, client scheduling notes, or calendar blockers"
+            onBlur={saveNotes}
+            onChange={(event) => setNotes(event.target.value)}
+          />
+        </label>
+      </div>
+    </article>
+  );
+}
+
 function OperationsCommandCenter({
   projects,
   currentUser,
@@ -5767,6 +6273,11 @@ function ProjectDetail({
           <Meta
             label="Audit timing"
             value={`${project.tentativeAuditWeek || "No week"} · ${project.confirmedAuditDate || "No date"}`}
+          />
+          <Meta label="Calendar sync" value={project.calendarSyncStatus} />
+          <Meta
+            label="Linked contact"
+            value={project.linkedContactSource || "Not linked"}
           />
           <Meta label="Audit type" value={project.auditType} />
           <Meta
@@ -6827,11 +7338,13 @@ function ProjectForm({
   onSave,
   onCancel,
   auditorOptions,
+  contactSources,
 }: {
   project: AuditProject;
   onSave: (project: AuditProject) => void;
   onCancel: () => void;
   auditorOptions: string[];
+  contactSources: LinkedContactSourcesResponse | null;
 }) {
   const [draft, setDraft] = useState(withProjectDefaults(project));
   const [step, setStep] = useState(0);
@@ -6862,6 +7375,20 @@ function ProjectForm({
         auditStructure: value as AuditStructure,
       }),
     );
+  };
+  const linkedContacts = (contactSources?.contacts ?? [])
+    .slice()
+    .sort((a, b) => linkedContactName(a).localeCompare(linkedContactName(b)));
+  const selectedLinkedContact = linkedContacts.find(
+    (contact) => contact.id === draft.linkedContactId,
+  );
+  const selectLinkedContact = (contactId: string) => {
+    const contact = linkedContacts.find((item) => item.id === contactId);
+    if (!contact) {
+      setDraft(withProjectDefaults({ ...draft, linkedContactId: "", linkedContactSource: "" }));
+      return;
+    }
+    setDraft(projectWithLinkedContact(draft, contact));
   };
   const updateDocumentField = (key: ProjectDocumentKey, value: boolean) => {
     setDraft(
@@ -6937,6 +7464,42 @@ function ProjectForm({
           Capture the intake facts first. This is the minimum record users need
           to start tracking the audit.
         </p>
+      </div>
+      <div className="linked-contact-intake">
+        <Select
+          label="Linked client workbook contact"
+          value={draft.linkedContactId}
+          options={linkedContacts.map((contact) => [
+            contact.id,
+            linkedContactLabel(contact),
+          ])}
+          placeholder={
+            contactSources
+              ? "Select client/contact from linked spreadsheets"
+              : "Contacts loading or unavailable"
+          }
+          onChange={selectLinkedContact}
+        />
+        {selectedLinkedContact ? (
+          <div className="linked-contact-preview">
+            <strong>{linkedContactName(selectedLinkedContact)}</strong>
+            <span>{selectedLinkedContact.email || "No email detected"}</span>
+            <small>{draft.linkedContactSource}</small>
+            <div className="contact-tags">
+              {selectedLinkedContact.raw?.dcaContact && <span>DCA contact available</span>}
+              {selectedLinkedContact.raw?.coverholderContact && <span>CH contact available</span>}
+              {instructionValue(selectedLinkedContact, "Onsite/Remote Preference") && (
+                <span>{instructionValue(selectedLinkedContact, "Onsite/Remote Preference")}</span>
+              )}
+            </div>
+          </div>
+        ) : (
+          <p className="muted-note">
+            Linking a workbook contact can prefill entity, contact source,
+            scheduling notes, and onsite/remote preference from the live
+            spreadsheet.
+          </p>
+        )}
       </div>
       <div className="form-grid wizard-grid">
         <Input
@@ -7108,7 +7671,24 @@ function ProjectForm({
           placeholder="Select stage"
           onChange={(value) => update("currentStage", value as Stage)}
         />
+        <Select
+          label="Calendar sync status"
+          value={draft.calendarSyncStatus}
+          options={calendarSyncStatusOptions}
+          placeholder="Select status"
+          onChange={(value) =>
+            update("calendarSyncStatus", value as CalendarSyncStatus)
+          }
+        />
       </div>
+      <label>
+        Scheduling notes
+        <textarea
+          value={draft.schedulingNotes}
+          placeholder="Availability, travel constraints, preferred dates, client scheduling notes, or calendar blockers"
+          onChange={(event) => update("schedulingNotes", event.target.value)}
+        />
+      </label>
     </section>
   );
 
