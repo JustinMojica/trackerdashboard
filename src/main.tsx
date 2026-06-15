@@ -3086,8 +3086,8 @@ function App() {
           <p className="eyebrow">Signed in: {signedInUser.role}</p>
           <h1>Audit Assignment Tracker</h1>
           <p>
-            Manage audit assignments from intake through final report, invoice,
-            and close-out.
+            Intake, document readiness, workload, client contacts, and close-out
+            in one operating view.
           </p>
         </div>
         <div className="hero-actions">

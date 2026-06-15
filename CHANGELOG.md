@@ -4,6 +4,25 @@ This log tracks practical production changes to the Audit Assignment Tracker.
 It intentionally excludes secrets, publish-profile values, client secrets, and
 other sensitive configuration values.
 
+## 2026-06-15
+
+### Changed
+
+- Refined the main UI shell with a cleaner production background, stronger
+  header hierarchy, clearer navigation states, and more polished action buttons.
+- Improved dashboard, Kanban, workflow, admin, contact, template, and table
+  surfaces with better spacing, card contrast, hover states, focus states, and
+  scan-friendly status styling.
+- Tightened the signed-in header copy to better explain the tracker as an
+  operating view for intake, readiness, workload, contacts, and close-out.
+
+### Verified
+
+- `npm run check`
+- `npm test`
+- `npm run build`
+- Local browser smoke check on `http://127.0.0.1:5173/`.
+
 ## 2026-06-06
 
 ### Added
