@@ -100,6 +100,11 @@ test("worksheet parser supports client instruction sheet layout", () => {
     parsed.contacts[0].email,
     "danny.sambridge@ascotgroup.com; daisy.murphy@ascotgroup.com; AscotDAAudit@ascotgroup.com",
   );
+  assert.deepEqual(parsed.contacts[0].emails.dca, ["danny.sambridge@ascotgroup.com"]);
+  assert.deepEqual(parsed.contacts[0].emails.coverholder, ["daisy.murphy@ascotgroup.com"]);
+  assert.deepEqual(parsed.contacts[0].emails.report, ["AscotDAAudit@ascotgroup.com"]);
+  assert.deepEqual(parsed.contacts[0].emails.invoice, ["AscotDAAudit@ascotgroup.com"]);
+  assert.equal(parsed.contacts[0].contactName, "Danny Sambridge");
   assert.equal(
     parsed.contacts[0].specialInstructions.some(
       (instruction) => instruction.label === "Deliverables",
@@ -112,4 +117,53 @@ test("worksheet parser supports client instruction sheet layout", () => {
     ),
     true,
   );
+});
+
+test("instruction parser finds lower sheet email fields and ignores blank placeholders", () => {
+  const parsed = parseWorksheetRows({
+    source: { id: "workbook-1", label: "Workbook 1" },
+    workbookName: "Client Instructions (D-G).xlsx",
+    worksheetName: "Example",
+    values: [
+      [
+        "Client Name/Address/Tel#",
+        "DCA Primary Contact/Title/Email/Tel#",
+        "COVER HOLDER Primary Contact/Title/Email/Tel#",
+        "Audit Scope",
+      ],
+      ["Example MA", "Morgan Lane\nEmail: morgan@example.com", "", "LMA"],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      ["Report Submission Email", "report@example.com"],
+      ["Invoice Submission Email", "invoice@example.com"],
+    ],
+  });
+
+  assert.equal(parsed.contacts.length, 1);
+  assert.equal(parsed.contacts[0].email, "morgan@example.com; report@example.com; invoice@example.com");
+  assert.deepEqual(parsed.contacts[0].emails.report, ["report@example.com"]);
+  assert.deepEqual(parsed.contacts[0].emails.invoice, ["invoice@example.com"]);
+  assert.equal(parsed.warnings.length, 0);
+
+  const blank = parseWorksheetRows({
+    source: { id: "workbook-1", label: "Workbook 1" },
+    workbookName: "Client Instructions (D-G).xlsx",
+    worksheetName: "BLANK 1",
+    values: [
+      [
+        "Client Name/Address/Tel#",
+        "DCA Primary Contact/Title/Email/Tel#",
+        "COVER HOLDER Primary Contact/Title/Email/Tel#",
+      ],
+      ["", "", ""],
+    ],
+  });
+
+  assert.equal(blank.contacts.length, 0);
+  assert.equal(blank.warnings.length, 0);
 });

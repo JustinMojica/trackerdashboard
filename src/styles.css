@@ -568,6 +568,27 @@ main {
   font-weight: 800;
   padding: 0.28rem 0.55rem;
 }
+.contact-email-grid {
+  display: grid;
+  gap: 0.45rem;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+.contact-email-grid span {
+  background: #fff;
+  border: 1px solid #dfe7f2;
+  border-radius: 12px;
+  color: #40506a;
+  display: grid;
+  gap: 0.2rem;
+  overflow-wrap: anywhere;
+  padding: 0.65rem 0.75rem;
+}
+.contact-email-grid strong {
+  color: #15386d;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+}
 .special-instructions {
   background: #fff7e8;
   border: 1px solid #e9cb83;
@@ -1005,6 +1026,22 @@ main {
 .scheduling-hero span {
   color: #53637a;
 }
+.calendar-ready-note {
+  border-radius: 12px;
+  font-weight: 750;
+  margin: 0.75rem 0 0;
+  padding: 0.65rem 0.75rem;
+}
+.calendar-ready-note.ready {
+  background: #e7f7ed;
+  border: 1px solid #9fd7b3;
+  color: #0e5a2b;
+}
+.calendar-ready-note.blocked {
+  background: #fff7e8;
+  border: 1px solid #e9cb83;
+  color: #654400;
+}
 .scheduling-stats {
   display: grid;
   gap: 0.75rem;
@@ -1101,7 +1138,7 @@ main {
   align-items: end;
   display: grid;
   gap: 0.6rem;
-  grid-template-columns: repeat(3, minmax(160px, 1fr)) auto;
+  grid-template-columns: repeat(3, minmax(150px, 1fr)) repeat(2, auto);
 }
 .capacity-row {
   align-items: center;

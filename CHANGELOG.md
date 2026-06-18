@@ -8,6 +8,9 @@ other sensitive configuration values.
 
 ### Added
 
+- Added manual Outlook project event sync from the Scheduling workspace. The
+  action creates an event on the signed-in user's Outlook calendar after
+  `Calendars.ReadWrite` Graph application consent is granted.
 - Added Mosaic branding with a transparent-background logo on the sign-in and
   signed-in tracker header.
 - Added a Scheduling & Capacity workspace with audit calendar cards, schedule
@@ -18,6 +21,11 @@ other sensitive configuration values.
 
 ### Changed
 
+- Expanded linked workbook parsing to read a larger sheet area, extract DCA,
+  coverholder, report, and invoice email buckets, and ignore blank placeholder
+  instruction tabs.
+- Removed the stale admin-only frontend guard from contact refresh so approved
+  users can load linked contacts for project intake.
 - Opened linked spreadsheet contact refresh to approved users, not only admins,
   so project intake can use contacts without exposing backend admin controls.
 - Expanded CSV exports and project detail metadata with scheduling and linked

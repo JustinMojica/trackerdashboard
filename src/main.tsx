@@ -6,6 +6,7 @@ import {
 } from "./accessRequests";
 import {
   approveSecureAccessRequest,
+  createOutlookCalendarEvent,
   getLinkedContactSources,
   getSecureAccessState,
   getSecureSystemHealth,
@@ -1854,8 +1855,21 @@ function resolveTemplateReceiver(
   const matchedContact = rankedContacts[0]?.contact;
   const block = matchedContact ? contactBlockForReceiver(matchedContact, kind) : "";
   const blockEmails = extractEmailsFromText(block);
+  const structuredEmails =
+    matchedContact && kind === "DCA contact"
+      ? matchedContact.emails?.dca ?? []
+      : matchedContact && kind === "Coverholder contact"
+        ? matchedContact.emails?.coverholder ?? []
+        : matchedContact && kind === "Invoice contact"
+          ? matchedContact.emails?.invoice ?? []
+          : matchedContact && kind === "Report contact"
+            ? matchedContact.emails?.report ?? []
+            : [];
   const contactEmails = matchedContact
-    ? extractEmailsFromText(matchedContact.email || Object.values(matchedContact.raw ?? {}).join(" "))
+    ? [
+        ...structuredEmails,
+        ...extractEmailsFromText(matchedContact.email || Object.values(matchedContact.raw ?? {}).join(" ")),
+      ]
     : [];
   const email = blockEmails[0] || contactEmails[0] || "";
   const name =
@@ -1909,6 +1923,18 @@ function linkedContactLabel(contact: LinkedContact) {
     ? contact.workbookName.replace(/^Client Instructions\s*/i, "Instructions ")
     : contact.sourceLabel;
   return `${name} - ${source}`;
+}
+
+function contactEmailBuckets(contact: LinkedContact) {
+  return [
+    ["DCA", contact.emails?.dca ?? []],
+    ["Coverholder", contact.emails?.coverholder ?? []],
+    ["Report", contact.emails?.report ?? []],
+    ["Invoice", contact.emails?.invoice ?? []],
+  ].filter(([, values]) => Array.isArray(values) && values.length > 0) as [
+    string,
+    string[],
+  ][];
 }
 
 function instructionValue(contact: LinkedContact, label: string) {
@@ -2415,7 +2441,7 @@ function App() {
   };
 
   const refreshContactSources = async () => {
-    if (signedInUser?.role !== "Admin") return;
+    if (!signedInUser) return;
     setContactSourcesLoading(true);
     setContactSourcesError("");
     try {
@@ -3155,6 +3181,28 @@ function App() {
     setMessage(`${project.assignmentNumber} scheduling updated.`);
   };
 
+  const syncProjectToOutlook = async (project: AuditProject) => {
+    if (!canEditProject(signedInUser, project)) {
+      setMessage("Your role cannot sync this project to Outlook.");
+      return;
+    }
+    try {
+      const result = await createOutlookCalendarEvent(project.id);
+      updateProjectScheduling(project, { calendarSyncStatus: "Synced" });
+      setMessage(
+        result.event.webLink
+          ? `Outlook event created: ${result.event.subject}`
+          : "Outlook event created.",
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Outlook calendar sync failed.",
+      );
+    }
+  };
+
   const importProjectsFromFile = async (file: File) => {
     if (!hasFullProjectAccess(signedInUser)) {
       setMessage("Only admins and audit managers can import project data.");
@@ -3476,11 +3524,13 @@ function App() {
         <SchedulingCapacity
           projects={activeVisibleProjects}
           auditors={auditors}
+          calendarReady={Boolean(systemHealth?.calendar?.permissionGranted)}
           onSelect={(id) => {
             setSelectedId(id);
             setActiveSection("assignments");
           }}
           onUpdateScheduling={updateProjectScheduling}
+          onSyncOutlook={syncProjectToOutlook}
           currentUser={signedInUser}
         />
       )}
@@ -4164,6 +4214,7 @@ function ContactSourcesPanel({
   );
   const hasRefreshed = Boolean(contactSources);
   const visibleContacts = contacts.slice(0, 30);
+  const warningPreview = contactSources?.warnings.slice(0, 12) ?? [];
   return (
     <section className="panel contact-sources-panel">
       <div className="section-title">
@@ -4234,15 +4285,24 @@ function ContactSourcesPanel({
       )}
       {contactSources?.warnings.length ? (
         <div className="readiness-next">
-          <strong>Warnings</strong>
+          <strong>Contact parsing warnings</strong>
+          <span>
+            These are workbook tabs that loaded but need review. Blank template
+            tabs are ignored automatically.
+          </span>
           <ul>
-            {contactSources.warnings.slice(0, 8).map((warning) => (
+            {warningPreview.map((warning) => (
               <li key={`${warning.sourceId}-${warning.worksheetName}-${warning.message}`}>
                 {warning.worksheetName ? `${warning.worksheetName}: ` : ""}
                 {warning.message}
               </li>
             ))}
           </ul>
+          {contactSources.warnings.length > warningPreview.length && (
+            <small>
+              Showing {warningPreview.length} of {contactSources.warnings.length} warnings.
+            </small>
+          )}
         </div>
       ) : null}
       {contactSources && contacts.length === 0 ? (
@@ -4271,6 +4331,16 @@ function ContactSourcesPanel({
                 {contact.coverholder && <span>Coverholder: {contact.coverholder}</span>}
                 {contact.role && <span>{contact.role}</span>}
               </div>
+              {contactEmailBuckets(contact).length > 0 && (
+                <div className="contact-email-grid">
+                  {contactEmailBuckets(contact).map(([label, emails]) => (
+                    <span key={`${contact.id}-${label}`}>
+                      <strong>{label}</strong>
+                      {emails.join("; ")}
+                    </span>
+                  ))}
+                </div>
+              )}
               {contact.specialInstructions.length > 0 && (
                 <div className="special-instructions">
                   <strong>Special instructions</strong>
@@ -4301,6 +4371,7 @@ function SystemReadinessPanel({
   const graphRoles = health?.graphApp.roles ?? [];
   const consentReady =
     graphRoles.includes("Mail.Send") && graphRoles.includes("Sites.ReadWrite.All");
+  const calendarReady = Boolean(health?.calendar?.permissionGranted);
   const approvalStoreReady = Boolean(health?.approvalStore.durable);
   const projectStoreReady = Boolean(health?.projectStore?.durable);
   const configSource = health?.runtime.configSource ?? "Waiting for server check";
@@ -4348,6 +4419,15 @@ function SystemReadinessPanel({
             consentReady
               ? "Mail.Send and Sites.ReadWrite.All are active."
               : `Missing roles: ${health?.graphApp.missingRoles.join(", ") || "not checked"}`
+          }
+        />
+        <ReadinessCard
+          label="Outlook calendar"
+          ready={calendarReady}
+          detail={
+            calendarReady
+              ? "Calendars.ReadWrite is active for manual project event sync."
+              : "Grant Calendars.ReadWrite application consent to create Outlook project events."
           }
         />
         <ReadinessCard
@@ -5090,12 +5170,15 @@ function SchedulingCapacity({
   projects,
   auditors,
   currentUser,
+  calendarReady,
   onSelect,
   onUpdateScheduling,
+  onSyncOutlook,
 }: {
   projects: AuditProject[];
   auditors: string[];
   currentUser: PrototypeUser;
+  calendarReady: boolean;
   onSelect: (id: string) => void;
   onUpdateScheduling: (
     project: AuditProject,
@@ -5109,6 +5192,7 @@ function SchedulingCapacity({
       >
     >,
   ) => void;
+  onSyncOutlook: (project: AuditProject) => void;
 }) {
   const scheduledProjects = projects
     .filter((project) => project.currentStage !== "Closed")
@@ -5156,6 +5240,11 @@ function SchedulingCapacity({
           <span>
             First-phase audit calendar, scheduling notes, sync status, and conflict warnings.
           </span>
+          <p className={calendarReady ? "calendar-ready-note ready" : "calendar-ready-note blocked"}>
+            {calendarReady
+              ? "Outlook calendar linking is ready. Scheduled audits can be added to your calendar."
+              : "Outlook calendar linking needs Microsoft Graph Calendars.ReadWrite admin consent."}
+          </p>
         </div>
         <div className="scheduling-stats">
           <SummaryCard label="Scheduled" value={scheduledProjects.length - unscheduled.length} />
@@ -5182,8 +5271,10 @@ function SchedulingCapacity({
                   project={project}
                   allProjects={projects}
                   canUpdate={canEditProject(currentUser, project)}
+                  calendarReady={calendarReady}
                   onSelect={onSelect}
                   onUpdateScheduling={onUpdateScheduling}
+                  onSyncOutlook={onSyncOutlook}
                 />
               ))
             )}
@@ -5233,12 +5324,15 @@ function SchedulingProjectCard({
   project,
   allProjects,
   canUpdate,
+  calendarReady,
   onSelect,
   onUpdateScheduling,
+  onSyncOutlook,
 }: {
   project: AuditProject;
   allProjects: AuditProject[];
   canUpdate: boolean;
+  calendarReady: boolean;
   onSelect: (id: string) => void;
   onUpdateScheduling: (
     project: AuditProject,
@@ -5252,6 +5346,7 @@ function SchedulingProjectCard({
       >
     >,
   ) => void;
+  onSyncOutlook: (project: AuditProject) => void;
 }) {
   const [notes, setNotes] = useState(project.schedulingNotes);
   const [confirmedDate, setConfirmedDate] = useState(project.confirmedAuditDate);
@@ -5338,6 +5433,20 @@ function SchedulingProjectCard({
           />
           <button type="button" className="secondary" disabled={!canUpdate} onClick={saveDates}>
             Save dates
+          </button>
+          <button
+            type="button"
+            disabled={!canUpdate || !calendarReady || !project.confirmedAuditDate}
+            onClick={() => onSyncOutlook(project)}
+            title={
+              !calendarReady
+                ? "Grant Calendars.ReadWrite in Microsoft Entra before creating Outlook events."
+                : !project.confirmedAuditDate
+                  ? "Add a confirmed audit date first."
+                  : "Create an Outlook calendar event for this audit."
+            }
+          >
+            Add to Outlook
           </button>
         </div>
         <label>

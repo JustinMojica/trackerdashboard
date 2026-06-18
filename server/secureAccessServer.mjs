@@ -26,6 +26,7 @@ const oauthStates = new Map();
 const cookieName = "tracker_session";
 const oauthCookieName = "tracker_oauth_state";
 const sessionSecretMinLength = 32;
+const requiredGraphRoles = ["Mail.Send", "Sites.ReadWrite.All", "Calendars.ReadWrite"];
 const weakSessionSecrets = new Set([
   "dev",
   "development",
@@ -142,6 +143,9 @@ async function route(request, response) {
   }
   if (url.pathname === "/api/contact-sources" || url.pathname === "/api/admin/contact-sources") {
     return contactSources(request, response);
+  }
+  if (url.pathname === "/api/calendar/project-event" && request.method === "POST") {
+    return createProjectCalendarEvent(request, response);
   }
   if (url.pathname === "/api/projects" && request.method === "GET") {
     return listProjects(request, response);
@@ -638,6 +642,11 @@ async function systemHealth(request, response) {
       trackerUsersListIdConfigured: hasConfiguredValue(config.userStoreListId),
       auditAssignmentsListIdConfigured: hasConfiguredValue(config.projectStoreListId),
     },
+    calendar: {
+      permissionGranted: graphApp.roles.includes("Calendars.ReadWrite"),
+      mode: "manual-project-event-sync",
+      target: "signed-in-user-calendar",
+    },
     approvalStore,
     projectStore: projectStoreHealth,
     contactSources,
@@ -727,7 +736,7 @@ async function graphAppHealth() {
     return {
       tokenAvailable: false,
       roles: [],
-      missingRoles: ["Mail.Send", "Sites.ReadWrite.All"],
+      missingRoles: requiredGraphRoles,
       error: "Microsoft tenant ID, client ID, or client secret is missing.",
     };
   }
@@ -738,7 +747,7 @@ async function graphAppHealth() {
     return {
       tokenAvailable: true,
       roles,
-      missingRoles: ["Mail.Send", "Sites.ReadWrite.All"].filter(
+      missingRoles: requiredGraphRoles.filter(
         (role) => !roles.includes(role),
       ),
       appDisplayName: String(payload.app_displayname || ""),
@@ -747,7 +756,7 @@ async function graphAppHealth() {
     return {
       tokenAvailable: false,
       roles: [],
-      missingRoles: ["Mail.Send", "Sites.ReadWrite.All"],
+      missingRoles: requiredGraphRoles,
       error: error instanceof Error ? error.message : "Graph app token failed.",
     };
   }
@@ -882,6 +891,61 @@ async function contactSources(request, response) {
   return sendJson(request, response, 200, {
     configured: true,
     ...result,
+  });
+}
+
+async function createProjectCalendarEvent(request, response) {
+  const user = await requireApprovedUser(request, response);
+  if (!user) return;
+  const body = await readJson(request).catch(() => ({}));
+  const projectId = String(body.projectId || "").trim();
+  if (!projectId) {
+    return sendJson(request, response, 400, {
+      error: "missing_project_id",
+      message: "Project ID is required before creating an Outlook calendar event.",
+    });
+  }
+  const graphApp = await graphAppHealth();
+  if (!graphApp.roles.includes("Calendars.ReadWrite")) {
+    return sendJson(request, response, 403, {
+      error: "calendar_permission_missing",
+      message: "Grant Calendars.ReadWrite application permission before Outlook calendar sync can create events.",
+      missingRoles: graphApp.missingRoles,
+    });
+  }
+  const store = await loadProjectStore();
+  const project = store.projects.find((item) => item.id === projectId);
+  if (!project || !canViewProjectForUser(user, project)) {
+    return sendJson(request, response, 404, {
+      error: "project_not_found",
+      message: "The project was not found or is not visible to your account.",
+    });
+  }
+  if (!canEditProjectForUser(user, project)) {
+    return sendJson(request, response, 403, {
+      error: "calendar_sync_denied",
+      message: "Your role cannot create a calendar event for this project.",
+    });
+  }
+  const startDate = String(project.confirmedAuditDate || project.dueDate || "").trim();
+  if (!startDate) {
+    return sendJson(request, response, 400, {
+      error: "missing_schedule_date",
+      message: "Add a confirmed audit date before creating an Outlook calendar event.",
+    });
+  }
+  let event;
+  try {
+    event = await createOutlookEventForProject(user, project, startDate);
+  } catch (error) {
+    return sendJson(request, response, 502, {
+      error: "calendar_event_failed",
+      message: error instanceof Error ? error.message : "Outlook calendar event creation failed.",
+    });
+  }
+  return sendJson(request, response, 200, {
+    ok: true,
+    event,
   });
 }
 
@@ -1039,6 +1103,62 @@ async function sendGraphMail(to, subject, content) {
   if (!response.ok) {
     throw new Error(`Graph sendMail failed: ${response.status} ${await response.text()}`);
   }
+}
+
+async function createOutlookEventForProject(user, project, startDate) {
+  const token = await getGraphAppToken();
+  const subject = `Audit: ${project.assignmentNumber || project.id} - ${project.auditEntity || "Assignment"}`;
+  const start = `${startDate}T09:00:00`;
+  const end = `${startDate}T10:00:00`;
+  const body = [
+    `Assignment: ${project.assignmentNumber || project.id}`,
+    `Audit entity: ${project.auditEntity || "Not set"}`,
+    `Audit type: ${project.auditType || "Not set"}`,
+    `Audit team: ${assignedAuditorNames(project).join(", ") || "Not set"}`,
+    "",
+    project.schedulingNotes ? `Scheduling notes:\n${project.schedulingNotes}` : "",
+  ].filter(Boolean).join("\n");
+  const response = await fetch(
+    `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(user.email)}/events`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        subject,
+        body: {
+          contentType: "Text",
+          content: body,
+        },
+        start: {
+          dateTime: start,
+          timeZone: "Eastern Standard Time",
+        },
+        end: {
+          dateTime: end,
+          timeZone: "Eastern Standard Time",
+        },
+        categories: ["Audit Assignment Tracker"],
+        isReminderOn: true,
+        reminderMinutesBeforeStart: 1440,
+      }),
+    },
+  );
+  const payload = await response.json().catch(async () => ({
+    raw: await response.text().catch(() => ""),
+  }));
+  if (!response.ok) {
+    throw new Error(`Graph calendar event failed: ${response.status} ${JSON.stringify(payload)}`);
+  }
+  return {
+    id: String(payload.id || ""),
+    subject: String(payload.subject || subject),
+    webLink: String(payload.webLink || ""),
+    start: payload.start ?? null,
+    end: payload.end ?? null,
+  };
 }
 
 async function getGraphAppToken() {
@@ -1355,6 +1475,8 @@ const auditorProjectUpdateFields = new Set([
   "coverholderResponseReceivedDate",
   "tentativeAuditWeek",
   "confirmedAuditDate",
+  "calendarSyncStatus",
+  "schedulingNotes",
   "auditType",
   "nextAction",
   "blockers",

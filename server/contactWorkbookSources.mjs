@@ -1,5 +1,5 @@
 const graphRoot = "https://graph.microsoft.com/v1.0";
-const instructionSheetSampleRange = "A1:J8";
+const instructionSheetSampleRange = "A1:Z40";
 const graphRequestTimeoutMs = 12000;
 
 const fieldMatchers = [
@@ -178,6 +178,9 @@ export function parseWorksheetRows({
   const nonEmptyRows = values.filter((row) =>
     Array.isArray(row) && row.some((cell) => String(cell ?? "").trim()),
   );
+  if (isPlaceholderInstructionSheet(worksheetName, nonEmptyRows)) {
+    return { contacts: [], warnings: [] };
+  }
   if (isClientInstructionSheet(nonEmptyRows)) {
     return parseClientInstructionSheet({
       source,
@@ -204,7 +207,7 @@ export function parseWorksheetRows({
   const warnings = [];
   for (const row of nonEmptyRows.slice(1)) {
     const raw = rowToObject(headers, row);
-    const email = pickField(raw, "email");
+    const email = uniqueEmails(extractEmails(pickField(raw, "email"))).join("; ");
     const company =
       pickField(raw, "company") ||
       pickField(raw, "coverholder") ||
@@ -213,7 +216,7 @@ export function parseWorksheetRows({
     const contactName = pickField(raw, "contactName");
     const instructions = instructionValues(raw);
     if (!email && !company && !contactName && instructions.length === 0) continue;
-    if (email && !isLikelyEmail(email)) {
+    if (email && uniqueEmails(extractEmails(email)).length === 0) {
       warnings.push({
         sourceId: source.id,
         worksheetName,
@@ -232,6 +235,13 @@ export function parseWorksheetRows({
       broker: pickField(raw, "broker"),
       contactName,
       email,
+      emails: {
+        dca: [],
+        coverholder: [],
+        report: [],
+        invoice: [],
+        all: uniqueEmails(extractEmails(email)),
+      },
       phone: pickField(raw, "phone"),
       role: pickField(raw, "role"),
       specialInstructions: instructions,
@@ -251,7 +261,7 @@ function parseClientInstructionSheet({
   const primaryHeaders = rows[0] ?? [];
   const primaryValues = rows[1] ?? [];
   const secondaryHeaderIndex = rows.findIndex((row) =>
-    String(row[0] ?? "").toLowerCase().includes("report submission email"),
+    row.some((cell) => String(cell ?? "").toLowerCase().includes("report submission email")),
   );
   const secondaryHeaders = secondaryHeaderIndex >= 0 ? rows[secondaryHeaderIndex] : [];
   const secondaryValues =
@@ -260,24 +270,35 @@ function parseClientInstructionSheet({
   const dcaContactBlock = cleanCell(primaryValues[1]);
   const coverholderContactBlock = cleanCell(primaryValues[2]);
   const company = firstLine(clientBlock) || worksheetName;
-  const reportSubmission = cleanCell(secondaryValues[0]);
-  const invoiceSubmission = cleanCell(secondaryValues[1]);
-  const email = uniqueEmails([
-    ...extractEmails(dcaContactBlock),
-    ...extractEmails(coverholderContactBlock),
-    ...extractEmails(reportSubmission),
-    ...extractEmails(invoiceSubmission),
-  ]).join("; ");
+  const reportSubmission = fieldValueFromRows(rows, [/report submission email/i]) || cleanCell(secondaryValues[0]);
+  const invoiceSubmission = fieldValueFromRows(rows, [/invoice submission email/i]) || cleanCell(secondaryValues[1]);
+  const onsiteRemote = fieldValueFromRows(rows, [/onsite\/remote preference/i, /onsite.*remote/i]) || cleanCell(secondaryValues[2]);
+  const paymentTerms = fieldValueFromRows(rows, [/fees and payment terms/i, /payment terms/i]) || cleanCell(secondaryValues[3]);
+  const other = fieldValueFromRows(rows, [/^other$/i]) || cleanCell(secondaryValues[4]);
+  const notes = fieldValueFromRows(rows, [/notes\/comments/i, /notes/i, /comments/i]) || cleanCell(secondaryValues[5]);
+  const dcaEmails = uniqueEmails(extractEmails(dcaContactBlock));
+  const coverholderEmails = uniqueEmails(extractEmails(coverholderContactBlock));
+  const reportEmails = uniqueEmails(extractEmails(reportSubmission));
+  const invoiceEmails = uniqueEmails(extractEmails(invoiceSubmission));
+  const sheetEmails = uniqueEmails(extractEmails(rows.flat().map(cleanCell).join("\n")));
+  const allEmails = uniqueEmails([
+    ...dcaEmails,
+    ...coverholderEmails,
+    ...reportEmails,
+    ...invoiceEmails,
+    ...sheetEmails,
+  ]);
+  const email = allEmails.join("; ");
   const instructions = [];
   addInstruction(instructions, primaryHeaders[3], primaryValues[3]);
   addInstruction(instructions, primaryHeaders[4], primaryValues[4]);
   addInstruction(instructions, primaryHeaders[5], primaryValues[5]);
-  addInstruction(instructions, secondaryHeaders[0], secondaryValues[0]);
-  addInstruction(instructions, secondaryHeaders[1], secondaryValues[1]);
-  addInstruction(instructions, secondaryHeaders[2], secondaryValues[2]);
-  addInstruction(instructions, secondaryHeaders[3], secondaryValues[3]);
-  addInstruction(instructions, secondaryHeaders[4], secondaryValues[4]);
-  addInstruction(instructions, secondaryHeaders[5], secondaryValues[5]);
+  addInstruction(instructions, secondaryHeaders[0] || "Report Submission Email", reportSubmission);
+  addInstruction(instructions, secondaryHeaders[1] || "Invoice Submission Email", invoiceSubmission);
+  addInstruction(instructions, secondaryHeaders[2] || "Onsite/Remote Preference", onsiteRemote);
+  addInstruction(instructions, secondaryHeaders[3] || "Fees and Payment Terms", paymentTerms);
+  addInstruction(instructions, secondaryHeaders[4] || "Other", other);
+  addInstruction(instructions, secondaryHeaders[5] || "Notes/Comments", notes);
 
   return {
     contacts: [
@@ -293,6 +314,13 @@ function parseClientInstructionSheet({
         broker: "",
         contactName: contactNameFromBlock(dcaContactBlock) || company,
         email,
+        emails: {
+          dca: dcaEmails,
+          coverholder: coverholderEmails,
+          report: reportEmails,
+          invoice: invoiceEmails,
+          all: allEmails,
+        },
         phone: firstPhone([clientBlock, dcaContactBlock, coverholderContactBlock]),
         role: "Client instruction sheet",
         specialInstructions: instructions,
@@ -302,6 +330,10 @@ function parseClientInstructionSheet({
           coverholderContact: coverholderContactBlock,
           reportSubmission,
           invoiceSubmission,
+          onsiteRemote,
+          paymentTerms,
+          other,
+          notes,
         },
       },
     ],
@@ -353,6 +385,19 @@ function isClientInstructionSheet(rows) {
     .includes("client name/address");
 }
 
+function isPlaceholderInstructionSheet(worksheetName, rows) {
+  const normalizedName = String(worksheetName || "").trim().toLowerCase();
+  if (/^blank\s*\d*$/i.test(normalizedName)) return true;
+  const text = rows.flat().map(cleanCell).join(" ").toLowerCase();
+  if (!text) return true;
+  const hasInstructionHeaders =
+    text.includes("client name/address") ||
+    text.includes("dca primary contact") ||
+    text.includes("cover holder primary contact");
+  const hasUsableValue = extractEmails(text).length > 0 || rows.length > 2;
+  return hasInstructionHeaders && !hasUsableValue;
+}
+
 function isNonContactWorksheet(name) {
   const normalized = String(name).toLowerCase();
   return (
@@ -367,6 +412,28 @@ function cleanCell(value) {
     .replace(/\r\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+function fieldValueFromRows(rows, labelPatterns) {
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+    const row = rows[rowIndex] ?? [];
+    for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
+      const label = cleanCell(row[columnIndex]);
+      if (!labelPatterns.some((pattern) => pattern.test(label))) continue;
+      const rightValue = cleanCell(row[columnIndex + 1]);
+      const rightLooksLikeHeader =
+        rightValue &&
+        (labelPatterns.some((pattern) => pattern.test(rightValue)) ||
+          (/email|preference|terms|other|notes|comments/i.test(rightValue) &&
+            extractEmails(rightValue).length === 0));
+      if (rightValue && !rightLooksLikeHeader) return rightValue;
+      const belowValue = cleanCell(rows[rowIndex + 1]?.[columnIndex]);
+      if (belowValue && !labelPatterns.some((pattern) => pattern.test(belowValue))) {
+        return belowValue;
+      }
+    }
+  }
+  return "";
 }
 
 function firstLine(value) {
@@ -410,6 +477,9 @@ function contactNameFromBlock(value) {
       line
         .replace(/^email:\s*/i, "")
         .replace(/^e:\s*/i, "")
+        .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "")
+        .replace(/\b(email|e-mail|e):?\s*/gi, "")
+        .replace(/[;|,]+$/g, "")
         .trim(),
     )
     .filter(Boolean)

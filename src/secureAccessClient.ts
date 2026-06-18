@@ -102,6 +102,11 @@ export type SecureSystemHealth = {
     trackerUsersListIdConfigured: boolean;
     auditAssignmentsListIdConfigured: boolean;
   };
+  calendar?: {
+    permissionGranted: boolean;
+    mode: string;
+    target: string;
+  };
   approvalStore: {
     mode: "local" | "microsoft-lists";
     configured: boolean;
@@ -142,6 +147,13 @@ export type LinkedContact = {
   broker: string;
   contactName: string;
   email: string;
+  emails?: {
+    dca: string[];
+    coverholder: string[];
+    report: string[];
+    invoice: string[];
+    all: string[];
+  };
   phone: string;
   role: string;
   specialInstructions: LinkedContactInstruction[];
@@ -287,6 +299,31 @@ export async function getLinkedContactSources(): Promise<LinkedContactSourcesRes
   } finally {
     window.clearTimeout(timeoutId);
   }
+}
+
+export async function createOutlookCalendarEvent(projectId: string): Promise<{
+  ok: boolean;
+  event: {
+    id: string;
+    subject: string;
+    webLink: string;
+    start: unknown;
+    end: unknown;
+  };
+}> {
+  const response = await fetch(secureAccessUrl("/api/calendar/project-event"), {
+    method: "POST",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ projectId }),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(
+      payload.message || payload.error || "Outlook calendar event could not be created.",
+    );
+  }
+  return response.json();
 }
 
 async function decideSecureAccessRequest(
