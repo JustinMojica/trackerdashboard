@@ -934,9 +934,20 @@ async function createProjectCalendarEvent(request, response) {
       message: "Add a confirmed audit date before creating an Outlook calendar event.",
     });
   }
+  const durationHours = clampNumber(Number(body.durationHours || project.auditDurationHours || 1), 0.5, 12);
+  const location = String(body.location || project.auditLocation || "").trim();
+  const remoteLink = String(body.remoteLink || project.auditRemoteLink || "").trim();
+  const attendeeEmails = Array.isArray(body.attendeeEmails)
+    ? body.attendeeEmails.map(String).map((email) => email.trim().toLowerCase()).filter(isAllowedEmail)
+    : [];
   let event;
   try {
-    event = await createOutlookEventForProject(user, project, startDate);
+    event = await createOutlookEventForProject(user, project, startDate, {
+      durationHours,
+      location,
+      remoteLink,
+      attendeeEmails,
+    });
   } catch (error) {
     return sendJson(request, response, 502, {
       error: "calendar_event_failed",
@@ -945,6 +956,7 @@ async function createProjectCalendarEvent(request, response) {
   }
   return sendJson(request, response, 200, {
     ok: true,
+    action: event.action,
     event,
   });
 }
@@ -980,6 +992,12 @@ function normalizeProjectRecord(project) {
     currentStage: String(record.currentStage || "Intake"),
     schedulingNotes: String(record.schedulingNotes || ""),
     calendarSyncStatus: String(record.calendarSyncStatus || "Not Synced"),
+    calendarEventId: String(record.calendarEventId || ""),
+    calendarEventWebLink: String(record.calendarEventWebLink || ""),
+    calendarEventLastSyncedAt: String(record.calendarEventLastSyncedAt || ""),
+    auditLocation: String(record.auditLocation || ""),
+    auditRemoteLink: String(record.auditRemoteLink || ""),
+    auditDurationHours: Number(record.auditDurationHours || 1),
     linkedContactId: String(record.linkedContactId || ""),
     linkedContactSource: String(record.linkedContactSource || ""),
     invoiceStatus: String(record.invoiceStatus || "Not Started"),
@@ -1105,60 +1123,105 @@ async function sendGraphMail(to, subject, content) {
   }
 }
 
-async function createOutlookEventForProject(user, project, startDate) {
+async function createOutlookEventForProject(user, project, startDate, options = {}) {
   const token = await getGraphAppToken();
   const subject = `Audit: ${project.assignmentNumber || project.id} - ${project.auditEntity || "Assignment"}`;
   const start = `${startDate}T09:00:00`;
-  const end = `${startDate}T10:00:00`;
+  const end = eventEndDateTime(startDate, options.durationHours || 1);
   const body = [
     `Assignment: ${project.assignmentNumber || project.id}`,
     `Audit entity: ${project.auditEntity || "Not set"}`,
     `Audit type: ${project.auditType || "Not set"}`,
     `Audit team: ${assignedAuditorNames(project).join(", ") || "Not set"}`,
+    options.location ? `Location: ${options.location}` : "",
+    options.remoteLink ? `Remote link: ${options.remoteLink}` : "",
     "",
     project.schedulingNotes ? `Scheduling notes:\n${project.schedulingNotes}` : "",
   ].filter(Boolean).join("\n");
-  const response = await fetch(
-    `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(user.email)}/events`,
-    {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        subject,
-        body: {
-          contentType: "Text",
-          content: body,
-        },
-        start: {
-          dateTime: start,
-          timeZone: "Eastern Standard Time",
-        },
-        end: {
-          dateTime: end,
-          timeZone: "Eastern Standard Time",
-        },
-        categories: ["Audit Assignment Tracker"],
-        isReminderOn: true,
-        reminderMinutesBeforeStart: 1440,
-      }),
+  const payload = {
+    subject,
+    body: {
+      contentType: "Text",
+      content: body,
     },
-  );
-  const payload = await response.json().catch(async () => ({
+    start: {
+      dateTime: start,
+      timeZone: "Eastern Standard Time",
+    },
+    end: {
+      dateTime: end,
+      timeZone: "Eastern Standard Time",
+    },
+    location: {
+      displayName: options.location || options.remoteLink || "",
+    },
+    attendees: uniqueStrings(options.attendeeEmails || [])
+      .filter((email) => email !== user.email)
+      .map((email) => ({
+        emailAddress: { address: email },
+        type: "required",
+      })),
+    categories: ["Audit Assignment Tracker"],
+    isReminderOn: true,
+    reminderMinutesBeforeStart: 1440,
+  };
+  const existingEventId = String(project.calendarEventId || "").trim();
+  const targetPath = existingEventId
+    ? `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(user.email)}/events/${encodeURIComponent(existingEventId)}`
+    : `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(user.email)}/events`;
+  let response = await fetch(targetPath, {
+    method: existingEventId ? "PATCH" : "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  let action = existingEventId ? "updated" : "created";
+  if (existingEventId && response.status === 404) {
+    response = await fetch(
+      `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(user.email)}/events`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      },
+    );
+    action = "created";
+  }
+  const responsePayload = await response.json().catch(async () => ({
     raw: await response.text().catch(() => ""),
   }));
   if (!response.ok) {
-    throw new Error(`Graph calendar event failed: ${response.status} ${JSON.stringify(payload)}`);
+    throw new Error(`Graph calendar event failed: ${response.status} ${JSON.stringify(responsePayload)}`);
   }
   return {
-    id: String(payload.id || ""),
-    subject: String(payload.subject || subject),
-    webLink: String(payload.webLink || ""),
-    start: payload.start ?? null,
-    end: payload.end ?? null,
+    action,
+    id: String(responsePayload.id || ""),
+    subject: String(responsePayload.subject || subject),
+    webLink: String(responsePayload.webLink || ""),
+    start: responsePayload.start ?? null,
+    end: responsePayload.end ?? null,
   };
+}
+
+function eventEndDateTime(startDate, durationHours) {
+  const [year, month, day] = String(startDate).split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day, 9, 0, 0));
+  date.setTime(date.getTime() + clampNumber(durationHours, 0.5, 12) * 60 * 60 * 1000);
+  return `${String(date.getUTCFullYear()).padStart(4, "0")}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}T${String(date.getUTCHours()).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}:00`;
+}
+
+function clampNumber(value, min, max) {
+  const number = Number.isFinite(value) ? value : min;
+  return Math.min(Math.max(number, min), max);
+}
+
+function uniqueStrings(values) {
+  return Array.from(new Set((values ?? []).map(String).map((value) => value.trim()).filter(Boolean)));
 }
 
 async function getGraphAppToken() {
@@ -1476,6 +1539,12 @@ const auditorProjectUpdateFields = new Set([
   "tentativeAuditWeek",
   "confirmedAuditDate",
   "calendarSyncStatus",
+  "calendarEventId",
+  "calendarEventWebLink",
+  "calendarEventLastSyncedAt",
+  "auditLocation",
+  "auditRemoteLink",
+  "auditDurationHours",
   "schedulingNotes",
   "auditType",
   "nextAction",

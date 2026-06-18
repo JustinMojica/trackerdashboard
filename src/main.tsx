@@ -169,6 +169,12 @@ export type AuditProject = {
   confirmedAuditDate: string;
   schedulingNotes: string;
   calendarSyncStatus: CalendarSyncStatus;
+  calendarEventId: string;
+  calendarEventWebLink: string;
+  calendarEventLastSyncedAt: string;
+  auditLocation: string;
+  auditRemoteLink: string;
+  auditDurationHours: number;
   linkedContactId: string;
   linkedContactSource: string;
   auditType: AuditType;
@@ -560,6 +566,12 @@ const blankProject = (): AuditProject => ({
   confirmedAuditDate: "",
   schedulingNotes: "",
   calendarSyncStatus: "Not Synced",
+  calendarEventId: "",
+  calendarEventWebLink: "",
+  calendarEventLastSyncedAt: "",
+  auditLocation: "",
+  auditRemoteLink: "",
+  auditDurationHours: 1,
   linkedContactId: "",
   linkedContactSource: "",
   auditType: "Remote",
@@ -1124,6 +1136,12 @@ export function withProjectDefaults(project: AuditProject): AuditProject {
     brokerExpectedResponseDate: project.brokerExpectedResponseDate ?? "",
     schedulingNotes: project.schedulingNotes ?? "",
     calendarSyncStatus: project.calendarSyncStatus ?? "Not Synced",
+    calendarEventId: project.calendarEventId ?? "",
+    calendarEventWebLink: project.calendarEventWebLink ?? "",
+    calendarEventLastSyncedAt: project.calendarEventLastSyncedAt ?? "",
+    auditLocation: project.auditLocation ?? "",
+    auditRemoteLink: project.auditRemoteLink ?? "",
+    auditDurationHours: Number(project.auditDurationHours || 1),
     linkedContactId: project.linkedContactId ?? "",
     linkedContactSource: project.linkedContactSource ?? "",
     checklistCompletions: project.checklistCompletions ?? {},
@@ -1294,7 +1312,16 @@ function intakeRequiredIssues(project: AuditProject) {
   if (!project.clientCoverholderCode.trim()) {
     issues.push("Client / coverholder code is required.");
   }
-  if (!project.broker.trim()) issues.push("Broker is required.");
+  if (!project.broker.trim() && !isDcaProject(project)) issues.push("Broker is required.");
+  if (
+    isDcaProject(project) &&
+    !project.broker.trim() &&
+    !normalizeManagingAgentWorkstreams(project).some((workstream) =>
+      workstream.managingAgentName.trim(),
+    )
+  ) {
+    issues.push("DCA audits need a managing agent or DCA contact.");
+  }
   if (!primaryAuditor(project)) issues.push("Lead auditor is required.");
   if (!project.dueDate) issues.push("Due date is required.");
   return issues;
@@ -1335,6 +1362,12 @@ function intakeWarningIssues(project: AuditProject) {
     !project.premiumBdxReceived
   ) {
     warnings.push("File selection needs Premium BDX before moving forward.");
+  }
+  if (!project.linkedContactId) {
+    warnings.push("No linked workbook contact is selected; template recipients may need manual review.");
+  }
+  if (project.confirmedAuditDate && project.calendarSyncStatus !== "Synced") {
+    warnings.push("Confirmed audit date is set but the Outlook calendar event is not synced.");
   }
   return warnings;
 }
@@ -1777,7 +1810,7 @@ function projectContactSearchTerms(project: AuditProject) {
     .filter((term, index, list) => list.indexOf(term) === index);
 }
 
-function contactSearchText(contact: LinkedContact) {
+function contactDirectorySearchText(contact: LinkedContact) {
   return normalizedToken(
     [
       contact.company,
@@ -1937,6 +1970,35 @@ function contactEmailBuckets(contact: LinkedContact) {
   ][];
 }
 
+type ContactFilter = "All" | "DCA" | "Coverholder" | "Report" | "Invoice" | "Missing Email";
+
+function contactMatchesFilter(contact: LinkedContact, filter: ContactFilter) {
+  if (filter === "All") return true;
+  if (filter === "Missing Email") return contactEmailBuckets(contact).length === 0 && !contact.email;
+  return contactEmailBuckets(contact).some(([label]) => label === filter);
+}
+
+function contactSearchText(contact: LinkedContact) {
+  return [
+    contact.contactName,
+    contact.company,
+    contact.email,
+    contact.broker,
+    contact.coverholder,
+    contact.managingAgent,
+    contact.role,
+    contact.workbookName,
+    contact.worksheetName,
+    ...contactEmailBuckets(contact).flatMap(([, emails]) => emails),
+    ...contact.specialInstructions.flatMap((instruction) => [
+      instruction.label,
+      instruction.value,
+    ]),
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
 function instructionValue(contact: LinkedContact, label: string) {
   const normalizedLabel = label.toLowerCase();
   return (
@@ -1990,6 +2052,35 @@ function projectWithLinkedContact(project: AuditProject, contact: LinkedContact)
     auditType: auditTypePreference || project.auditType,
     schedulingNotes: mergedNotes,
   });
+}
+
+function duplicateProjectWarnings(project: AuditProject, projects: AuditProject[]) {
+  const warnings: string[] = [];
+  const normalizedAssignment = project.assignmentNumber.trim().toLowerCase();
+  const normalizedCode = project.clientCoverholderCode.trim().toLowerCase();
+  const normalizedEntity = project.auditEntity.trim().toLowerCase();
+  const activeProjects = projects.filter(
+    (item) => item.id !== project.id && !item.archived && item.currentStage !== "Closed",
+  );
+  if (
+    normalizedAssignment &&
+    activeProjects.some((item) => item.assignmentNumber.trim().toLowerCase() === normalizedAssignment)
+  ) {
+    warnings.push("Another active project already uses this assignment number.");
+  }
+  if (
+    normalizedCode &&
+    activeProjects.some((item) => item.clientCoverholderCode.trim().toLowerCase() === normalizedCode)
+  ) {
+    warnings.push("Another active project already uses this client / coverholder code.");
+  }
+  if (
+    normalizedEntity &&
+    activeProjects.some((item) => item.auditEntity.trim().toLowerCase() === normalizedEntity)
+  ) {
+    warnings.push("A similar active project already exists for this audit entity.");
+  }
+  return warnings;
 }
 
 const communicationTemplates: CommunicationTemplate[] = [
@@ -2310,6 +2401,10 @@ function exportProjectsToCsv(projects: AuditProject[]) {
     ["Tentative Audit Week", (project) => project.tentativeAuditWeek],
     ["Confirmed Audit Date", (project) => project.confirmedAuditDate],
     ["Calendar Sync Status", (project) => project.calendarSyncStatus],
+    ["Calendar Event Link", (project) => project.calendarEventWebLink],
+    ["Audit Duration Hours", (project) => project.auditDurationHours],
+    ["Audit Location", (project) => project.auditLocation],
+    ["Remote Link", (project) => project.auditRemoteLink],
     ["Linked Contact Source", (project) => project.linkedContactSource],
     ["Scheduling Notes", (project) => project.schedulingNotes],
     ["Labels", (project) => project.labels.join("; ")],
@@ -2750,6 +2845,13 @@ function App() {
     recordExport("Operations report");
   };
 
+  const startProjectFromContact = (contact: LinkedContact) => {
+    const starter = projectWithLinkedContact(blankProject(), contact);
+    setEditing(starter);
+    setActiveSection("assignments");
+    setMessage(`Project intake started from ${linkedContactName(contact)}.`);
+  };
+
   const clearProjectData = () => {
     requestConfirmation({
       title: "Clear project data?",
@@ -3150,6 +3252,12 @@ function App() {
       Pick<
         AuditProject,
         | "calendarSyncStatus"
+        | "calendarEventId"
+        | "calendarEventWebLink"
+        | "calendarEventLastSyncedAt"
+        | "auditLocation"
+        | "auditRemoteLink"
+        | "auditDurationHours"
         | "schedulingNotes"
         | "confirmedAuditDate"
         | "tentativeAuditWeek"
@@ -3187,12 +3295,27 @@ function App() {
       return;
     }
     try {
-      const result = await createOutlookCalendarEvent(project.id);
-      updateProjectScheduling(project, { calendarSyncStatus: "Synced" });
+      const teamEmails = assignedAuditorNames(project)
+        .map((name) =>
+          approvedAccessUsers.find((user) => user.fullName === name)?.email ?? "",
+        )
+        .filter(Boolean);
+      const result = await createOutlookCalendarEvent(project.id, {
+        durationHours: project.auditDurationHours,
+        location: project.auditLocation,
+        remoteLink: project.auditRemoteLink,
+        attendeeEmails: teamEmails,
+      });
+      updateProjectScheduling(project, {
+        calendarSyncStatus: "Synced",
+        calendarEventId: result.event.id,
+        calendarEventWebLink: result.event.webLink,
+        calendarEventLastSyncedAt: new Date().toISOString(),
+      });
       setMessage(
         result.event.webLink
-          ? `Outlook event created: ${result.event.subject}`
-          : "Outlook event created.",
+          ? `Outlook event ${result.action}: ${result.event.subject}`
+          : `Outlook event ${result.action}.`,
       );
     } catch (error) {
       setMessage(
@@ -3589,6 +3712,7 @@ function App() {
           contactSourcesLoading={contactSourcesLoading}
           contactSourcesError={contactSourcesError}
           onRefreshContactSources={() => void refreshContactSources()}
+          onCreateProjectFromContact={startProjectFromContact}
           accessUsers={managedAccessUsers}
           pendingRequests={pendingAccessRequests}
           onSaveUser={saveManagedUser}
@@ -3611,6 +3735,7 @@ function App() {
           onSave={upsertProject}
           auditorOptions={auditorOptions}
           contactSources={contactSources}
+          existingProjects={activeVisibleProjects}
         />
       )}
       {confirmation && (
@@ -3950,6 +4075,7 @@ function AdminWorkspace({
   contactSourcesLoading,
   contactSourcesError,
   onRefreshContactSources,
+  onCreateProjectFromContact,
   accessUsers,
   pendingRequests,
   onSaveUser,
@@ -3973,6 +4099,7 @@ function AdminWorkspace({
   contactSourcesLoading: boolean;
   contactSourcesError: string;
   onRefreshContactSources: () => void;
+  onCreateProjectFromContact: (contact: LinkedContact) => void;
   accessUsers: PrototypeUser[];
   pendingRequests: PrototypeUser[];
   onSaveUser: (email: string, user: PrototypeUser) => void;
@@ -4059,6 +4186,7 @@ function AdminWorkspace({
               error={contactSourcesError}
               health={health}
               onRefresh={onRefreshContactSources}
+              onCreateProjectFromContact={onCreateProjectFromContact}
             />
           )}
           {activeTab === "activity" && <AdminActivityPanel projects={projects} />}
@@ -4199,13 +4327,17 @@ function ContactSourcesPanel({
   error,
   health,
   onRefresh,
+  onCreateProjectFromContact,
 }: {
   contactSources: LinkedContactSourcesResponse | null;
   loading: boolean;
   error: string;
   health: SecureSystemHealth | null;
   onRefresh: () => void;
+  onCreateProjectFromContact: (contact: LinkedContact) => void;
 }) {
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<ContactFilter>("All");
   const sourceStatus = health?.contactSources;
   const contacts = contactSources?.contacts ?? [];
   const instructionsCount = contacts.reduce(
@@ -4213,7 +4345,13 @@ function ContactSourcesPanel({
     0,
   );
   const hasRefreshed = Boolean(contactSources);
-  const visibleContacts = contacts.slice(0, 30);
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredContacts = contacts.filter(
+    (contact) =>
+      contactMatchesFilter(contact, filter) &&
+      (!normalizedQuery || contactDirectorySearchText(contact).includes(normalizedQuery)),
+  );
+  const visibleContacts = filteredContacts.slice(0, 40);
   const warningPreview = contactSources?.warnings.slice(0, 12) ?? [];
   return (
     <section className="panel contact-sources-panel">
@@ -4311,6 +4449,26 @@ function ContactSourcesPanel({
           files have a header row and at least one contact/data row.
         </p>
       ) : null}
+      {contacts.length > 0 && (
+        <div className="contact-tools">
+          <Input
+            label="Search contacts"
+            value={query}
+            placeholder="Client, company, email, DCA, coverholder, instruction"
+            onChange={setQuery}
+          />
+          <Select
+            label="Receiver type"
+            value={filter}
+            options={["All", "DCA", "Coverholder", "Report", "Invoice", "Missing Email"]}
+            placeholder="All"
+            onChange={(value) => setFilter((value || "All") as ContactFilter)}
+          />
+          <span>
+            Showing {visibleContacts.length} of {filteredContacts.length} matching contacts
+          </span>
+        </div>
+      )}
       {visibleContacts.length > 0 && (
         <div className="contact-preview-list">
           {visibleContacts.map((contact) => (
@@ -4324,6 +4482,15 @@ function ContactSourcesPanel({
                 <small>
                   {contact.workbookName} / {contact.worksheetName}
                 </small>
+              </div>
+              <div className="contact-card-actions">
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => onCreateProjectFromContact(contact)}
+                >
+                  Start project
+                </button>
               </div>
               <div className="contact-tags">
                 {contact.broker && <span>Broker: {contact.broker}</span>}
@@ -5186,6 +5353,12 @@ function SchedulingCapacity({
       Pick<
         AuditProject,
         | "calendarSyncStatus"
+        | "calendarEventId"
+        | "calendarEventWebLink"
+        | "calendarEventLastSyncedAt"
+        | "auditLocation"
+        | "auditRemoteLink"
+        | "auditDurationHours"
         | "schedulingNotes"
         | "confirmedAuditDate"
         | "tentativeAuditWeek"
@@ -5340,6 +5513,12 @@ function SchedulingProjectCard({
       Pick<
         AuditProject,
         | "calendarSyncStatus"
+        | "calendarEventId"
+        | "calendarEventWebLink"
+        | "calendarEventLastSyncedAt"
+        | "auditLocation"
+        | "auditRemoteLink"
+        | "auditDurationHours"
         | "schedulingNotes"
         | "confirmedAuditDate"
         | "tentativeAuditWeek"
@@ -5351,11 +5530,25 @@ function SchedulingProjectCard({
   const [notes, setNotes] = useState(project.schedulingNotes);
   const [confirmedDate, setConfirmedDate] = useState(project.confirmedAuditDate);
   const [tentativeWeek, setTentativeWeek] = useState(project.tentativeAuditWeek);
+  const [auditLocation, setAuditLocation] = useState(project.auditLocation);
+  const [auditRemoteLink, setAuditRemoteLink] = useState(project.auditRemoteLink);
+  const [auditDurationHours, setAuditDurationHours] = useState(String(project.auditDurationHours || 1));
   useEffect(() => {
     setNotes(project.schedulingNotes);
     setConfirmedDate(project.confirmedAuditDate);
     setTentativeWeek(project.tentativeAuditWeek);
-  }, [project.id, project.schedulingNotes, project.confirmedAuditDate, project.tentativeAuditWeek]);
+    setAuditLocation(project.auditLocation);
+    setAuditRemoteLink(project.auditRemoteLink);
+    setAuditDurationHours(String(project.auditDurationHours || 1));
+  }, [
+    project.id,
+    project.schedulingNotes,
+    project.confirmedAuditDate,
+    project.tentativeAuditWeek,
+    project.auditLocation,
+    project.auditRemoteLink,
+    project.auditDurationHours,
+  ]);
   const warnings = schedulingConflictWarnings(project, allProjects);
   const scheduleDate = projectScheduleDate(project);
   const statusClass =
@@ -5369,11 +5562,17 @@ function SchedulingProjectCard({
   const saveDates = () => {
     if (
       confirmedDate !== project.confirmedAuditDate ||
-      tentativeWeek !== project.tentativeAuditWeek
+      tentativeWeek !== project.tentativeAuditWeek ||
+      auditLocation !== project.auditLocation ||
+      auditRemoteLink !== project.auditRemoteLink ||
+      Number(auditDurationHours || 1) !== project.auditDurationHours
     ) {
       onUpdateScheduling(project, {
         confirmedAuditDate: confirmedDate,
         tentativeAuditWeek: tentativeWeek,
+        auditLocation,
+        auditRemoteLink,
+        auditDurationHours: Number(auditDurationHours || 1),
       });
     }
   };
@@ -5432,7 +5631,7 @@ function SchedulingProjectCard({
             }}
           />
           <button type="button" className="secondary" disabled={!canUpdate} onClick={saveDates}>
-            Save dates
+            Save schedule
           </button>
           <button
             type="button"
@@ -5446,9 +5645,34 @@ function SchedulingProjectCard({
                   : "Create an Outlook calendar event for this audit."
             }
           >
-            Add to Outlook
+            {project.calendarEventId ? "Update Outlook" : "Add to Outlook"}
           </button>
         </div>
+        <div className="schedule-detail-grid">
+          <Input
+            label="Duration hours"
+            type="number"
+            value={auditDurationHours}
+            onChange={setAuditDurationHours}
+          />
+          <Input
+            label="Location"
+            value={auditLocation}
+            placeholder="Office, city, client site, or remote"
+            onChange={setAuditLocation}
+          />
+          <Input
+            label="Remote link"
+            value={auditRemoteLink}
+            placeholder="Teams/Zoom link if known"
+            onChange={setAuditRemoteLink}
+          />
+        </div>
+        {project.calendarEventWebLink && (
+          <a className="outlook-event-link" href={project.calendarEventWebLink} target="_blank" rel="noreferrer">
+            Open Outlook event
+          </a>
+        )}
         <label>
           Scheduling notes
           <textarea
@@ -7448,19 +7672,21 @@ function ProjectForm({
   onCancel,
   auditorOptions,
   contactSources,
+  existingProjects,
 }: {
   project: AuditProject;
   onSave: (project: AuditProject) => void;
   onCancel: () => void;
   auditorOptions: string[];
   contactSources: LinkedContactSourcesResponse | null;
+  existingProjects: AuditProject[];
 }) {
   const [draft, setDraft] = useState(withProjectDefaults(project));
   const [step, setStep] = useState(0);
   const [attemptedSave, setAttemptedSave] = useState(false);
   const isNewProject = project.statusHistory.length === 0;
   const steps = [
-    "Assignment basics",
+    "Client / contact",
     "People",
     "Planning",
     "Documents & quote",
@@ -7521,7 +7747,10 @@ function ProjectForm({
   const draftAuditTeam = normalizeAuditTeam(draft);
   const leadAuditor = primaryAuditor(draft);
   const requiredIssues = intakeRequiredIssues(draft);
-  const warningIssues = intakeWarningIssues(draft);
+  const warningIssues = [
+    ...intakeWarningIssues(draft),
+    ...duplicateProjectWarnings(draft, existingProjects),
+  ];
   const updateLeadAuditor = (auditor: string) => {
     const supportingTeam = draftAuditTeam
       .filter((member) => member.person !== auditor)
@@ -7574,6 +7803,16 @@ function ProjectForm({
           to start tracking the audit.
         </p>
       </div>
+      {draft.assignmentType === "DCA" && (
+        <div className="guidance-strip">
+          <strong>DCA setup</strong>
+          <span>
+            DCA audits use a DCA Agreement and Claims BDX. Use the managing
+            agent or DCA contact from the linked workbook as the primary
+            recipient, not the broker contact path.
+          </span>
+        </div>
+      )}
       <div className="linked-contact-intake">
         <Select
           label="Linked client workbook contact"
@@ -7788,6 +8027,24 @@ function ProjectForm({
           onChange={(value) =>
             update("calendarSyncStatus", value as CalendarSyncStatus)
           }
+        />
+        <Input
+          label="Duration hours"
+          type="number"
+          value={String(draft.auditDurationHours || 1)}
+          onChange={(value) => update("auditDurationHours", Number(value) || 1)}
+        />
+        <Input
+          label="Location"
+          value={draft.auditLocation}
+          placeholder="Office, city, client site, or remote"
+          onChange={(value) => update("auditLocation", value)}
+        />
+        <Input
+          label="Remote link"
+          value={draft.auditRemoteLink}
+          placeholder="Teams/Zoom link if known"
+          onChange={(value) => update("auditRemoteLink", value)}
         />
       </div>
       <label>

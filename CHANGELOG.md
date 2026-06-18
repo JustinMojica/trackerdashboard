@@ -4,6 +4,32 @@ This log tracks practical production changes to the Audit Assignment Tracker.
 It intentionally excludes secrets, publish-profile values, client secrets, and
 other sensitive configuration values.
 
+## 2026-06-18
+
+### Added
+
+- Added richer Outlook scheduling controls for project duration, location,
+  remote meeting links, attendee handoff, event update/recreate behavior, and
+  saved Outlook event links.
+- Added contact directory search, receiver-type filtering, and a Start project
+  action that opens project intake from a linked spreadsheet contact.
+- Added intake duplicate warnings and DCA-specific intake guidance for DCA
+  Agreement, Claims BDX, managing agent, and DCA contact routing.
+
+### Changed
+
+- Expanded project CSV exports with Outlook event link, audit duration,
+  location, and remote link fields.
+- Updated the project wizard so scheduling data can be captured before Outlook
+  sync instead of only from the Scheduling workspace.
+
+### Verified
+
+- `npm run check`
+- `npm test`
+- `npm run build`
+- Local browser smoke check on `http://127.0.0.1:5173/`.
+
 ## 2026-06-15
 
 ### Added

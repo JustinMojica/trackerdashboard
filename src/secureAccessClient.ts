@@ -301,8 +301,17 @@ export async function getLinkedContactSources(): Promise<LinkedContactSourcesRes
   }
 }
 
-export async function createOutlookCalendarEvent(projectId: string): Promise<{
+export async function createOutlookCalendarEvent(
+  projectId: string,
+  options: {
+    durationHours?: number;
+    location?: string;
+    remoteLink?: string;
+    attendeeEmails?: string[];
+  } = {},
+): Promise<{
   ok: boolean;
+  action: "created" | "updated";
   event: {
     id: string;
     subject: string;
@@ -315,7 +324,7 @@ export async function createOutlookCalendarEvent(projectId: string): Promise<{
     method: "POST",
     credentials: "include",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ projectId }),
+    body: JSON.stringify({ projectId, ...options }),
   });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
