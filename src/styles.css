@@ -1263,6 +1263,80 @@ main {
   gap: 0.85rem;
   grid-template-columns: repeat(3, minmax(220px, 1fr));
 }
+.ai-coordinator-panel,
+.document-intelligence-panel,
+.project-document-intelligence {
+  background: #f8fbff;
+  border: 1px solid #dfe7f2;
+  border-radius: 16px;
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+}
+.coordinator-grid,
+.document-intelligence-grid,
+.document-intelligence-columns {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+}
+.coordinator-card,
+.document-intelligence-card {
+  background: #fff;
+  border: 1px solid #dfe7f2;
+  color: #172033;
+  display: grid;
+  gap: 0.35rem;
+  justify-items: start;
+  padding: 0.85rem;
+  text-align: left;
+}
+.coordinator-card:hover,
+.document-intelligence-card:hover {
+  transform: translateY(-1px);
+}
+.coordinator-card span,
+.document-intelligence-card span {
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 900;
+  padding: 0.24rem 0.5rem;
+  text-transform: uppercase;
+}
+.coordinator-card.critical span,
+.coordinator-card.high span,
+.document-intelligence-card.needs-review span {
+  background: #ffe5e5;
+  color: #a92020;
+}
+.coordinator-card.medium span,
+.document-intelligence-card.medium span {
+  background: #fff1cc;
+  color: #905400;
+}
+.coordinator-card.low span,
+.document-intelligence-card.high span {
+  background: #e7f7ed;
+  color: #14713a;
+}
+.coordinator-card small,
+.document-intelligence-card small,
+.coordinator-card p,
+.document-intelligence-card p,
+.coordinator-card em,
+.document-intelligence-card em {
+  color: #53637a;
+  font-style: normal;
+  margin: 0;
+}
+.coordinator-card em,
+.document-intelligence-card em {
+  font-weight: 800;
+}
+.readiness-track.compact {
+  height: 8px;
+  width: 100%;
+}
 .draft-list {
   display: grid;
   gap: 0.5rem;
@@ -1429,6 +1503,13 @@ textarea:focus {
   box-shadow: 0 0 0 3px rgba(19, 88, 219, 0.13);
   outline: none;
 }
+input:disabled,
+select:disabled,
+textarea:disabled {
+  background: #edf2f8;
+  color: #66748a;
+  cursor: not-allowed;
+}
 textarea {
   min-height: 84px;
   resize: vertical;
@@ -1559,7 +1640,7 @@ textarea {
   grid-template-areas:
     "detail detail team"
     "agents agents documents"
-    "workflow workflow documents"
+    "workflow workflow docintel"
     "finance finance documents"
     "checklist comments templates"
     "trail trail trail";
@@ -1821,6 +1902,9 @@ textarea {
   display: grid;
   gap: 0.85rem;
   grid-area: documents;
+}
+.project-document-intelligence {
+  grid-area: docintel;
 }
 .finance-panel {
   display: grid;
@@ -2146,6 +2230,7 @@ textarea {
   .detail,
   .team-panel,
   .document-workflow,
+  .project-document-intelligence,
   .workflow-engine-panel,
   .finance-panel,
   .checklist-panel,
@@ -2167,6 +2252,9 @@ textarea {
   .admin-activity-controls,
   .ops-role-grid,
   .ops-grid,
+  .coordinator-grid,
+  .document-intelligence-grid,
+  .document-intelligence-columns,
   .workflow-gates,
   .workflow-columns,
   .template-context-grid {
@@ -2207,6 +2295,9 @@ textarea {
   .admin-activity-controls,
   .ops-role-grid,
   .ops-grid,
+  .coordinator-grid,
+  .document-intelligence-grid,
+  .document-intelligence-columns,
   .workflow-gates,
   .workflow-columns,
   .template-context-grid {

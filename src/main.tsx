@@ -325,6 +325,29 @@ type OperationsBrief = {
   aiPrompt: string;
 };
 
+type CoordinatorInsight = {
+  id: string;
+  projectId: string;
+  assignmentNumber: string;
+  auditEntity: string;
+  priority: "Critical" | "High" | "Medium" | "Low";
+  title: string;
+  reason: string;
+  recommendedAction: string;
+};
+
+type DocumentIntelligenceResult = {
+  projectId: string;
+  assignmentNumber: string;
+  auditEntity: string;
+  packageType: string;
+  readiness: number;
+  confidence: "High" | "Medium" | "Needs Review";
+  missing: string[];
+  evidence: string[];
+  recommendations: string[];
+};
+
 export const stages: Stage[] = [
   "Intake",
   "Registration",
@@ -2346,6 +2369,164 @@ function operationsBrief(projects: AuditProject[], user: PrototypeUser): Operati
   };
 }
 
+function priorityRank(priority: CoordinatorInsight["priority"]) {
+  return { Critical: 0, High: 1, Medium: 2, Low: 3 }[priority];
+}
+
+function auditCoordinatorInsights(projects: AuditProject[], user: PrototypeUser) {
+  const insights: CoordinatorInsight[] = [];
+  const openProjects = projects.filter((project) => project.currentStage !== "Closed");
+  const addInsight = (
+    project: AuditProject,
+    priority: CoordinatorInsight["priority"],
+    title: string,
+    reason: string,
+    recommendedAction: string,
+  ) => {
+    insights.push({
+      id: `${project.id}-${title}`,
+      projectId: project.id,
+      assignmentNumber: project.assignmentNumber || project.id,
+      auditEntity: project.auditEntity || project.clientCoverholderCode || "No entity",
+      priority,
+      title,
+      reason,
+      recommendedAction,
+    });
+  };
+
+  openProjects.forEach((project) => {
+    const missingDocuments = getMissingDocuments(project);
+    const dueIn = daysUntil(project.dueDate);
+    if (dueIn < 0) {
+      addInsight(
+        project,
+        "Critical",
+        "Overdue assignment",
+        `${Math.abs(dueIn)} day${Math.abs(dueIn) === 1 ? "" : "s"} overdue.`,
+        "Escalate owner, reset due date, and record a current action note.",
+      );
+    }
+    if (project.assignmentStatus === "Blocked" || computedBlockers(project).length > 0) {
+      addInsight(
+        project,
+        "Critical",
+        "Blocked workflow",
+        computedBlockers(project).slice(0, 2).join("; ") || "Assignment is marked blocked.",
+        "Clear or assign each blocker before moving the stage forward.",
+      );
+    }
+    if (missingDocuments.length > 0) {
+      addInsight(
+        project,
+        missingDocuments.length >= 2 ? "High" : "Medium",
+        "Missing document evidence",
+        `${missingDocuments.join(", ")} missing from the required package.`,
+        "Use the document request template and update received evidence when files arrive.",
+      );
+    }
+    if (project.quoteStatus !== "Accepted" && stages.indexOf(project.currentStage) >= stages.indexOf("Scheduling")) {
+      addInsight(
+        project,
+        "High",
+        "Scheduling ahead of quote",
+        `Project is in ${project.currentStage}, but quote status is ${project.quoteStatus}.`,
+        "Confirm quote acceptance before committing more audit effort.",
+      );
+    }
+    if (project.confirmedAuditDate && project.calendarSyncStatus !== "Synced") {
+      addInsight(
+        project,
+        "Medium",
+        "Calendar not synced",
+        "Confirmed audit date exists, but Outlook sync is not complete.",
+        "Sync or update the Outlook event once calendar permission is active.",
+      );
+    }
+    if (!project.linkedContactId) {
+      addInsight(
+        project,
+        "Low",
+        "No linked client contact",
+        "Templates may not know the best DCA, coverholder, report, or invoice recipient.",
+        "Link a workbook contact before sending external communication.",
+      );
+    }
+    if (
+      user.role !== "Finance" &&
+      stages.indexOf(project.currentStage) >= stages.indexOf("Invoice") &&
+      project.invoiceStatus !== "Paid"
+    ) {
+      addInsight(
+        project,
+        "Medium",
+        "Invoice follow-up open",
+        `Invoice status is ${project.invoiceStatus}; payment received is ${project.paymentReceived ? "yes" : "no"}.`,
+        "Confirm finance handoff, invoice recipient, and payment status.",
+      );
+    }
+  });
+
+  return insights.sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority));
+}
+
+function documentIntelligence(project: AuditProject): DocumentIntelligenceResult {
+  const readiness = documentReadiness(project);
+  const required = requiredDocumentsForProject(project);
+  const missing = getMissingDocuments(project);
+  const evidence = required
+    .filter((document) => project[document.key])
+    .map((document) => document.label);
+  const recommendations: string[] = [];
+  if (missing.length > 0) {
+    recommendations.push(`Request or chase ${missing.join(", ")}.`);
+  }
+  if (project.documentRequestStatus !== "Complete") {
+    recommendations.push("Complete the document request workflow before marking the package ready.");
+  }
+  if (project.preAuditQuestionnaireStatus !== "Complete" && project.preAuditQuestionnaireStatus !== "Not Required") {
+    recommendations.push("Resolve the pre-audit questionnaire status.");
+  }
+  if (project.brokerLastChasedDate && daysSince(project.brokerLastChasedDate) >= 5 && missing.length > 0) {
+    recommendations.push("Broker/contact chase is stale; send a follow-up.");
+  }
+  if (project.auditStructure === "Coordinated") {
+    const summary = coordinatedWorkstreamSummary(project);
+    if (summary.needsAttention > 0) {
+      recommendations.push(`${summary.needsAttention} managing-agent workstream${summary.needsAttention === 1 ? "" : "s"} still need attention.`);
+    }
+  }
+  return {
+    projectId: project.id,
+    assignmentNumber: project.assignmentNumber || project.id,
+    auditEntity: project.auditEntity || project.clientCoverholderCode || "No entity",
+    packageType: isDcaProject(project)
+      ? "DCA evidence package"
+      : project.auditStructure === "Coordinated"
+        ? "Coordinated managing-agent package"
+        : "Coverholder audit package",
+    readiness: readiness.percent,
+    confidence:
+      readiness.percent === 100
+        ? "High"
+        : readiness.percent >= 60
+          ? "Medium"
+          : "Needs Review",
+    missing,
+    evidence,
+    recommendations: recommendations.length
+      ? recommendations
+      : ["Document evidence is ready for the next workflow stage."],
+  };
+}
+
+function documentIntelligenceSummary(projects: AuditProject[]) {
+  return projects
+    .filter((project) => project.currentStage !== "Closed")
+    .map(documentIntelligence)
+    .sort((a, b) => a.readiness - b.readiness);
+}
+
 function buildOperationsReport(projects: AuditProject[], user: PrototypeUser) {
   const rows = projects.map((project) => ({
     assignmentNumber: project.assignmentNumber,
@@ -2371,6 +2552,8 @@ function buildOperationsReport(projects: AuditProject[], user: PrototypeUser) {
       drafts: rows.reduce((sum, row) => sum + row.drafts.length, 0),
     },
     assistantBrief: operationsBrief(projects, user),
+    coordinatorInsights: auditCoordinatorInsights(projects, user),
+    documentIntelligence: documentIntelligenceSummary(projects),
     rows,
   };
 }
@@ -5706,6 +5889,8 @@ function OperationsCommandCenter({
   );
   const draftQueue = operationsDraftQueue(openProjects);
   const brief = operationsBrief(projects, currentUser);
+  const coordinatorInsights = auditCoordinatorInsights(openProjects, currentUser);
+  const documentPackages = documentIntelligenceSummary(openProjects);
   const roleCards = [
     {
       label: "Manager console",
@@ -5769,6 +5954,8 @@ function OperationsCommandCenter({
           </article>
         ))}
       </div>
+      <AiAuditCoordinatorPanel insights={coordinatorInsights} onSelect={onSelect} />
+      <DocumentIntelligenceOverview packages={documentPackages} onSelect={onSelect} />
       <div className="ops-grid">
         <article>
           <h3>SLA escalation</h3>
@@ -5823,6 +6010,105 @@ function OperationsCommandCenter({
         </article>
       </div>
     </section>
+  );
+}
+
+function AiAuditCoordinatorPanel({
+  insights,
+  onSelect,
+}: {
+  insights: CoordinatorInsight[];
+  onSelect: (id: string) => void;
+}) {
+  const topInsights = insights.slice(0, 8);
+  return (
+    <article className="ai-coordinator-panel">
+      <div className="section-title">
+        <div>
+          <p className="eyebrow dark">AI audit coordinator</p>
+          <h2>Recommended operating actions</h2>
+          <span>
+            Ranked from project status, blockers, documents, quote stage,
+            scheduling, and finance signals. External AI can be added later;
+            this version is deterministic and reviewable.
+          </span>
+        </div>
+      </div>
+      {topInsights.length === 0 ? (
+        <p className="muted-note">No coordinator actions detected for visible projects.</p>
+      ) : (
+        <div className="coordinator-grid">
+          {topInsights.map((insight) => (
+            <button
+              type="button"
+              key={insight.id}
+              className={`coordinator-card ${insight.priority.toLowerCase().replace(" ", "-")}`}
+              onClick={() => onSelect(insight.projectId)}
+            >
+              <span>{insight.priority}</span>
+              <strong>{insight.title}</strong>
+              <small>
+                {insight.assignmentNumber} | {insight.auditEntity}
+              </small>
+              <p>{insight.reason}</p>
+              <em>{insight.recommendedAction}</em>
+            </button>
+          ))}
+        </div>
+      )}
+    </article>
+  );
+}
+
+function DocumentIntelligenceOverview({
+  packages,
+  onSelect,
+}: {
+  packages: DocumentIntelligenceResult[];
+  onSelect: (id: string) => void;
+}) {
+  const needsReview = packages.filter((item) => item.confidence !== "High");
+  return (
+    <article className="document-intelligence-panel">
+      <div className="section-title">
+        <div>
+          <p className="eyebrow dark">Document intelligence</p>
+          <h2>Evidence package review</h2>
+          <span>
+            Flags missing evidence, stale chases, DCA package requirements, and
+            coordinated managing-agent gaps before audits move forward.
+          </span>
+        </div>
+        <span className="readiness-score warning">{needsReview.length}</span>
+      </div>
+      {packages.length === 0 ? (
+        <p className="muted-note">No open document packages to review.</p>
+      ) : (
+        <div className="document-intelligence-grid">
+          {packages.slice(0, 6).map((item) => (
+            <button
+              type="button"
+              key={item.projectId}
+              className={`document-intelligence-card ${item.confidence.toLowerCase().replace(" ", "-")}`}
+              onClick={() => onSelect(item.projectId)}
+            >
+              <span>{item.packageType}</span>
+              <strong>{item.assignmentNumber}</strong>
+              <small>{item.auditEntity}</small>
+              <div className="readiness-track compact" aria-hidden="true">
+                <span style={{ width: `${item.readiness}%` }} />
+              </div>
+              <p>{item.readiness}% ready | {item.confidence}</p>
+              <em>
+                {item.missing.length
+                  ? `Missing: ${item.missing.join(", ")}`
+                  : "No required evidence gaps detected."}
+              </em>
+            </button>
+          ))}
+        </div>
+      )}
+    </article>
   );
 }
 
@@ -6326,17 +6612,23 @@ function Select({
   options,
   onChange,
   placeholder = "All",
+  disabled = false,
 }: {
   label: string;
   value: string;
   options: (string | [string, string])[];
   onChange: (value: string) => void;
   placeholder?: string;
+  disabled?: boolean;
 }) {
   return (
     <label>
       {label}
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
+      <select
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+      >
         <option value="">{placeholder}</option>
         {options.map((option) => {
           const value = Array.isArray(option) ? option[0] : option;
@@ -6673,6 +6965,7 @@ function ProjectDetail({
         onDocumentWorkflowAction={onDocumentWorkflowAction}
         canUpdateDocuments={canEdit}
       />
+      <ProjectDocumentIntelligence project={project} />
       <WorkflowEnginePanel project={project} />
       <FinancePanel
         key={project.id}
@@ -6835,6 +7128,57 @@ function AuditTeamPanel({
         >
           Add support
         </button>
+      </div>
+    </article>
+  );
+}
+
+function ProjectDocumentIntelligence({ project }: { project: AuditProject }) {
+  const intelligence = documentIntelligence(project);
+  return (
+    <article className="panel project-document-intelligence">
+      <div className="section-title">
+        <div>
+          <p className="eyebrow dark">Document intelligence</p>
+          <h2>{intelligence.packageType}</h2>
+          <span>
+            Evidence confidence: {intelligence.confidence} | {intelligence.readiness}% ready
+          </span>
+        </div>
+      </div>
+      <div className="document-intelligence-columns">
+        <div>
+          <h3>Evidence detected</h3>
+          {intelligence.evidence.length === 0 ? (
+            <p className="muted-note">No required evidence has been marked received.</p>
+          ) : (
+            <ul className="compact-list">
+              {intelligence.evidence.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div>
+          <h3>Missing evidence</h3>
+          {intelligence.missing.length === 0 ? (
+            <p className="muted-note">No required evidence gaps detected.</p>
+          ) : (
+            <ul className="compact-list">
+              {intelligence.missing.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div>
+          <h3>Recommended handling</h3>
+          <ul className="compact-list">
+            {intelligence.recommendations.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
       </div>
     </article>
   );
@@ -7821,9 +8165,12 @@ function ProjectForm({
             contact.id,
             linkedContactLabel(contact),
           ])}
+          disabled={linkedContacts.length === 0}
           placeholder={
             contactSources
-              ? "Select client/contact from linked spreadsheets"
+              ? linkedContacts.length > 0
+                ? "Select client/contact from linked spreadsheets"
+                : "No linked contacts loaded yet"
               : "Contacts loading or unavailable"
           }
           onChange={selectLinkedContact}

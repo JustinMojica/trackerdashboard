@@ -4,6 +4,31 @@ This log tracks practical production changes to the Audit Assignment Tracker.
 It intentionally excludes secrets, publish-profile values, client secrets, and
 other sensitive configuration values.
 
+## 2026-06-22
+
+### Added
+
+- Added an AI Audit Coordinator panel in Command Center that ranks visible
+  audit actions by blockers, due dates, document gaps, quote status, calendar
+  sync, and invoice follow-up.
+- Added document intelligence summaries that classify evidence package type,
+  readiness confidence, missing evidence, and recommended handling at both the
+  Command Center and project-detail levels.
+- Added coordinator insights and document intelligence to the exported
+  operations report.
+
+### Changed
+
+- Disabled the linked workbook contact selector when contacts are unavailable
+  so the intake wizard no longer opens an empty placeholder dropdown.
+
+### Verified
+
+- `npm run check`
+- `npm test`
+- `npm run build`
+- Local endpoint smoke check on `http://127.0.0.1:5173/`.
+
 ## 2026-06-18
 
 ### Added
