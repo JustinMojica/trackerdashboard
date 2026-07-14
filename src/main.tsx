@@ -8413,6 +8413,9 @@ function ProjectForm({
   const [step, setStep] = useState(0);
   const [attemptedSave, setAttemptedSave] = useState(false);
   const [contactSearchQuery, setContactSearchQuery] = useState("");
+  const [recipientPreferences, setRecipientPreferences] = useState(
+    loadRecipientPreferences,
+  );
   const isNewProject = project.statusHistory.length === 0;
   const steps = [
     "Client / contact",
@@ -8454,6 +8457,41 @@ function ProjectForm({
   );
   const visibleLinkedContacts = filteredLinkedContacts.slice(0, 8);
   const showContactResults = !selectedLinkedContact || normalizedContactSearch.length > 0;
+  const intakeReceiverKind: TemplateReceiverKind = isDcaProject(draft)
+    ? "DCA contact"
+    : "Coverholder contact";
+  const intakeRecipientOptions = selectedLinkedContact
+    ? buildRecipientOptions([
+        {
+          emails: extractEmailsFromText(
+            contactBlockForReceiver(selectedLinkedContact, intakeReceiverKind),
+          ),
+          source: intakeReceiverKind,
+        },
+        {
+          emails:
+            intakeReceiverKind === "DCA contact"
+              ? selectedLinkedContact.emails?.dca ?? []
+              : selectedLinkedContact.emails?.coverholder ?? [],
+          source: "Workbook field",
+        },
+        {
+          emails: extractEmailsFromText(
+            selectedLinkedContact.email ||
+              Object.values(selectedLinkedContact.raw ?? {}).join(" "),
+          ),
+          source: "Linked contact",
+        },
+      ])
+    : [];
+  const intakePreferenceKey = recipientPreferenceKey(
+    selectedLinkedContact,
+    intakeReceiverKind,
+  );
+  const selectedIntakeRecipient =
+    intakeRecipientOptions.find(
+      (option) => option.email === recipientPreferences[intakePreferenceKey],
+    ) ?? intakeRecipientOptions[0];
   const selectLinkedContact = (contactId: string) => {
     const contact = linkedContacts.find((item) => item.id === contactId);
     if (!contact) {
@@ -8462,6 +8500,14 @@ function ProjectForm({
     }
     setDraft(projectWithLinkedContact(draft, contact));
     setContactSearchQuery("");
+  };
+  const selectIntakeRecipient = (email: string) => {
+    if (!email || !intakePreferenceKey) return;
+    saveRecipientPreference(intakePreferenceKey, email);
+    setRecipientPreferences((current) => ({
+      ...current,
+      [intakePreferenceKey]: email,
+    }));
   };
   const updateDocumentField = (key: ProjectDocumentKey, value: boolean) => {
     setDraft(
@@ -8608,15 +8654,39 @@ function ProjectForm({
                 <span>{instructionValue(selectedLinkedContact, "Onsite/Remote Preference")}</span>
               )}
             </div>
-            {contactEmailBuckets(selectedLinkedContact).length > 0 && (
+            {intakeRecipientOptions.length > 1 ? (
               <div className="intake-recipient-options">
-                <strong>Recipient options</strong>
-                {contactEmailBuckets(selectedLinkedContact).map(([label, emails]) => (
-                  <span key={`${selectedLinkedContact.id}-${label}`}>
-                    {label}: {emails.join("; ")}
-                  </span>
-                ))}
+                <Select
+                  label="Preferred recipient"
+                  value={selectedIntakeRecipient?.email ?? ""}
+                  options={intakeRecipientOptions.map((option) => [
+                    option.email,
+                    option.label,
+                  ])}
+                  placeholder="Choose recipient"
+                  onChange={selectIntakeRecipient}
+                />
+                <span>
+                  This will be reused for future {linkedContactName(selectedLinkedContact)}{" "}
+                  {intakeReceiverKind.toLowerCase()} templates.
+                </span>
               </div>
+            ) : intakeRecipientOptions.length === 1 ? (
+              <div className="intake-recipient-options">
+                <strong>Preferred recipient</strong>
+                <span>{intakeRecipientOptions[0].email}</span>
+              </div>
+            ) : (
+              contactEmailBuckets(selectedLinkedContact).length > 0 && (
+                <div className="intake-recipient-options">
+                  <strong>Recipient options</strong>
+                  {contactEmailBuckets(selectedLinkedContact).map(([label, emails]) => (
+                    <span key={`${selectedLinkedContact.id}-${label}`}>
+                      {label}: {emails.join("; ")}
+                    </span>
+                  ))}
+                </div>
+              )
             )}
           </div>
         ) : (
