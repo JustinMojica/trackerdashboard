@@ -62,6 +62,12 @@ other sensitive configuration values.
   search results.
 - Split the assignment detail page into Overview, Documents, Team & scheduling,
   and Activity tabs, with Overview as the default view for cleaner daily use.
+- Added an assignment action bar and compact Overview status summary for common
+  actions, blockers, readiness, schedule, quote, and next action.
+- Moved archived projects into a dedicated Archive workspace that is visible
+  only to Admin and Audit Manager users.
+- Fixed the Add Project Contacts dropdown so browse mode can reach the full
+  loaded contact list instead of stopping at the first few A contacts.
 
 ### Verified
 

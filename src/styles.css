@@ -1320,7 +1320,7 @@ main {
 .contact-picker-results {
   display: grid;
   gap: 0.35rem;
-  max-height: 240px;
+  max-height: 360px;
   overflow: auto;
 }
 .contact-picker-results button {
@@ -1842,6 +1842,74 @@ textarea {
 .assignment-detail-shell {
   display: grid;
   gap: 1rem;
+}
+.assignment-action-bar {
+  align-items: center;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(220px, 0.65fr) minmax(0, 1.35fr);
+}
+.assignment-action-bar > div:first-child {
+  display: grid;
+  gap: 0.15rem;
+}
+.assignment-action-bar h2 {
+  margin: 0;
+}
+.assignment-action-bar span {
+  color: #53637a;
+  font-weight: 800;
+}
+.assignment-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: flex-end;
+}
+.overview-status-strip {
+  display: grid;
+  gap: 0.75rem;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(6, minmax(150px, 1fr));
+}
+.overview-status-strip article {
+  background: #f8fbff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+  padding: 0.85rem;
+}
+.overview-status-strip article.ready,
+.overview-status-strip article.ok {
+  background: #ecf8f1;
+  border-color: #aadbbc;
+}
+.overview-status-strip article.watch,
+.overview-status-strip article.warning {
+  background: #fff7e8;
+  border-color: #e9cb83;
+}
+.overview-status-strip article.blocked {
+  background: #fff0ea;
+  border-color: #f0b59e;
+}
+.overview-status-strip span {
+  color: #53637a;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.overview-status-strip strong,
+.overview-status-strip small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.overview-status-strip small {
+  color: #53637a;
+  font-weight: 750;
 }
 .assignment-detail-tabs {
   background: #f8fbff;
@@ -2518,7 +2586,9 @@ textarea {
     grid-area: auto;
   }
   .filters,
+  .assignment-action-bar,
   .assignment-detail-tabs,
+  .overview-status-strip,
   .form-grid,
   .meta-grid,
   .storage-stats,
@@ -2555,9 +2625,11 @@ textarea {
   .summary-grid,
   .todays-work-grid,
   .detail-grid,
+  .assignment-action-bar,
   .assignment-detail-tabs,
   .assignment-tab-grid,
   .assignment-tab-grid.overview,
+  .overview-status-strip,
   .filters,
   .form-grid,
   .meta-grid,
@@ -2587,6 +2659,12 @@ textarea {
   }
   .modal-backdrop {
     padding: 0.75rem;
+  }
+  .assignment-action-buttons {
+    justify-content: stretch;
+  }
+  .assignment-action-buttons button {
+    flex: 1 1 150px;
   }
 }
 
@@ -3092,7 +3170,7 @@ td span {
 .app-nav {
   display: grid;
   gap: 0.65rem;
-  grid-template-columns: repeat(6, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   padding: 0.65rem;
 }
 .app-nav button {

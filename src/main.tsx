@@ -234,6 +234,7 @@ type AppSection =
   | "scheduling"
   | "command"
   | "reports"
+  | "archive"
   | "admin";
 type AdminTab = "users" | "contacts" | "activity" | "storage" | "health";
 type UserRole = "Admin" | "Audit Manager" | "Auditor" | "Finance" | "Read Only";
@@ -2945,6 +2946,9 @@ function App() {
     if (activeSection === "admin" && signedInUser?.role !== "Admin") {
       setActiveSection("dashboard");
     }
+    if (activeSection === "archive" && signedInUser && !hasFullProjectAccess(signedInUser)) {
+      setActiveSection("dashboard");
+    }
   }, [activeSection, signedInUser?.role]);
 
   useEffect(() => {
@@ -4018,6 +4022,10 @@ function App() {
             <ProjectDetail
               project={selectedProject}
               onEdit={() => setEditing(selectedProject)}
+              onOpenScheduling={() => {
+                setSelectedId(selectedProject.id);
+                setActiveSection("scheduling");
+              }}
               onMove={moveProject}
               onArchive={archiveProject}
               onRemoveLabel={removeProjectLabel}
@@ -4090,12 +4098,15 @@ function App() {
               setShownZeroLoadAuditors(zeroLoadAuditors);
             }}
           />
-          <ArchivedProjectsPanel
-            projects={archivedVisibleProjects}
-            canRestore={hasFullProjectAccess(signedInUser)}
-            onRestore={restoreProject}
-          />
         </>
+      )}
+
+      {activeSection === "archive" && hasFullProjectAccess(signedInUser) && (
+        <ArchivedProjectsPanel
+          projects={archivedVisibleProjects}
+          canRestore={hasFullProjectAccess(signedInUser)}
+          onRestore={restoreProject}
+        />
       )}
 
       {activeSection === "admin" && signedInUser.role === "Admin" && (
@@ -4431,10 +4442,17 @@ function AppNavigation({
     {
       id: "reports",
       label: "Reports",
-      helper: "Cycle time, workload reporting, and archived project access.",
-      count: archivedCount,
+      helper: "Cycle time and workload reporting.",
     },
   ];
+  if (hasFullProjectAccess(currentUser)) {
+    items.push({
+      id: "archive",
+      label: "Archive",
+      helper: "Closed or archived projects hidden from daily work.",
+      count: archivedCount,
+    });
+  }
   if (currentUser.role === "Admin") {
     items.push({
       id: "admin",
@@ -7168,9 +7186,117 @@ const assignmentDetailTabs: Array<{
   },
 ];
 
+function AssignmentActionBar({
+  project,
+  canEdit,
+  canArchive,
+  onEdit,
+  onOpenOverview,
+  onOpenDocuments,
+  onOpenActivity,
+  onOpenScheduling,
+  onArchive,
+}: {
+  project: AuditProject;
+  canEdit: boolean;
+  canArchive: boolean;
+  onEdit: () => void;
+  onOpenOverview: () => void;
+  onOpenDocuments: () => void;
+  onOpenActivity: () => void;
+  onOpenScheduling: () => void;
+  onArchive: () => void;
+}) {
+  return (
+    <section className="panel assignment-action-bar" aria-label="Assignment actions">
+      <div>
+        <p className="eyebrow dark">Selected assignment</p>
+        <h2>{project.assignmentNumber}</h2>
+        <span>{project.auditEntity || project.clientCoverholderCode || "No entity recorded"}</span>
+      </div>
+      <div className="assignment-action-buttons">
+        <button type="button" onClick={onOpenOverview}>
+          Move stage
+        </button>
+        <button type="button" onClick={onOpenScheduling}>
+          Schedule audit
+        </button>
+        <button type="button" className="secondary" onClick={onOpenDocuments}>
+          Email draft
+        </button>
+        <button type="button" className="secondary" onClick={onOpenActivity}>
+          Add comment
+        </button>
+        <button type="button" className="secondary" disabled={!canEdit} onClick={onEdit}>
+          Edit project
+        </button>
+        {canArchive && (
+          <button type="button" className="secondary" onClick={onArchive}>
+            Archive
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function AssignmentOverviewSummary({
+  project,
+  blockers,
+}: {
+  project: AuditProject;
+  blockers: string[];
+}) {
+  const readiness = documentReadiness(project);
+  const schedule = scheduleStatus(project);
+  const quoteTone =
+    project.quoteStatus === "Accepted"
+      ? "ready"
+      : project.quoteStatus === "Rejected"
+        ? "blocked"
+        : "watch";
+  return (
+    <section className="overview-status-strip" aria-label="Assignment status summary">
+      <article>
+        <span>Stage</span>
+        <strong>{project.currentStage}</strong>
+        <small>{project.assignmentStatus}</small>
+      </article>
+      <article className={blockers.length ? "blocked" : "ready"}>
+        <span>Blockers</span>
+        <strong>{blockers.length ? blockers.length : "None"}</strong>
+        <small>{blockers[0] || "No blockers recorded"}</small>
+      </article>
+      <article className={readiness.percent === 100 ? "ready" : "watch"}>
+        <span>Documents</span>
+        <strong>{readiness.percent}%</strong>
+        <small>
+          {readiness.completeCount}/{readiness.totalCount} readiness items complete
+        </small>
+      </article>
+      <article className={schedule.className}>
+        <span>Schedule</span>
+        <strong>{schedule.label}</strong>
+        <small>{project.confirmedAuditDate || project.tentativeAuditWeek || "No date set"}</small>
+      </article>
+      <article className={quoteTone}>
+        <span>Quote</span>
+        <strong>{project.quoteStatus}</strong>
+        <small>{formatCurrency(project.quoteAmount)}</small>
+      </article>
+      <article>
+        <span>Next action</span>
+        <strong>{project.nextAction || "Not set"}</strong>
+        <small>{project.dueDate ? `Due ${project.dueDate}` : "No due date"}</small>
+      </article>
+    </section>
+  );
+}
+
 function ProjectDetail({
   project,
   onEdit,
+  onOpenScheduling,
   onMove,
   onArchive,
   onRemoveLabel,
@@ -7185,6 +7311,7 @@ function ProjectDetail({
 }: {
   project: AuditProject;
   onEdit: () => void;
+  onOpenScheduling: () => void;
   onMove: (project: AuditProject, stage: Stage) => void;
   onArchive: (project: AuditProject) => void;
   onRemoveLabel: (project: AuditProject, label: ProjectLabel) => void;
@@ -7220,6 +7347,17 @@ function ProjectDetail({
 
   return (
     <section className="assignment-detail-shell">
+      <AssignmentActionBar
+        project={project}
+        canEdit={canEdit}
+        canArchive={canArchiveProject(currentUser) && !project.archived}
+        onEdit={onEdit}
+        onOpenOverview={() => setActiveDetailTab("overview")}
+        onOpenDocuments={() => setActiveDetailTab("documents")}
+        onOpenActivity={() => setActiveDetailTab("activity")}
+        onOpenScheduling={onOpenScheduling}
+        onArchive={() => onArchive(project)}
+      />
       <div
         className="assignment-detail-tabs"
         role="tablist"
@@ -7243,20 +7381,12 @@ function ProjectDetail({
       <div className={`assignment-tab-grid ${activeDetailTab}`}>
         {activeDetailTab === "overview" && (
           <>
+            <AssignmentOverviewSummary project={project} blockers={blockers} />
             <article className="panel detail">
               <div className="section-title">
-                <h2>{project.assignmentNumber}</h2>
-                <div className="detail-actions">
-                  {canEdit && <button onClick={onEdit}>Edit project</button>}
-                  {canArchiveProject(currentUser) && !project.archived && (
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => onArchive(project)}
-                    >
-                      Archive project
-                    </button>
-                  )}
+                <div>
+                  <p className="eyebrow dark">Overview</p>
+                  <h2>{project.assignmentNumber}</h2>
                 </div>
               </div>
               {project.labels.length > 0 && (
@@ -8582,7 +8712,9 @@ function ProjectForm({
     .map((id) => linkedContacts.find((contact) => contact.id === id))
     .filter((contact): contact is LinkedContact => Boolean(contact))
     .slice(0, 4);
-  const visibleLinkedContacts = filteredLinkedContacts.slice(0, 8);
+  const visibleLinkedContacts = normalizedContactSearch
+    ? filteredLinkedContacts.slice(0, 25)
+    : filteredLinkedContacts;
   const contactPickerValue =
     contactSearchQuery || (selectedLinkedContact ? linkedContactName(selectedLinkedContact) : "");
   const showContactResults = contactPickerOpen && linkedContacts.length > 0;
