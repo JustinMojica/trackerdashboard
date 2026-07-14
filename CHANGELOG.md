@@ -53,6 +53,8 @@ other sensitive configuration values.
 - Added shared server recipient preferences, recently used contact shortcuts,
   contact-quality warnings, clearer create-project shortcuts from Contacts, and
   a final Add Project review step before saving.
+- Refined the Add Project Contacts field into a true searchable dropdown:
+  users can type before selecting or open the dropdown to browse contacts.
 
 ### Verified
 

@@ -1291,6 +1291,32 @@ main {
   gap: 0.55rem;
   min-width: 0;
 }
+.contact-combobox {
+  display: grid;
+  gap: 0.35rem;
+}
+.contact-combobox > span {
+  align-items: stretch;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+}
+.contact-combobox input {
+  border-bottom-right-radius: 0;
+  border-top-right-radius: 0;
+}
+.contact-combobox button {
+  background: #eaf2ff;
+  border-bottom-left-radius: 0;
+  border-top-left-radius: 0;
+  box-shadow: none;
+  color: #123b7a;
+  min-width: 44px;
+  padding: 0;
+}
+.contact-combobox button:hover {
+  background: #d9e8ff;
+  transform: none;
+}
 .contact-picker-results {
   display: grid;
   gap: 0.35rem;

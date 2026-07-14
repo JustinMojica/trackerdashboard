@@ -8507,6 +8507,7 @@ function ProjectForm({
   const [step, setStep] = useState(0);
   const [attemptedSave, setAttemptedSave] = useState(false);
   const [contactSearchQuery, setContactSearchQuery] = useState("");
+  const [contactPickerOpen, setContactPickerOpen] = useState(false);
   const [recipientPreferences, setRecipientPreferences] = useState(
     loadRecipientPreferences,
   );
@@ -8559,7 +8560,10 @@ function ProjectForm({
     .filter((contact): contact is LinkedContact => Boolean(contact))
     .slice(0, 4);
   const visibleLinkedContacts = filteredLinkedContacts.slice(0, 8);
-  const showContactResults = !selectedLinkedContact || normalizedContactSearch.length > 0;
+  const contactPickerValue =
+    contactSearchQuery || (selectedLinkedContact ? linkedContactName(selectedLinkedContact) : "");
+  const showContactResults = contactPickerOpen && linkedContacts.length > 0;
+  const showRecentContacts = showContactResults && recentLinkedContacts.length > 0 && !normalizedContactSearch;
   const intakeReceiverKind: TemplateReceiverKind = isDcaProject(draft)
     ? "DCA contact"
     : "Coverholder contact";
@@ -8603,8 +8607,22 @@ function ProjectForm({
     }
     setDraft(projectWithLinkedContact(draft, contact));
     setContactSearchQuery("");
+    setContactPickerOpen(false);
     saveRecentContactId(contact.id);
     setRecentContactIds(loadRecentContactIds());
+  };
+  const searchLinkedContacts = (value: string) => {
+    setContactSearchQuery(value);
+    setContactPickerOpen(true);
+    if (selectedLinkedContact && value !== linkedContactName(selectedLinkedContact)) {
+      setDraft(
+        withProjectDefaults({
+          ...draft,
+          linkedContactId: "",
+          linkedContactSource: "",
+        }),
+      );
+    }
   };
   const selectIntakeRecipient = (email: string) => {
     if (!email || !intakePreferenceKey) return;
@@ -8707,23 +8725,31 @@ function ProjectForm({
       )}
       <div className="linked-contact-intake">
         <div className="contact-picker">
-          <Input
-            label="Contacts"
-            value={contactSearchQuery}
-            placeholder={
-              selectedLinkedContact
-                ? linkedContactName(selectedLinkedContact)
-                : "Search agent, client, email, or instruction"
-            }
-            onChange={setContactSearchQuery}
-          />
+          <label className="contact-combobox">
+            Contacts
+            <span>
+              <input
+                value={contactPickerValue}
+                placeholder="Search agent, client, email, or instruction"
+                onFocus={() => setContactPickerOpen(true)}
+                onChange={(event) => searchLinkedContacts(event.target.value)}
+              />
+              <button
+                type="button"
+                aria-label={contactPickerOpen ? "Close contacts" : "Open contacts"}
+                onClick={() => setContactPickerOpen((value) => !value)}
+              >
+                {contactPickerOpen ? "▲" : "▼"}
+              </button>
+            </span>
+          </label>
           {linkedContacts.length === 0 ? (
             <p className="muted-note">
               {contactSources
                 ? "No linked contacts loaded yet."
                 : "Contacts loading or unavailable."}
             </p>
-          ) : recentLinkedContacts.length > 0 && !normalizedContactSearch ? (
+          ) : showRecentContacts ? (
             <div className="recent-contact-shortcuts">
               <strong>Recently used</strong>
               <div>
@@ -8763,7 +8789,7 @@ function ProjectForm({
             </div>
           ) : (
             <p className="muted-note">
-              Type to search again or choose a different contact.
+              Open the dropdown or type to choose a contact.
             </p>
           )}
         </div>
