@@ -68,6 +68,8 @@ other sensitive configuration values.
   only to Admin and Audit Manager users.
 - Fixed the Add Project Contacts dropdown so browse mode can reach the full
   loaded contact list instead of stopping at the first few A contacts.
+- Consolidated backend storage, rollout health, exports, and guarded
+  maintenance into a single Admin tools tab so daily admin work stays separate.
 
 ### Verified
 

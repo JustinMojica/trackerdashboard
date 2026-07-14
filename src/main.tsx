@@ -236,7 +236,7 @@ type AppSection =
   | "reports"
   | "archive"
   | "admin";
-type AdminTab = "users" | "contacts" | "activity" | "storage" | "health";
+type AdminTab = "users" | "contacts" | "activity" | "tools";
 type UserRole = "Admin" | "Audit Manager" | "Auditor" | "Finance" | "Read Only";
 type ProjectVisibility =
   | "Role Default"
@@ -4133,7 +4133,6 @@ function App() {
           exportedBy={signedInUser.fullName}
           onExport={handleExportMicrosoftListsPackage}
           onClearProjects={clearProjectData}
-          onRestoreProject={restoreProject}
         />
       )}
       {editing && (
@@ -4503,7 +4502,6 @@ function AdminWorkspace({
   exportedBy,
   onExport,
   onClearProjects,
-  onRestoreProject,
 }: {
   activeTab: AdminTab;
   setActiveTab: (tab: AdminTab) => void;
@@ -4527,7 +4525,6 @@ function AdminWorkspace({
   exportedBy: string;
   onExport: () => void;
   onClearProjects: () => void;
-  onRestoreProject: (project: AuditProject) => void;
 }) {
   const tabs: { id: AdminTab; label: string; helper: string }[] = [
     {
@@ -4546,14 +4543,9 @@ function AdminWorkspace({
       helper: "Review recent project changes across visible records.",
     },
     {
-      id: "storage",
-      label: "Storage & data",
-      helper: "Microsoft Lists status, backups, archive, and destructive controls.",
-    },
-    {
-      id: "health",
-      label: "System health",
-      helper: "Security, Graph consent, runtime, and deployment checks.",
+      id: "tools",
+      label: "Admin tools",
+      helper: "Backend storage, system health, exports, and guarded controls.",
     },
   ];
 
@@ -4564,8 +4556,8 @@ function AdminWorkspace({
           <p className="eyebrow dark">Admin workspace</p>
           <h2>Production controls</h2>
           <span>
-            Daily controls are separated from backend checks. Storage actions below
-            preserve Microsoft Lists data unless you explicitly clear or replace records.
+            Daily admin work is separated from backend tools. Use Admin tools
+            only for setup checks, storage exports, and guarded maintenance.
           </span>
         </div>
       </div>
@@ -4605,8 +4597,13 @@ function AdminWorkspace({
             />
           )}
           {activeTab === "activity" && <AdminActivityPanel projects={projects} />}
-          {activeTab === "storage" && (
-            <>
+          {activeTab === "tools" && (
+            <AdminToolsPanel>
+              <SystemReadinessPanel
+                health={health}
+                loading={loading}
+                onRefresh={onRefreshHealth}
+              />
               <DataSafetyPanel
                 activeCount={activeProjects.length}
                 archivedCount={archivedProjects.length}
@@ -4619,22 +4616,28 @@ function AdminWorkspace({
                 health={health}
                 onExport={onExport}
               />
-              <ArchivedProjectsPanel
-                projects={archivedProjects}
-                canRestore
-                onRestore={onRestoreProject}
-              />
-            </>
-          )}
-          {activeTab === "health" && (
-            <SystemReadinessPanel
-              health={health}
-              loading={loading}
-              onRefresh={onRefreshHealth}
-            />
+            </AdminToolsPanel>
           )}
         </div>
       </div>
+    </section>
+  );
+}
+
+function AdminToolsPanel({ children }: { children: React.ReactNode }) {
+  return (
+    <section className="admin-tools-stack">
+      <div className="panel admin-tools-intro">
+        <div>
+          <p className="eyebrow dark">Admin tools</p>
+          <h2>Backend and rollout checks</h2>
+          <span>
+            These controls are for setup, troubleshooting, exports, and guarded
+            storage actions. Daily admin work stays in Users, Contacts, and Audit log.
+          </span>
+        </div>
+      </div>
+      {children}
     </section>
   );
 }

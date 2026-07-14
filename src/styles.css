@@ -3271,6 +3271,16 @@ td span {
 .admin-tab-content {
   min-width: 0;
 }
+.admin-tools-stack {
+  display: grid;
+  gap: 1rem;
+}
+.admin-tools-intro {
+  background: #f8fbff;
+}
+.admin-tools-intro span {
+  color: #53637a;
+}
 .data-safety-panel {
   display: grid;
   gap: 1rem;
