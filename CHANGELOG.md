@@ -30,6 +30,8 @@ other sensitive configuration values.
 - Simplified project-detail language and layout by replacing technical workflow
   labels with user-facing next-step, timing-alert, document-review, folder, and
   email wording.
+- Collapsed recommended next steps by default and shortened stage override
+  confirmation wording.
 
 ### Verified
 

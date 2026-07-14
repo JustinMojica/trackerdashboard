@@ -3199,7 +3199,7 @@ function App() {
       }
       requestConfirmation({
         title: "Override stage restriction?",
-        message: `${blocker} You can move the project anyway, but the override will be recorded in the audit trail.`,
+        message: blocker,
         confirmLabel: "Move anyway",
         tone: "danger",
         onConfirm: () => applyStageMove(project, targetStage, blocker),
@@ -6997,6 +6997,7 @@ function ProjectDetail({
 }) {
   const blockers = computedBlockers(project);
   const nextSteps = recommendedNextSteps(project);
+  const [showRecommendedSteps, setShowRecommendedSteps] = useState(false);
   const canEdit = canEditProject(currentUser, project);
   const canManageFinance =
     canUpdateFinance(currentUser, project) || hasFullProjectAccess(currentUser);
@@ -7070,12 +7071,22 @@ function ProjectDetail({
         </div>
         <p>{project.nextAction || "No next action recorded."}</p>
         <div className="recommended-next">
-          <strong>Recommended next steps</strong>
-          <ul>
-            {nextSteps.map((step) => (
-              <li key={step}>{step}</li>
-            ))}
-          </ul>
+          <button
+            type="button"
+            className="recommended-next-toggle"
+            aria-expanded={showRecommendedSteps}
+            onClick={() => setShowRecommendedSteps((value) => !value)}
+          >
+            <strong>Recommended next steps</strong>
+            <span>{showRecommendedSteps ? "Hide" : `Show ${nextSteps.length}`}</span>
+          </button>
+          {showRecommendedSteps && (
+            <ul>
+              {nextSteps.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ul>
+          )}
         </div>
         <h3>Blockers</h3>
         {blockers.length ? (

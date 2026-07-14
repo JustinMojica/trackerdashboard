@@ -3137,16 +3137,36 @@ td span {
   border: 1px solid #dfe7f2;
   border-radius: 16px;
   margin: 0.85rem 0 1rem;
-  padding: 0.9rem 1rem;
+  padding: 0.35rem;
 }
-.recommended-next strong {
+.recommended-next-toggle {
+  align-items: center;
+  background: transparent;
+  color: #172033;
+  display: flex;
+  justify-content: space-between;
+  padding: 0.65rem 0.75rem;
+  width: 100%;
+}
+.recommended-next-toggle:hover {
+  background: #eef4ff;
+  color: #123b7a;
+}
+.recommended-next-toggle strong {
   color: #172033;
   display: block;
-  margin-bottom: 0.5rem;
+}
+.recommended-next-toggle span {
+  background: #e5eefc;
+  border-radius: 999px;
+  color: #15386d;
+  font-size: 0.78rem;
+  font-weight: 900;
+  padding: 0.28rem 0.6rem;
 }
 .recommended-next ul {
-  margin: 0;
-  padding-left: 1.2rem;
+  margin: 0.35rem 0 0;
+  padding: 0 1rem 0.85rem 1.95rem;
 }
 .recommended-next li + li {
   margin-top: 0.35rem;
