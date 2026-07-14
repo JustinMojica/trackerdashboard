@@ -1895,6 +1895,12 @@ textarea {
   margin-top: 1rem;
   max-width: 360px;
 }
+.move-row small {
+  color: #53637a;
+  display: block;
+  font-weight: 700;
+  margin-top: 0.45rem;
+}
 .history div {
   border-left: 3px solid #c6d6f0;
   margin-bottom: 0.75rem;

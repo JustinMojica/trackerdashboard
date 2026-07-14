@@ -936,6 +936,10 @@ function canEditProject(user: PrototypeUser, project: AuditProject) {
   return user.role === "Auditor" && projectHasAuditor(project, user.fullName);
 }
 
+function canOverrideStageRestriction(user: PrototypeUser) {
+  return hasFullProjectAccess(user);
+}
+
 function canCreateProject(user: PrototypeUser) {
   return user.role === "Admin" || user.role === "Audit Manager";
 }
@@ -3130,23 +3134,25 @@ function App() {
     setMessage(exists ? "Project updated." : "Project created.");
   };
 
-  const moveProject = (project: AuditProject, targetStage: Stage) => {
+  const applyStageMove = (
+    project: AuditProject,
+    targetStage: Stage,
+    overrideReason = "",
+  ) => {
     if (!canEditProject(signedInUser, project)) {
       setMessage("Your role cannot move this project.");
       return;
     }
-    const blocker = canMoveToStage(project, targetStage);
-    if (blocker) {
-      setMessage(blocker);
-      return;
-    }
+    const updatedProject = { ...project, currentStage: targetStage };
+    const note = overrideReason
+      ? `Stage restriction overridden: ${overrideReason}`
+      : "Stage changed in tracker.";
     const updated: AuditProject = {
-      ...project,
-      currentStage: targetStage,
+      ...updatedProject,
       assignmentStatus:
         targetStage === "Closed"
           ? "Completed"
-          : computedBlockers({ ...project, currentStage: targetStage }).length
+          : computedBlockers(updatedProject).length
             ? "Blocked"
             : "In Progress",
       lastUpdatedDate: new Date().toISOString().slice(0, 10),
@@ -3155,7 +3161,7 @@ function App() {
         createActivityEvent(
           "stage",
           `${project.currentStage} → ${targetStage}`,
-          "Stage changed in tracker.",
+          note,
           signedInUser.fullName,
         ),
       ],
@@ -3167,13 +3173,40 @@ function App() {
           changedBy: signedInUser.fullName,
           fromStage: project.currentStage,
           toStage: targetStage,
-          note: "Stage changed in tracker.",
+          note,
         },
       ],
     };
     persist(projects.map((item) => (item.id === project.id ? updated : item)));
     setSelectedId(project.id);
-    setMessage(`${project.assignmentNumber} moved to ${targetStage}.`);
+    setMessage(
+      overrideReason
+        ? `${project.assignmentNumber} moved to ${targetStage} with an override.`
+        : `${project.assignmentNumber} moved to ${targetStage}.`,
+    );
+  };
+
+  const moveProject = (project: AuditProject, targetStage: Stage) => {
+    if (!canEditProject(signedInUser, project)) {
+      setMessage("Your role cannot move this project.");
+      return;
+    }
+    const blocker = canMoveToStage(project, targetStage);
+    if (blocker) {
+      if (!canOverrideStageRestriction(signedInUser)) {
+        setMessage(blocker);
+        return;
+      }
+      requestConfirmation({
+        title: "Override stage restriction?",
+        message: `${blocker} You can move the project anyway, but the override will be recorded in the audit trail.`,
+        confirmLabel: "Move anyway",
+        tone: "danger",
+        onConfirm: () => applyStageMove(project, targetStage, blocker),
+      });
+      return;
+    }
+    applyStageMove(project, targetStage);
   };
 
   const archiveProject = (project: AuditProject) => {
@@ -7067,6 +7100,12 @@ function ProjectDetail({
                 ))}
               </select>
             </label>
+            {canOverrideStageRestriction(currentUser) && (
+              <small>
+                If a required item is missing, you can choose a stage and confirm
+                an override. The reason will be saved in the audit trail.
+              </small>
+            )}
           </div>
         )}
       </article>

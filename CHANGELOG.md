@@ -12,6 +12,9 @@ other sensitive configuration values.
   duration, location, remote link, notes, invite preview, and review warnings.
 - Added one-click Save schedule and Save and send/update Outlook invite actions
   so users no longer need to understand calendar sync states.
+- Added an Admin/Audit Manager stage override confirmation so required-item
+  restrictions can be bypassed when needed while still recording the reason in
+  the audit trail.
 
 ### Changed
 
