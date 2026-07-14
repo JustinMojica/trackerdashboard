@@ -50,6 +50,9 @@ other sensitive configuration values.
 - Combined Add Project contact search and selection into one Contacts picker,
   refreshed intake fields when a new contact is selected, exposed recipient
   options during intake, and collapsed checklist/readiness details by default.
+- Added shared server recipient preferences, recently used contact shortcuts,
+  contact-quality warnings, clearer create-project shortcuts from Contacts, and
+  a final Add Project review step before saving.
 
 ### Verified
 

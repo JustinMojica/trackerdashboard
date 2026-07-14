@@ -1,6 +1,6 @@
 import { createHmac, createHash, randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +20,7 @@ const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const dataDir = resolve(rootDir, "server", "data");
 const usersFile = resolve(dataDir, "access-users.json");
 const projectsFile = resolve(dataDir, "audit-projects.json");
+const recipientPreferencesFile = resolve(dataDir, "recipient-preferences.json");
 const distDir = resolve(rootDir, "dist");
 const deployInfoFile = resolve(rootDir, "server", "deploy-info.json");
 const oauthStates = new Map();
@@ -155,6 +156,12 @@ async function route(request, response) {
   }
   if (url.pathname === "/api/projects" && request.method === "PUT") {
     return saveProjects(request, response);
+  }
+  if (url.pathname === "/api/recipient-preferences" && request.method === "GET") {
+    return listRecipientPreferences(request, response);
+  }
+  if (url.pathname === "/api/recipient-preferences" && request.method === "PUT") {
+    return saveRecipientPreferences(request, response);
   }
   const approvalMatch = url.pathname.match(
     /^\/api\/admin\/access-requests\/([^/]+)\/(approve|reject)$/,
@@ -989,6 +996,57 @@ async function createProjectCalendarEvent(request, response) {
     action: event.action,
     event,
   });
+}
+
+async function listRecipientPreferences(request, response) {
+  const user = await requireApprovedUser(request, response);
+  if (!user) return;
+  const preferences = await loadRecipientPreferences();
+  return sendJson(request, response, 200, {
+    preferences,
+    storage: "server",
+  });
+}
+
+async function saveRecipientPreferences(request, response) {
+  const user = await requireApprovedUser(request, response);
+  if (!user) return;
+  const body = await readJson(request).catch(() => ({}));
+  const incoming = normalizeRecipientPreferences(body.preferences ?? body);
+  const current = await loadRecipientPreferences();
+  const preferences = { ...current, ...incoming };
+  await writeRecipientPreferences(preferences);
+  return sendJson(request, response, 200, {
+    preferences,
+    storage: "server",
+  });
+}
+
+async function loadRecipientPreferences() {
+  try {
+    return normalizeRecipientPreferences(
+      JSON.parse(await readFile(recipientPreferencesFile, "utf8")),
+    );
+  } catch {
+    return {};
+  }
+}
+
+async function writeRecipientPreferences(preferences) {
+  await mkdir(dataDir, { recursive: true });
+  await writeFile(
+    recipientPreferencesFile,
+    `${JSON.stringify(normalizeRecipientPreferences(preferences), null, 2)}\n`,
+  );
+}
+
+function normalizeRecipientPreferences(value) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  return Object.fromEntries(
+    Object.entries(source)
+      .map(([key, email]) => [String(key || "").trim(), String(email || "").trim().toLowerCase()])
+      .filter(([key, email]) => key && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)),
+  );
 }
 
 async function loadProjectStore() {

@@ -561,7 +561,7 @@ main {
   border-radius: 14px;
   display: grid;
   gap: 0.75rem;
-  grid-template-columns: minmax(240px, 1fr) minmax(180px, 0.4fr) auto;
+  grid-template-columns: minmax(240px, 1fr) minmax(180px, 0.4fr) auto auto;
   padding: 0.9rem;
 }
 .contact-tools > span {
@@ -572,6 +572,20 @@ main {
 }
 .contact-card-actions {
   justify-self: end;
+}
+.contact-quality-warnings {
+  background: #fff8eb;
+  border: 1px solid #e9cb83;
+  border-radius: 12px;
+  color: #6b4e00;
+  display: grid;
+  gap: 0.25rem;
+  grid-column: 1 / -1;
+  padding: 0.7rem 0.8rem;
+}
+.contact-quality-warnings span {
+  color: #6b4e00;
+  font-size: 0.85rem;
 }
 .contact-tags {
   align-content: start;
@@ -1304,6 +1318,24 @@ main {
   font-size: 0.82rem;
   overflow-wrap: anywhere;
 }
+.recent-contact-shortcuts {
+  display: grid;
+  gap: 0.4rem;
+}
+.recent-contact-shortcuts > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.recent-contact-shortcuts button {
+  background: #eaf2ff;
+  color: #123b7a;
+  padding: 0.45rem 0.6rem;
+}
+.recent-contact-shortcuts button.active {
+  background: #1358db;
+  color: #fff;
+}
 .linked-contact-preview {
   background: #fff;
   border: 1px solid #dfe7f2;
@@ -1331,6 +1363,32 @@ main {
 }
 .intake-recipient-options span {
   font-size: 0.86rem;
+}
+.intake-review-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+}
+.intake-review-grid article {
+  background: #f8fbff;
+  border: 1px solid #dfe7f2;
+  border-radius: 14px;
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.85rem;
+}
+.intake-review-grid span {
+  color: #66748a;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.intake-review-grid small {
+  color: #53637a;
+  overflow-wrap: anywhere;
+}
+.compact-review {
+  margin-top: 0;
 }
 .operations-command {
   display: grid;
@@ -3106,6 +3164,7 @@ td span {
   .workload-row,
   .wizard-grid,
   .review-grid,
+  .intake-review-grid,
   .wizard-steps {
     grid-template-columns: 1fr;
   }

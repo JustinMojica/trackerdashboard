@@ -346,6 +346,39 @@ export async function createOutlookCalendarEvent(
   return response.json();
 }
 
+export async function getRecipientPreferences(): Promise<Record<string, string>> {
+  const response = await fetch(secureAccessUrl("/api/recipient-preferences"), {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.message || payload.error || "Recipient preferences are not available.");
+  }
+  const payload = await response.json();
+  return payload.preferences && typeof payload.preferences === "object"
+    ? payload.preferences
+    : {};
+}
+
+export async function saveRecipientPreferences(
+  preferences: Record<string, string>,
+): Promise<Record<string, string>> {
+  const response = await fetch(secureAccessUrl("/api/recipient-preferences"), {
+    method: "PUT",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ preferences }),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.message || payload.error || "Recipient preference save failed.");
+  }
+  const payload = await response.json();
+  return payload.preferences && typeof payload.preferences === "object"
+    ? payload.preferences
+    : preferences;
+}
+
 async function decideSecureAccessRequest(
   email: string,
   decision: "approve" | "reject",

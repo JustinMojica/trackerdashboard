@@ -8,11 +8,13 @@ import {
   approveSecureAccessRequest,
   createOutlookCalendarEvent,
   getLinkedContactSources,
+  getRecipientPreferences,
   getSecureAccessState,
   getSecureSystemHealth,
   logoutSecureAccess,
   rejectSecureAccessRequest,
   secureAccessUrl,
+  saveRecipientPreferences,
   updateSecureAccessUser,
   verifySecureAccessCode,
   type AccessApprovalUpdate,
@@ -379,6 +381,7 @@ const usersStorageKey = "audit-assignment-tracker-users-v1";
 const lastExportStorageKey = "audit-assignment-tracker-last-export-v1";
 const recipientPreferenceStorageKey =
   "audit-assignment-tracker-recipient-preferences-v1";
+const recentContactStorageKey = "audit-assignment-tracker-recent-contacts-v1";
 
 const defaultFilters: Filters = {
   auditor: "",
@@ -1250,6 +1253,52 @@ function saveRecipientPreference(key: string, email: string) {
   );
 }
 
+async function loadSharedRecipientPreferences() {
+  const localPreferences = loadRecipientPreferences();
+  try {
+    const sharedPreferences = await getRecipientPreferences();
+    const merged = { ...localPreferences, ...sharedPreferences };
+    localStorage.setItem(recipientPreferenceStorageKey, JSON.stringify(merged));
+    return merged;
+  } catch {
+    return localPreferences;
+  }
+}
+
+async function saveSharedRecipientPreference(key: string, email: string) {
+  if (!key || !email) return loadRecipientPreferences();
+  const localPreferences = { ...loadRecipientPreferences(), [key]: email };
+  localStorage.setItem(recipientPreferenceStorageKey, JSON.stringify(localPreferences));
+  try {
+    const sharedPreferences = await saveRecipientPreferences({ [key]: email });
+    const merged = { ...localPreferences, ...sharedPreferences };
+    localStorage.setItem(recipientPreferenceStorageKey, JSON.stringify(merged));
+    return merged;
+  } catch {
+    return localPreferences;
+  }
+}
+
+function loadRecentContactIds(): string[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(recentContactStorageKey) ?? "[]");
+    return Array.isArray(parsed)
+      ? parsed.map(String).filter(Boolean).slice(0, 8)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentContactId(contactId: string) {
+  if (!contactId) return;
+  const nextIds = [
+    contactId,
+    ...loadRecentContactIds().filter((item) => item !== contactId),
+  ].slice(0, 8);
+  localStorage.setItem(recentContactStorageKey, JSON.stringify(nextIds));
+}
+
 function withUserDefaults(user: Partial<PrototypeUser>): PrototypeUser {
   const role = user.role ?? "Auditor";
   const emailVerified = user.emailVerified ?? Boolean(user.active ?? true);
@@ -2092,6 +2141,26 @@ function contactEmailBuckets(contact: LinkedContact) {
     string,
     string[],
   ][];
+}
+
+function contactQualityWarnings(contact: LinkedContact) {
+  const warnings: string[] = [];
+  if (contact.raw?.dcaContact && (contact.emails?.dca ?? []).length === 0) {
+    warnings.push("DCA contact exists but no DCA email was detected.");
+  }
+  if (contact.raw?.coverholderContact && (contact.emails?.coverholder ?? []).length === 0) {
+    warnings.push("Coverholder contact exists but no coverholder email was detected.");
+  }
+  if (contact.raw?.reportSubmission && (contact.emails?.report ?? []).length === 0) {
+    warnings.push("Report submission instructions exist but no report email was detected.");
+  }
+  if (contact.raw?.invoiceSubmission && (contact.emails?.invoice ?? []).length === 0) {
+    warnings.push("Invoice submission instructions exist but no invoice email was detected.");
+  }
+  if (contactEmailBuckets(contact).length === 0 && !contact.email) {
+    warnings.push("No usable email address was detected for this contact.");
+  }
+  return warnings;
 }
 
 type ContactFilter = "All" | "DCA" | "Coverholder" | "Report" | "Invoice" | "Missing Email";
@@ -3131,6 +3200,7 @@ function App() {
 
   const startProjectFromContact = (contact: LinkedContact) => {
     const starter = projectWithLinkedContact(blankProject(), contact);
+    saveRecentContactId(contact.id);
     setEditing(starter);
     setActiveSection("assignments");
     setMessage(`Project intake started from ${linkedContactName(contact)}.`);
@@ -4686,6 +4756,7 @@ function ContactSourcesPanel({
   );
   const visibleContacts = filteredContacts.slice(0, 40);
   const warningPreview = contactSources?.warnings.slice(0, 12) ?? [];
+  const firstVisibleContact = visibleContacts[0];
   return (
     <section className="panel contact-sources-panel">
       <div className="section-title">
@@ -4801,59 +4872,77 @@ function ContactSourcesPanel({
           <span>
             Showing {visibleContacts.length} of {filteredContacts.length} matching contacts
           </span>
+          {firstVisibleContact && (
+            <button
+              type="button"
+              onClick={() => onCreateProjectFromContact(firstVisibleContact)}
+            >
+              Create project from first match
+            </button>
+          )}
         </div>
       )}
       {visibleContacts.length > 0 && (
         <div className="contact-preview-list">
-          {visibleContacts.map((contact) => (
-            <article key={contact.id} className="contact-preview-card">
-              <div>
-                <strong>{contact.contactName || contact.company || "Unnamed contact"}</strong>
-                <span>
-                  {contact.email || "No email"} |{" "}
-                  {contact.company || contact.coverholder || contact.managingAgent || "No company"}
-                </span>
-                <small>
-                  {contact.workbookName} / {contact.worksheetName}
-                </small>
-              </div>
-              <div className="contact-card-actions">
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => onCreateProjectFromContact(contact)}
-                >
-                  Start project
-                </button>
-              </div>
-              <div className="contact-tags">
-                {contact.broker && <span>Broker: {contact.broker}</span>}
-                {contact.managingAgent && <span>MA: {contact.managingAgent}</span>}
-                {contact.coverholder && <span>Coverholder: {contact.coverholder}</span>}
-                {contact.role && <span>{contact.role}</span>}
-              </div>
-              {contactEmailBuckets(contact).length > 0 && (
-                <div className="contact-email-grid">
-                  {contactEmailBuckets(contact).map(([label, emails]) => (
-                    <span key={`${contact.id}-${label}`}>
-                      <strong>{label}</strong>
-                      {emails.join("; ")}
-                    </span>
-                  ))}
+          {visibleContacts.map((contact) => {
+            const warnings = contactQualityWarnings(contact);
+            return (
+              <article key={contact.id} className="contact-preview-card">
+                <div>
+                  <strong>{contact.contactName || contact.company || "Unnamed contact"}</strong>
+                  <span>
+                    {contact.email || "No email"} |{" "}
+                    {contact.company || contact.coverholder || contact.managingAgent || "No company"}
+                  </span>
+                  <small>
+                    {contact.workbookName} / {contact.worksheetName}
+                  </small>
                 </div>
-              )}
-              {contact.specialInstructions.length > 0 && (
-                <div className="special-instructions">
-                  <strong>Special instructions</strong>
-                  {contact.specialInstructions.map((instruction) => (
-                    <p key={`${contact.id}-${instruction.label}`}>
-                      {instruction.label}: {instruction.value}
-                    </p>
-                  ))}
+                <div className="contact-card-actions">
+                  <button
+                    type="button"
+                    onClick={() => onCreateProjectFromContact(contact)}
+                  >
+                    Create project
+                  </button>
                 </div>
-              )}
-            </article>
-          ))}
+                <div className="contact-tags">
+                  {contact.broker && <span>Broker: {contact.broker}</span>}
+                  {contact.managingAgent && <span>MA: {contact.managingAgent}</span>}
+                  {contact.coverholder && <span>Coverholder: {contact.coverholder}</span>}
+                  {contact.role && <span>{contact.role}</span>}
+                </div>
+                {warnings.length > 0 && (
+                  <div className="contact-quality-warnings">
+                    <strong>Contact warnings</strong>
+                    {warnings.map((warning) => (
+                      <span key={`${contact.id}-${warning}`}>{warning}</span>
+                    ))}
+                  </div>
+                )}
+                {contactEmailBuckets(contact).length > 0 && (
+                  <div className="contact-email-grid">
+                    {contactEmailBuckets(contact).map(([label, emails]) => (
+                      <span key={`${contact.id}-${label}`}>
+                        <strong>{label}</strong>
+                        {emails.join("; ")}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {contact.specialInstructions.length > 0 && (
+                  <div className="special-instructions">
+                    <strong>Special instructions</strong>
+                    {contact.specialInstructions.map((instruction) => (
+                      <p key={`${contact.id}-${instruction.label}`}>
+                        {instruction.label}: {instruction.value}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </article>
+            );
+          })}
         </div>
       )}
     </section>
@@ -7764,6 +7853,9 @@ function TemplateLibrary({
   const [recipientPreferences, setRecipientPreferences] = useState(
     loadRecipientPreferences,
   );
+  useEffect(() => {
+    void loadSharedRecipientPreferences().then(setRecipientPreferences);
+  }, []);
   const template =
     communicationTemplates.find((item) => item.id === selectedTemplateId) ??
     communicationTemplates[0];
@@ -7817,11 +7909,13 @@ function TemplateLibrary({
 
   const selectRecipient = (email: string) => {
     if (!email || !receiver.preferenceKey) return;
-    saveRecipientPreference(receiver.preferenceKey, email);
     setRecipientPreferences((current) => ({
       ...current,
       [receiver.preferenceKey]: email,
     }));
+    void saveSharedRecipientPreference(receiver.preferenceKey, email).then(
+      setRecipientPreferences,
+    );
     setCopyMessage("Recipient preference saved for this contact.");
   };
 
@@ -8416,12 +8510,17 @@ function ProjectForm({
   const [recipientPreferences, setRecipientPreferences] = useState(
     loadRecipientPreferences,
   );
+  const [recentContactIds, setRecentContactIds] = useState(loadRecentContactIds);
+  useEffect(() => {
+    void loadSharedRecipientPreferences().then(setRecipientPreferences);
+  }, []);
   const isNewProject = project.statusHistory.length === 0;
   const steps = [
     "Client / contact",
     "People",
     "Planning",
     "Documents & quote",
+    "Review",
   ];
   const update = <K extends keyof AuditProject>(
     key: K,
@@ -8455,6 +8554,10 @@ function ProjectForm({
       !normalizedContactSearch ||
       contactSearchText(contact).includes(normalizedContactSearch),
   );
+  const recentLinkedContacts = recentContactIds
+    .map((id) => linkedContacts.find((contact) => contact.id === id))
+    .filter((contact): contact is LinkedContact => Boolean(contact))
+    .slice(0, 4);
   const visibleLinkedContacts = filteredLinkedContacts.slice(0, 8);
   const showContactResults = !selectedLinkedContact || normalizedContactSearch.length > 0;
   const intakeReceiverKind: TemplateReceiverKind = isDcaProject(draft)
@@ -8500,14 +8603,18 @@ function ProjectForm({
     }
     setDraft(projectWithLinkedContact(draft, contact));
     setContactSearchQuery("");
+    saveRecentContactId(contact.id);
+    setRecentContactIds(loadRecentContactIds());
   };
   const selectIntakeRecipient = (email: string) => {
     if (!email || !intakePreferenceKey) return;
-    saveRecipientPreference(intakePreferenceKey, email);
     setRecipientPreferences((current) => ({
       ...current,
       [intakePreferenceKey]: email,
     }));
+    void saveSharedRecipientPreference(intakePreferenceKey, email).then(
+      setRecipientPreferences,
+    );
   };
   const updateDocumentField = (key: ProjectDocumentKey, value: boolean) => {
     setDraft(
@@ -8534,6 +8641,7 @@ function ProjectForm({
   const warningIssues = [
     ...intakeWarningIssues(draft),
     ...duplicateProjectWarnings(draft, existingProjects),
+    ...(selectedLinkedContact ? contactQualityWarnings(selectedLinkedContact) : []),
   ];
   const updateLeadAuditor = (auditor: string) => {
     const supportingTeam = draftAuditTeam
@@ -8615,6 +8723,22 @@ function ProjectForm({
                 ? "No linked contacts loaded yet."
                 : "Contacts loading or unavailable."}
             </p>
+          ) : recentLinkedContacts.length > 0 && !normalizedContactSearch ? (
+            <div className="recent-contact-shortcuts">
+              <strong>Recently used</strong>
+              <div>
+                {recentLinkedContacts.map((contact) => (
+                  <button
+                    key={contact.id}
+                    type="button"
+                    className={contact.id === draft.linkedContactId ? "active" : ""}
+                    onClick={() => selectLinkedContact(contact.id)}
+                  >
+                    {linkedContactName(contact)}
+                  </button>
+                ))}
+              </div>
+            </div>
           ) : showContactResults ? (
             <div className="contact-picker-results">
               {visibleLinkedContacts.length > 0 ? (
@@ -8654,6 +8778,14 @@ function ProjectForm({
                 <span>{instructionValue(selectedLinkedContact, "Onsite/Remote Preference")}</span>
               )}
             </div>
+            {contactQualityWarnings(selectedLinkedContact).length > 0 && (
+              <div className="contact-quality-warnings">
+                <strong>Contact warnings</strong>
+                {contactQualityWarnings(selectedLinkedContact).map((warning) => (
+                  <span key={warning}>{warning}</span>
+                ))}
+              </div>
+            )}
             {intakeRecipientOptions.length > 1 ? (
               <div className="intake-recipient-options">
                 <Select
@@ -8988,6 +9120,69 @@ function ProjectForm({
     </section>
   );
 
+  const intakeReview = (
+    <section className="form-section-card">
+      <div>
+        <h3>Review before saving</h3>
+        <p>
+          Confirm the main tracking fields and recipient choice before creating
+          the project record.
+        </p>
+      </div>
+      <div className="intake-review-grid">
+        <article>
+          <span>Audit entity</span>
+          <strong>{draft.auditEntity || "Missing"}</strong>
+          <small>{draft.assignmentType} audit | {draft.auditStructure}</small>
+        </article>
+        <article>
+          <span>Broker / managing agent</span>
+          <strong>{draft.broker || "Missing"}</strong>
+          <small>{draft.clientCoverholderCode || "No client / coverholder code"}</small>
+        </article>
+        <article>
+          <span>Audit owner</span>
+          <strong>{leadAuditor || "Missing"}</strong>
+          <small>{draftAuditTeam.length} assigned team member(s)</small>
+        </article>
+        <article>
+          <span>Recipient</span>
+          <strong>{selectedIntakeRecipient?.email || "No recipient selected"}</strong>
+          <small>{selectedLinkedContact ? linkedContactName(selectedLinkedContact) : "No linked contact"}</small>
+        </article>
+        <article>
+          <span>Schedule</span>
+          <strong>{draft.confirmedAuditDate || draft.tentativeAuditWeek || "Not set"}</strong>
+          <small>{draft.auditType} | {draft.auditLocation || draft.auditRemoteLink || "No location"}</small>
+        </article>
+        <article>
+          <span>Readiness</span>
+          <strong>{documentReadiness(draft).percent}%</strong>
+          <small>{requiredDocumentsForProject(draft).map((doc) => doc.label.replace(" received", "")).join(", ")}</small>
+        </article>
+      </div>
+      {(requiredIssues.length > 0 || warningIssues.length > 0) && (
+        <div className="intake-quality-panel compact-review">
+          <strong>Review notes</strong>
+          {requiredIssues.length > 0 && (
+            <ul className="quality-errors">
+              {requiredIssues.map((issue) => (
+                <li key={issue}>{issue}</li>
+              ))}
+            </ul>
+          )}
+          {warningIssues.length > 0 && (
+            <ul className="quality-warnings">
+              {warningIssues.map((issue) => (
+                <li key={issue}>{issue}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </section>
+  );
+
   const advanced = (
     <section className="form-section-card">
       <div>
@@ -9057,7 +9252,7 @@ function ProjectForm({
     </section>
   );
 
-  const createStepContent = [basics, people, planning, documentsQuote];
+  const createStepContent = [basics, people, planning, documentsQuote, intakeReview];
 
   return (
     <div className="modal-backdrop">
