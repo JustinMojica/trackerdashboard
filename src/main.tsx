@@ -2164,13 +2164,12 @@ function projectWithLinkedContact(project: AuditProject, contact: LinkedContact)
     ...project,
     linkedContactId: contact.id,
     linkedContactSource: `${contact.workbookName} / ${contact.worksheetName}`,
-    auditEntity: project.auditEntity.trim() || linkedContactName(contact),
+    auditEntity: linkedContactName(contact),
     clientCoverholderCode:
-      project.clientCoverholderCode.trim() || contact.worksheetName || "",
+      contact.coverholder || contact.company || contact.worksheetName || "",
     broker:
-      project.broker.trim() ||
-      contact.managingAgent ||
       contact.broker ||
+      contact.managingAgent ||
       contact.company ||
       "",
     auditType: auditTypePreference || project.auditType,
@@ -8039,6 +8038,8 @@ function Checklist({
   canUpdateChecklist: boolean;
 }) {
   const sourceSpecific = sourceTasks(project);
+  const [showStageChecklist, setShowStageChecklist] = useState(false);
+  const [showDocumentReadiness, setShowDocumentReadiness] = useState(false);
   const checklistItems = [
     ...checklistByStage[project.currentStage],
     ...sourceSpecific,
@@ -8049,69 +8050,88 @@ function Checklist({
   ).length;
   return (
     <article className="panel checklist-panel">
-      <div className="section-title">
-        <div>
-          <h2>Stage checklist</h2>
+      <div className="recommended-next compact-disclosure">
+        <button
+          type="button"
+          className="recommended-next-toggle"
+          aria-expanded={showStageChecklist}
+          onClick={() => setShowStageChecklist((value) => !value)}
+        >
+          <strong>Stage checklist</strong>
           <span>
-            {completedCount}/{checklistItems.length} complete for{" "}
-            {project.currentStage}
+            {completedCount}/{checklistItems.length} complete -{" "}
+            {showStageChecklist ? "Hide" : "Show"}
           </span>
-        </div>
-      </div>
-      <ul className="checklist interactive-checklist">
-        {checklistItems.map((item) => {
-          const key = checklistKey(project.currentStage, item);
-          return (
-            <li
-              key={key}
-              className={project.checklistCompletions[key] ? "done" : ""}
-            >
-              <label className="checklist-toggle">
-                <input
-                  type="checkbox"
-                  disabled={!canUpdateChecklist}
-                  checked={Boolean(project.checklistCompletions[key])}
-                  onChange={() => onToggleChecklist(project, key)}
-                />
-                <span
-                  className={sourceSpecific.includes(item) ? "conditional" : ""}
+        </button>
+        {showStageChecklist && (
+          <ul className="checklist interactive-checklist">
+            {checklistItems.map((item) => {
+              const key = checklistKey(project.currentStage, item);
+              return (
+                <li
+                  key={key}
+                  className={project.checklistCompletions[key] ? "done" : ""}
                 >
-                  {item}
-                </span>
-              </label>
+                  <label className="checklist-toggle">
+                    <input
+                      type="checkbox"
+                      disabled={!canUpdateChecklist}
+                      checked={Boolean(project.checklistCompletions[key])}
+                      onChange={() => onToggleChecklist(project, key)}
+                    />
+                    <span
+                      className={sourceSpecific.includes(item) ? "conditional" : ""}
+                    >
+                      {item}
+                    </span>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+      <div className="recommended-next compact-disclosure">
+        <button
+          type="button"
+          className="recommended-next-toggle"
+          aria-expanded={showDocumentReadiness}
+          onClick={() => setShowDocumentReadiness((value) => !value)}
+        >
+          <strong>Document readiness</strong>
+          <span>{showDocumentReadiness ? "Hide" : "Show"}</span>
+        </button>
+        {showDocumentReadiness && (
+          <ul className="document-list">
+            {requiredDocumentsForProject(project).map((doc) => (
+              <li
+                key={doc.key}
+                className={project[doc.key] ? "complete" : "missing"}
+              >
+                {doc.label}
+              </li>
+            ))}
+            <li
+              className={
+                project.preAuditQuestionnaireStatus === "Complete"
+                  ? "complete"
+                  : "missing"
+              }
+            >
+              Pre-audit questionnaire: {project.preAuditQuestionnaireStatus}
             </li>
-          );
-        })}
-      </ul>
-      <h3>Document readiness</h3>
-      <ul className="document-list">
-        {requiredDocumentsForProject(project).map((doc) => (
-          <li
-            key={doc.key}
-            className={project[doc.key] ? "complete" : "missing"}
-          >
-            {doc.label}
-          </li>
-        ))}
-        <li
-          className={
-            project.preAuditQuestionnaireStatus === "Complete"
-              ? "complete"
-              : "missing"
-          }
-        >
-          Pre-audit questionnaire: {project.preAuditQuestionnaireStatus}
-        </li>
-        <li
-          className={
-            project.documentRequestStatus === "Complete"
-              ? "complete"
-              : "missing"
-          }
-        >
-          Document request: {project.documentRequestStatus}
-        </li>
-      </ul>
+            <li
+              className={
+                project.documentRequestStatus === "Complete"
+                  ? "complete"
+                  : "missing"
+              }
+            >
+              Document request: {project.documentRequestStatus}
+            </li>
+          </ul>
+        )}
+      </div>
     </article>
   );
 }
@@ -8432,10 +8452,8 @@ function ProjectForm({
       !normalizedContactSearch ||
       contactSearchText(contact).includes(normalizedContactSearch),
   );
-  const contactSelectOptions = selectedLinkedContact &&
-    !filteredLinkedContacts.some((contact) => contact.id === selectedLinkedContact.id)
-    ? [selectedLinkedContact, ...filteredLinkedContacts]
-    : filteredLinkedContacts;
+  const visibleLinkedContacts = filteredLinkedContacts.slice(0, 8);
+  const showContactResults = !selectedLinkedContact || normalizedContactSearch.length > 0;
   const selectLinkedContact = (contactId: string) => {
     const contact = linkedContacts.find((item) => item.id === contactId);
     if (!contact) {
@@ -8443,6 +8461,7 @@ function ProjectForm({
       return;
     }
     setDraft(projectWithLinkedContact(draft, contact));
+    setContactSearchQuery("");
   };
   const updateDocumentField = (key: ProjectDocumentKey, value: boolean) => {
     setDraft(
@@ -8533,31 +8552,51 @@ function ProjectForm({
         </div>
       )}
       <div className="linked-contact-intake">
-        <Input
-          label="Search contacts"
-          value={contactSearchQuery}
-          placeholder="Search agent, client, email, or instruction"
-          onChange={setContactSearchQuery}
-        />
-        <Select
-          label="Contacts"
-          value={draft.linkedContactId}
-          options={contactSelectOptions.map((contact) => [
-            contact.id,
-            linkedContactLabel(contact),
-          ])}
-          disabled={linkedContacts.length === 0}
-          placeholder={
-            contactSources
-              ? linkedContacts.length > 0
-                ? filteredLinkedContacts.length > 0
-                  ? "Select contact"
-                  : "No contacts match search"
-                : "No linked contacts loaded yet"
-              : "Contacts loading or unavailable"
-          }
-          onChange={selectLinkedContact}
-        />
+        <div className="contact-picker">
+          <Input
+            label="Contacts"
+            value={contactSearchQuery}
+            placeholder={
+              selectedLinkedContact
+                ? linkedContactName(selectedLinkedContact)
+                : "Search agent, client, email, or instruction"
+            }
+            onChange={setContactSearchQuery}
+          />
+          {linkedContacts.length === 0 ? (
+            <p className="muted-note">
+              {contactSources
+                ? "No linked contacts loaded yet."
+                : "Contacts loading or unavailable."}
+            </p>
+          ) : showContactResults ? (
+            <div className="contact-picker-results">
+              {visibleLinkedContacts.length > 0 ? (
+                visibleLinkedContacts.map((contact) => (
+                  <button
+                    key={contact.id}
+                    type="button"
+                    className={contact.id === draft.linkedContactId ? "active" : ""}
+                    onClick={() => selectLinkedContact(contact.id)}
+                  >
+                    <strong>{linkedContactLabel(contact)}</strong>
+                    <span>
+                      {[contact.managingAgent, contact.coverholder, contact.broker]
+                        .filter(Boolean)
+                        .join(" | ") || "Linked workbook contact"}
+                    </span>
+                  </button>
+                ))
+              ) : (
+                <p className="muted-note">No contacts match that search.</p>
+              )}
+            </div>
+          ) : (
+            <p className="muted-note">
+              Type to search again or choose a different contact.
+            </p>
+          )}
+        </div>
         {selectedLinkedContact ? (
           <div className="linked-contact-preview">
             <strong>{linkedContactName(selectedLinkedContact)}</strong>
@@ -8569,6 +8608,16 @@ function ProjectForm({
                 <span>{instructionValue(selectedLinkedContact, "Onsite/Remote Preference")}</span>
               )}
             </div>
+            {contactEmailBuckets(selectedLinkedContact).length > 0 && (
+              <div className="intake-recipient-options">
+                <strong>Recipient options</strong>
+                {contactEmailBuckets(selectedLinkedContact).map(([label, emails]) => (
+                  <span key={`${selectedLinkedContact.id}-${label}`}>
+                    {label}: {emails.join("; ")}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <p className="muted-note">

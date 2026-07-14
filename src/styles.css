@@ -1269,8 +1269,40 @@ main {
   border-radius: 16px;
   display: grid;
   gap: 0.75rem;
-  grid-template-columns: minmax(260px, 0.9fr) minmax(260px, 1.1fr);
+  grid-template-columns: minmax(280px, 0.85fr) minmax(280px, 1.15fr);
   padding: 0.9rem;
+}
+.contact-picker {
+  display: grid;
+  gap: 0.55rem;
+  min-width: 0;
+}
+.contact-picker-results {
+  display: grid;
+  gap: 0.35rem;
+  max-height: 240px;
+  overflow: auto;
+}
+.contact-picker-results button {
+  background: #fff;
+  border: 1px solid #dfe7f2;
+  color: #172033;
+  display: grid;
+  gap: 0.15rem;
+  justify-items: start;
+  padding: 0.65rem 0.75rem;
+  text-align: left;
+}
+.contact-picker-results button:hover,
+.contact-picker-results button.active {
+  background: #eaf2ff;
+  border-color: #9bbcf5;
+  color: #123b7a;
+}
+.contact-picker-results span {
+  color: #53637a;
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
 }
 .linked-contact-preview {
   background: #fff;
@@ -1278,7 +1310,6 @@ main {
   border-radius: 14px;
   display: grid;
   gap: 0.25rem;
-  grid-column: 1 / -1;
   padding: 0.8rem;
 }
 .linked-contact-intake > .muted-note {
@@ -1288,6 +1319,18 @@ main {
 .linked-contact-preview small {
   color: #53637a;
   overflow-wrap: anywhere;
+}
+.intake-recipient-options {
+  background: #f8fbff;
+  border: 1px solid #dfe7f2;
+  border-radius: 12px;
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 0.4rem;
+  padding: 0.65rem;
+}
+.intake-recipient-options span {
+  font-size: 0.86rem;
 }
 .operations-command {
   display: grid;
@@ -3198,4 +3241,10 @@ td span {
 }
 .document-action-disclosure ul {
   padding-bottom: 0.65rem;
+}
+.compact-disclosure {
+  margin: 0 0 0.65rem;
+}
+.compact-disclosure:last-child {
+  margin-bottom: 0;
 }

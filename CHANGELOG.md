@@ -47,6 +47,9 @@ other sensitive configuration values.
 - Added a template recipient picker that shows all detected workbook email
   options and remembers the preferred recipient for the same contact and
   routing type.
+- Combined Add Project contact search and selection into one Contacts picker,
+  refreshed intake fields when a new contact is selected, exposed recipient
+  options during intake, and collapsed checklist/readiness details by default.
 
 ### Verified
 
