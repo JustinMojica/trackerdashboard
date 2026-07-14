@@ -32,6 +32,8 @@ other sensitive configuration values.
   email wording.
 - Collapsed recommended next steps by default and shortened stage override
   confirmation wording.
+- Collapsed blockers by default, removed extra override-helper wording, and
+  explained that suggested folders are a copyable audit file-structure plan.
 
 ### Verified
 

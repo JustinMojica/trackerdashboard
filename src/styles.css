@@ -3171,3 +3171,11 @@ td span {
 .recommended-next li + li {
   margin-top: 0.35rem;
 }
+.blocker-disclosure .recommended-next-toggle span {
+  background: #ffe5e5;
+  color: #a92020;
+}
+.blocker-disclosure .recommended-next-toggle span.ok-count {
+  background: #e7f7ed;
+  color: #14713a;
+}

@@ -6998,6 +6998,7 @@ function ProjectDetail({
   const blockers = computedBlockers(project);
   const nextSteps = recommendedNextSteps(project);
   const [showRecommendedSteps, setShowRecommendedSteps] = useState(false);
+  const [showBlockers, setShowBlockers] = useState(false);
   const canEdit = canEditProject(currentUser, project);
   const canManageFinance =
     canUpdateFinance(currentUser, project) || hasFullProjectAccess(currentUser);
@@ -7088,16 +7089,29 @@ function ProjectDetail({
             </ul>
           )}
         </div>
-        <h3>Blockers</h3>
-        {blockers.length ? (
-          <ul className="blockers">
-            {blockers.map((blocker) => (
-              <li key={blocker}>{blocker}</li>
-            ))}
-          </ul>
-        ) : (
-          <p>No blockers recorded.</p>
-        )}
+        <div className="recommended-next blocker-disclosure">
+          <button
+            type="button"
+            className="recommended-next-toggle"
+            aria-expanded={showBlockers}
+            onClick={() => setShowBlockers((value) => !value)}
+          >
+            <strong>Blockers</strong>
+            <span className={blockers.length ? undefined : "ok-count"}>
+              {blockers.length ? (showBlockers ? "Hide" : `Show ${blockers.length}`) : "None"}
+            </span>
+          </button>
+          {showBlockers && blockers.length > 0 && (
+            <ul className="blockers">
+              {blockers.map((blocker) => (
+                <li key={blocker}>{blocker}</li>
+              ))}
+            </ul>
+          )}
+          {showBlockers && blockers.length === 0 && (
+            <p className="muted-note">No blockers recorded.</p>
+          )}
+        </div>
         {canEdit && (
           <div className="move-row">
             <label>
@@ -7114,7 +7128,7 @@ function ProjectDetail({
             {canOverrideStageRestriction(currentUser) && (
               <small>
                 If a required item is missing, you can choose a stage and confirm
-                an override. The reason will be saved in the audit trail.
+                an override.
               </small>
             )}
           </div>
@@ -7588,6 +7602,10 @@ function WorkflowEnginePanel({ project }: { project: AuditProject }) {
         </div>
         <div>
           <h3>Suggested folders</h3>
+          <p className="muted-note">
+            A suggested file structure for organizing this audit's documents.
+            Copying this list does not create folders automatically.
+          </p>
           <ul className="compact-list">
             {folders.slice(0, 5).map((folder) => (
               <li key={folder}>{folder}</li>
