@@ -8691,44 +8691,47 @@ function ProjectForm({
                 ? "No linked contacts loaded yet."
                 : "Contacts loading or unavailable."}
             </p>
-          ) : showRecentContacts ? (
-            <div className="recent-contact-shortcuts">
-              <strong>Recently used</strong>
-              <div>
-                {recentLinkedContacts.map((contact) => (
-                  <button
-                    key={contact.id}
-                    type="button"
-                    className={contact.id === draft.linkedContactId ? "active" : ""}
-                    onClick={() => selectLinkedContact(contact.id)}
-                  >
-                    {linkedContactName(contact)}
-                  </button>
-                ))}
-              </div>
-            </div>
           ) : showContactResults ? (
-            <div className="contact-picker-results">
-              {visibleLinkedContacts.length > 0 ? (
-                visibleLinkedContacts.map((contact) => (
-                  <button
-                    key={contact.id}
-                    type="button"
-                    className={contact.id === draft.linkedContactId ? "active" : ""}
-                    onClick={() => selectLinkedContact(contact.id)}
-                  >
-                    <strong>{linkedContactLabel(contact)}</strong>
-                    <span>
-                      {[contact.managingAgent, contact.coverholder, contact.broker]
-                        .filter(Boolean)
-                        .join(" | ") || "Linked workbook contact"}
-                    </span>
-                  </button>
-                ))
-              ) : (
-                <p className="muted-note">No contacts match that search.</p>
+            <>
+              {showRecentContacts && (
+                <div className="recent-contact-shortcuts">
+                  <strong>Recently used</strong>
+                  <div>
+                    {recentLinkedContacts.map((contact) => (
+                      <button
+                        key={contact.id}
+                        type="button"
+                        className={contact.id === draft.linkedContactId ? "active" : ""}
+                        onClick={() => selectLinkedContact(contact.id)}
+                      >
+                        {linkedContactName(contact)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               )}
-            </div>
+              <div className="contact-picker-results">
+                {visibleLinkedContacts.length > 0 ? (
+                  visibleLinkedContacts.map((contact) => (
+                    <button
+                      key={contact.id}
+                      type="button"
+                      className={contact.id === draft.linkedContactId ? "active" : ""}
+                      onClick={() => selectLinkedContact(contact.id)}
+                    >
+                      <strong>{linkedContactLabel(contact)}</strong>
+                      <span>
+                        {[contact.managingAgent, contact.coverholder, contact.broker]
+                          .filter(Boolean)
+                          .join(" | ") || "Linked workbook contact"}
+                      </span>
+                    </button>
+                  ))
+                ) : (
+                  <p className="muted-note">No contacts match that search.</p>
+                )}
+              </div>
+            </>
           ) : (
             <p className="muted-note">
               Open the dropdown or type to choose a contact.
@@ -8789,13 +8792,7 @@ function ProjectForm({
               )
             )}
           </div>
-        ) : (
-          <p className="muted-note">
-            Linking a workbook contact can prefill entity, contact source,
-            scheduling notes, and onsite/remote preference from the live
-            spreadsheet.
-          </p>
-        )}
+        ) : null}
       </div>
       <div className="form-grid wizard-grid">
         <Input

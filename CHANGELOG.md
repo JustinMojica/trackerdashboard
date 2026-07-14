@@ -57,6 +57,9 @@ other sensitive configuration values.
   users can type before selecting or open the dropdown to browse contacts.
 - Removed suggested folder and suggested email cards from the project workflow
   attention panel.
+- Fixed the Add Project Contacts dropdown so clearing a selected contact returns
+  to normal search, while recent contacts remain shortcuts instead of replacing
+  search results.
 
 ### Verified
 
