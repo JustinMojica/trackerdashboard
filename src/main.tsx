@@ -3791,26 +3791,29 @@ function App() {
                 Audit table
               </button>
             </div>
-            <button onClick={handleExportCsv}>Export filtered CSV</button>
-            <button className="secondary" onClick={handleExportJson}>
-              Export JSON backup
-            </button>
-            <span className="last-export">
-              Last export: {formatDateTime(lastExportedAt)}
-            </span>
-            <label className="import-control">
-              Import JSON
-              <input
-                type="file"
-                accept="application/json,.json"
-                disabled={!hasFullProjectAccess(signedInUser)}
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) queueProjectImport(file);
-                  event.currentTarget.value = "";
-                }}
-              />
-            </label>
+            {signedInUser.role === "Admin" && (
+              <div className="admin-data-actions" aria-label="Admin data actions">
+                <button onClick={handleExportCsv}>Export filtered CSV</button>
+                <button className="secondary" onClick={handleExportJson}>
+                  Export JSON backup
+                </button>
+                <span className="last-export">
+                  Last export: {formatDateTime(lastExportedAt)}
+                </span>
+                <label className="import-control">
+                  Import JSON
+                  <input
+                    type="file"
+                    accept="application/json,.json"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) queueProjectImport(file);
+                      event.currentTarget.value = "";
+                    }}
+                  />
+                </label>
+              </div>
+            )}
           </div>
           {viewMode === "kanban" ? (
             <Kanban

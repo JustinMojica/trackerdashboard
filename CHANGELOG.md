@@ -20,6 +20,8 @@ other sensitive configuration values.
 - Removed the visible calendar sync status control from project intake and
   scheduling cards.
 - Updated Outlook invite creation to use the selected audit start time.
+- Limited assignment export, JSON backup, and JSON import controls to Admin
+  users only so regular users see only the daily view controls.
 
 ### Verified
 
