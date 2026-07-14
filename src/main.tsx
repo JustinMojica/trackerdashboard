@@ -2197,20 +2197,20 @@ function workflowGates(project: AuditProject): WorkflowGate[] {
   const readiness = documentReadiness(project);
   return [
     {
-      label: "Stage gate",
+      label: "Next stage",
       status: stageMoveBlocker ? "Blocked" : target ? "Ready" : "Watch",
       detail: stageMoveBlocker || (target ? `Ready to move toward ${target}.` : "Project is at the final stage."),
     },
     {
-      label: "Document gate",
+      label: "Documents",
       status: readiness.percent === 100 ? "Ready" : readiness.percent >= 60 ? "Watch" : "Blocked",
       detail:
         readiness.percent === 100
-          ? "Required document readiness items are complete."
+          ? "Required documents are complete."
           : `${readiness.percent}% ready; missing ${readiness.missingDocuments.join(", ") || "workflow completion"}.`,
     },
     {
-      label: "Quote gate",
+      label: "Quote",
       status: project.quoteStatus === "Accepted" ? "Ready" : "Blocked",
       detail:
         project.quoteStatus === "Accepted"
@@ -2218,7 +2218,7 @@ function workflowGates(project: AuditProject): WorkflowGate[] {
           : `Quote is ${project.quoteStatus.toLowerCase()}; scheduling should wait.`,
     },
     {
-      label: "Close-out gate",
+      label: "Finish audit",
       status:
         project.reportStatus === "Issued" &&
         project.invoiceStatus === "Paid" &&
@@ -2277,7 +2277,7 @@ function slaSignals(project: AuditProject): SlaSignal[] {
   }
   return signals.length
     ? signals
-    : [{ level: "Normal", label: "On track", detail: "No SLA exceptions detected." }];
+    : [{ level: "Normal", label: "On track", detail: "No timing alerts detected." }];
 }
 
 function workspaceFolders(project: AuditProject) {
@@ -7256,18 +7256,18 @@ function ProjectDocumentIntelligence({ project }: { project: AuditProject }) {
     <article className="panel project-document-intelligence">
       <div className="section-title">
         <div>
-          <p className="eyebrow dark">Document intelligence</p>
+          <p className="eyebrow dark">Document review</p>
           <h2>{intelligence.packageType}</h2>
           <span>
-            Evidence confidence: {intelligence.confidence} | {intelligence.readiness}% ready
+            Confidence: {intelligence.confidence} | {intelligence.readiness}% ready
           </span>
         </div>
       </div>
       <div className="document-intelligence-columns">
         <div>
-          <h3>Evidence detected</h3>
+          <h3>Received</h3>
           {intelligence.evidence.length === 0 ? (
-            <p className="muted-note">No required evidence has been marked received.</p>
+            <p className="muted-note">No required documents have been marked received.</p>
           ) : (
             <ul className="compact-list">
               {intelligence.evidence.map((item) => (
@@ -7277,9 +7277,9 @@ function ProjectDocumentIntelligence({ project }: { project: AuditProject }) {
           )}
         </div>
         <div>
-          <h3>Missing evidence</h3>
+          <h3>Still needed</h3>
           {intelligence.missing.length === 0 ? (
-            <p className="muted-note">No required evidence gaps detected.</p>
+            <p className="muted-note">No required document gaps detected.</p>
           ) : (
             <ul className="compact-list">
               {intelligence.missing.map((item) => (
@@ -7289,7 +7289,7 @@ function ProjectDocumentIntelligence({ project }: { project: AuditProject }) {
           )}
         </div>
         <div>
-          <h3>Recommended handling</h3>
+          <h3>Recommended action</h3>
           <ul className="compact-list">
             {intelligence.recommendations.map((item) => (
               <li key={item}>{item}</li>
@@ -7507,12 +7507,12 @@ function WorkflowEnginePanel({ project }: { project: AuditProject }) {
     <article className="panel workflow-engine-panel">
       <div className="section-title">
         <div>
-          <p className="eyebrow dark">Workflow engine</p>
-          <h2>Controls and automation prep</h2>
+          <p className="eyebrow dark">Next steps</p>
+          <h2>What needs attention</h2>
           <span>
             {target
-              ? `Next stage target: ${target}`
-              : "This assignment is at the end of the workflow."}
+              ? `Next goal: move this audit toward ${target}.`
+              : "This audit is at the end of the workflow."}
           </span>
         </div>
       </div>
@@ -7527,7 +7527,7 @@ function WorkflowEnginePanel({ project }: { project: AuditProject }) {
       </div>
       <div className="workflow-columns">
         <div>
-          <h3>SLA signals</h3>
+          <h3>Timing alerts</h3>
           <ul className="compact-list">
             {signals.map((signal) => (
               <li key={`${signal.label}-${signal.detail}`}>
@@ -7537,7 +7537,7 @@ function WorkflowEnginePanel({ project }: { project: AuditProject }) {
           </ul>
         </div>
         <div>
-          <h3>Workspace plan</h3>
+          <h3>Suggested folders</h3>
           <ul className="compact-list">
             {folders.slice(0, 5).map((folder) => (
               <li key={folder}>{folder}</li>
@@ -7548,9 +7548,9 @@ function WorkflowEnginePanel({ project }: { project: AuditProject }) {
           </button>
         </div>
         <div>
-          <h3>Draft queue</h3>
+          <h3>Suggested emails</h3>
           {drafts.length === 0 ? (
-            <p className="muted-note">No draft action recommended.</p>
+            <p className="muted-note">No email draft recommended.</p>
           ) : (
             <ul className="compact-list">
               {drafts.slice(0, 4).map((draft) => (
@@ -7565,7 +7565,7 @@ function WorkflowEnginePanel({ project }: { project: AuditProject }) {
             disabled={drafts.length === 0}
             onClick={copyFirstDraft}
           >
-            Copy top draft
+            Copy first email
           </button>
         </div>
       </div>

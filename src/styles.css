@@ -1696,15 +1696,17 @@ textarea {
 .detail-grid {
   align-items: start;
   display: grid;
-  gap: 1rem;
+  gap: 1.15rem;
   grid-template-areas:
-    "detail detail team"
-    "agents agents documents"
-    "workflow workflow documents"
-    "finance finance docintel"
-    "checklist comments templates"
-    "trail trail trail";
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(280px, 0.82fr);
+    "detail team"
+    "agents agents"
+    "documents docintel"
+    "workflow workflow"
+    "finance finance"
+    "checklist comments"
+    "templates templates"
+    "trail trail";
+  grid-template-columns: minmax(0, 1.25fr) minmax(360px, 0.75fr);
 }
 .detail {
   grid-area: detail;
@@ -1965,6 +1967,9 @@ textarea {
 }
 .project-document-intelligence {
   grid-area: docintel;
+}
+.project-document-intelligence .document-intelligence-columns {
+  grid-template-columns: 1fr;
 }
 .finance-panel {
   display: grid;

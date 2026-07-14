@@ -24,6 +24,9 @@ other sensitive configuration values.
   users only so regular users see only the daily view controls.
 - Fixed the project detail grid layout so workflow, templates, and audit trail
   panels no longer overlap.
+- Simplified project-detail language and layout by replacing technical workflow
+  labels with user-facing next-step, timing-alert, document-review, folder, and
+  email wording.
 
 ### Verified
 
