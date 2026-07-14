@@ -39,6 +39,9 @@ other sensitive configuration values.
   refresh requests instead of stacking duplicate reads.
 - Allowed Admin and Audit Manager users to archive active projects with
   confirmation instead of requiring the project to be Closed first.
+- Moved stage override guidance into a hover tip, collapsed document-review
+  recommended actions by default, and replaced the signature placeholder with
+  an Outlook draft action.
 
 ### Verified
 

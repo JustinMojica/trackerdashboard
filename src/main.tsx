@@ -7145,10 +7145,10 @@ function ProjectDetail({
               </select>
             </label>
             {canOverrideStageRestriction(currentUser) && (
-              <small>
-                If a required item is missing, you can choose a stage and confirm
-                an override.
-              </small>
+              <HoverLink
+                label="Stage override help"
+                helper="If a required item is missing, choose the stage anyway and confirm the override."
+              />
             )}
           </div>
         )}
@@ -7335,6 +7335,7 @@ function AuditTeamPanel({
 
 function ProjectDocumentIntelligence({ project }: { project: AuditProject }) {
   const intelligence = documentIntelligence(project);
+  const [showRecommendedActions, setShowRecommendedActions] = useState(false);
   return (
     <article className="panel project-document-intelligence">
       <div className="section-title">
@@ -7372,12 +7373,28 @@ function ProjectDocumentIntelligence({ project }: { project: AuditProject }) {
           )}
         </div>
         <div>
-          <h3>Recommended action</h3>
-          <ul className="compact-list">
-            {intelligence.recommendations.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
+          <div className="recommended-next document-action-disclosure">
+            <button
+              type="button"
+              className="recommended-next-toggle"
+              aria-expanded={showRecommendedActions}
+              onClick={() => setShowRecommendedActions((value) => !value)}
+            >
+              <strong>Recommended action</strong>
+              <span>
+                {showRecommendedActions
+                  ? "Hide"
+                  : `Show ${intelligence.recommendations.length}`}
+              </span>
+            </button>
+            {showRecommendedActions && (
+              <ul className="compact-list">
+                {intelligence.recommendations.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       </div>
     </article>
@@ -7682,16 +7699,25 @@ function TemplateLibrary({
     template,
     contactSources?.contacts ?? [],
   );
-  const outlookBody = `${body}\n\n[Paste above your Outlook signature]`;
   const fullDraft = [
     `To: ${receiver.email || `[${receiver.kind} email needed]`}`,
     `Receiver: ${receiver.name} (${receiver.kind})`,
     `Subject: ${subject}`,
     "",
     body,
-    "",
-    "Signature: paste this body above your normal Outlook signature before sending.",
   ].join("\n");
+  const mailToRecipients = receiver.email
+    .split(/[;,]/)
+    .map((email) => email.trim())
+    .filter(Boolean)
+    .join(",");
+  const mailToAddressList = mailToRecipients
+    .split(",")
+    .map((email) => encodeURIComponent(email))
+    .join(",");
+  const outlookDraftUrl = `mailto:${mailToAddressList}?subject=${encodeURIComponent(
+    subject,
+  )}&body=${encodeURIComponent(body)}`;
 
   const copyText = async (label: string, value: string) => {
     try {
@@ -7742,8 +7768,8 @@ function TemplateLibrary({
         </article>
         <article className="receiver-card">
           <span>Signature</span>
-          <strong>Use Outlook signature</strong>
-          <p>Copy the body into Outlook above your existing signature. The tracker does not replace your signature.</p>
+          <strong>Handled by Outlook</strong>
+          <p>Open the draft in Outlook so your default account signature can be applied by Outlook.</p>
         </article>
       </div>
       <div className="template-preview">
@@ -7757,10 +7783,19 @@ function TemplateLibrary({
         </label>
         <label>
           Body
-          <textarea readOnly rows={10} value={outlookBody} />
+          <textarea readOnly rows={10} value={body} />
         </label>
       </div>
       <div className="template-actions">
+        <button
+          type="button"
+          disabled={!receiver.email}
+          onClick={() => {
+            window.location.href = outlookDraftUrl;
+          }}
+        >
+          Open Outlook draft
+        </button>
         <button
           type="button"
           className="secondary"

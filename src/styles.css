@@ -1901,6 +1901,9 @@ textarea {
   font-weight: 700;
   margin-top: 0.45rem;
 }
+.move-row .hover-link {
+  margin-top: 0.45rem;
+}
 .history div {
   border-left: 3px solid #c6d6f0;
   margin-bottom: 0.75rem;
@@ -3178,4 +3181,10 @@ td span {
 .blocker-disclosure .recommended-next-toggle span.ok-count {
   background: #e7f7ed;
   color: #14713a;
+}
+.document-action-disclosure {
+  margin: 0;
+}
+.document-action-disclosure ul {
+  padding-bottom: 0.65rem;
 }
