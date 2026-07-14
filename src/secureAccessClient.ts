@@ -304,7 +304,9 @@ export async function getLinkedContactSources(): Promise<LinkedContactSourcesRes
 export async function createOutlookCalendarEvent(
   projectId: string,
   options: {
+    confirmedAuditDate?: string;
     durationHours?: number;
+    startTime?: string;
     location?: string;
     remoteLink?: string;
     attendeeEmails?: string[];

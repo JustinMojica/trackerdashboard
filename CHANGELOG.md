@@ -4,6 +4,30 @@ This log tracks practical production changes to the Audit Assignment Tracker.
 It intentionally excludes secrets, publish-profile values, client secrets, and
 other sensitive configuration values.
 
+## 2026-07-14
+
+### Added
+
+- Added a simplified Schedule audit modal with audit date, start time,
+  duration, location, remote link, notes, invite preview, and review warnings.
+- Added one-click Save schedule and Save and send/update Outlook invite actions
+  so users no longer need to understand calendar sync states.
+
+### Changed
+
+- Reworked the Scheduling workspace to show plain statuses: No date, Planned,
+  Invite sent, and Needs update.
+- Removed the visible calendar sync status control from project intake and
+  scheduling cards.
+- Updated Outlook invite creation to use the selected audit start time.
+
+### Verified
+
+- `npm run check`
+- `npm test`
+- `npm run build`
+- Live auth config smoke check on `https://mosaic-audit-tracker-live.azurewebsites.net/api/auth/config`.
+
 ## 2026-06-22
 
 ### Added

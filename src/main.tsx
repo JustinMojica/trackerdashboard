@@ -175,6 +175,7 @@ export type AuditProject = {
   auditLocation: string;
   auditRemoteLink: string;
   auditDurationHours: number;
+  auditStartTime: string;
   linkedContactId: string;
   linkedContactSource: string;
   auditType: AuditType;
@@ -595,6 +596,7 @@ const blankProject = (): AuditProject => ({
   auditLocation: "",
   auditRemoteLink: "",
   auditDurationHours: 1,
+  auditStartTime: "09:00",
   linkedContactId: "",
   linkedContactSource: "",
   auditType: "Remote",
@@ -1165,6 +1167,7 @@ export function withProjectDefaults(project: AuditProject): AuditProject {
     auditLocation: project.auditLocation ?? "",
     auditRemoteLink: project.auditRemoteLink ?? "",
     auditDurationHours: Number(project.auditDurationHours || 1),
+    auditStartTime: project.auditStartTime ?? "09:00",
     linkedContactId: project.linkedContactId ?? "",
     linkedContactSource: project.linkedContactSource ?? "",
     checklistCompletions: project.checklistCompletions ?? {},
@@ -1390,7 +1393,7 @@ function intakeWarningIssues(project: AuditProject) {
     warnings.push("No linked workbook contact is selected; template recipients may need manual review.");
   }
   if (project.confirmedAuditDate && project.calendarSyncStatus !== "Synced") {
-    warnings.push("Confirmed audit date is set but the Outlook calendar event is not synced.");
+    warnings.push("Confirmed audit date is set but no current Outlook invite has been sent.");
   }
   return warnings;
 }
@@ -1463,7 +1466,7 @@ function schedulingConflictWarnings(
     warnings.push("Quote is not accepted yet.");
   }
   if (project.calendarSyncStatus === "Conflict Review") {
-    warnings.push("Marked for calendar conflict review.");
+    warnings.push("Marked for scheduling conflict review.");
   }
   if (scheduleDate) {
     const projectAuditors = assignedAuditorNames(project);
@@ -1487,6 +1490,23 @@ function schedulingConflictWarnings(
     }
   }
   return warnings;
+}
+
+function scheduleStatus(project: AuditProject) {
+  if (!project.confirmedAuditDate && !project.tentativeAuditWeek) {
+    return { label: "No date", className: "muted" };
+  }
+  if (project.calendarEventId && project.calendarSyncStatus === "Synced") {
+    return { label: "Invite sent", className: "ok" };
+  }
+  if (project.calendarEventId && project.calendarSyncStatus !== "Synced") {
+    return { label: "Needs update", className: "warning" };
+  }
+  return { label: "Planned", className: "warning" };
+}
+
+function nextCalendarStatusForScheduleChange(project: AuditProject) {
+  return project.calendarEventId ? "Ready to Sync" : "Not Synced";
 }
 
 function pushUnique(items: string[], item: string) {
@@ -2438,8 +2458,8 @@ function auditCoordinatorInsights(projects: AuditProject[], user: PrototypeUser)
       addInsight(
         project,
         "Medium",
-        "Calendar not synced",
-        "Confirmed audit date exists, but Outlook sync is not complete.",
+        "Invite not sent",
+        "Confirmed audit date exists, but the Outlook invite is not current.",
         "Sync or update the Outlook event once calendar permission is active.",
       );
     }
@@ -2583,9 +2603,10 @@ function exportProjectsToCsv(projects: AuditProject[]) {
     ["Due Date", (project) => project.dueDate],
     ["Tentative Audit Week", (project) => project.tentativeAuditWeek],
     ["Confirmed Audit Date", (project) => project.confirmedAuditDate],
-    ["Calendar Sync Status", (project) => project.calendarSyncStatus],
+    ["Schedule Status", (project) => scheduleStatus(project).label],
     ["Calendar Event Link", (project) => project.calendarEventWebLink],
     ["Audit Duration Hours", (project) => project.auditDurationHours],
+    ["Audit Start Time", (project) => project.auditStartTime],
     ["Audit Location", (project) => project.auditLocation],
     ["Remote Link", (project) => project.auditRemoteLink],
     ["Linked Contact Source", (project) => project.linkedContactSource],
@@ -3441,6 +3462,7 @@ function App() {
         | "auditLocation"
         | "auditRemoteLink"
         | "auditDurationHours"
+        | "auditStartTime"
         | "schedulingNotes"
         | "confirmedAuditDate"
         | "tentativeAuditWeek"
@@ -3460,7 +3482,7 @@ function App() {
         createActivityEvent(
           "field",
           "Scheduling updated",
-          "Scheduling notes, calendar sync status, or audit dates were updated.",
+          "Scheduling notes, invite status, or audit dates were updated.",
           signedInUser.fullName,
         ),
       ],
@@ -3474,7 +3496,7 @@ function App() {
 
   const syncProjectToOutlook = async (project: AuditProject) => {
     if (!canEditProject(signedInUser, project)) {
-      setMessage("Your role cannot sync this project to Outlook.");
+      setMessage("Your role cannot send an Outlook invite for this project.");
       return;
     }
     try {
@@ -3485,6 +3507,8 @@ function App() {
         .filter(Boolean);
       const result = await createOutlookCalendarEvent(project.id, {
         durationHours: project.auditDurationHours,
+        startTime: project.auditStartTime,
+        confirmedAuditDate: project.confirmedAuditDate,
         location: project.auditLocation,
         remoteLink: project.auditRemoteLink,
         attendeeEmails: teamEmails,
@@ -3504,7 +3528,7 @@ function App() {
       setMessage(
         error instanceof Error
           ? error.message
-          : "Outlook calendar sync failed.",
+          : "Outlook invite could not be sent.",
       );
     }
   };
@@ -4207,7 +4231,7 @@ function AppNavigation({
     {
       id: "scheduling",
       label: "Scheduling",
-      helper: "Audit calendar, notes, sync status, and conflict warnings.",
+      helper: "Audit dates, notes, Outlook invites, and conflict warnings.",
     },
     {
       id: "command",
@@ -4776,7 +4800,7 @@ function SystemReadinessPanel({
           ready={calendarReady}
           detail={
             calendarReady
-              ? "Calendars.ReadWrite is active for manual project event sync."
+              ? "Calendars.ReadWrite is active for Outlook invite sending."
               : "Grant Calendars.ReadWrite application consent to create Outlook project events."
           }
         />
@@ -5542,6 +5566,7 @@ function SchedulingCapacity({
         | "auditLocation"
         | "auditRemoteLink"
         | "auditDurationHours"
+        | "auditStartTime"
         | "schedulingNotes"
         | "confirmedAuditDate"
         | "tentativeAuditWeek"
@@ -5564,8 +5589,8 @@ function SchedulingCapacity({
   const conflictCount = scheduledProjects.filter(
     (project) => schedulingConflictWarnings(project, projects).length > 0,
   ).length;
-  const readyToSync = scheduledProjects.filter(
-    (project) => project.calendarSyncStatus === "Ready to Sync",
+  const invitesSent = scheduledProjects.filter(
+    (project) => project.calendarEventId && project.calendarSyncStatus === "Synced",
   ).length;
   const capacityRows = auditors
     .map((auditor) => {
@@ -5594,7 +5619,7 @@ function SchedulingCapacity({
           <p className="eyebrow dark">Microsoft 365 scheduling readiness</p>
           <h2>Scheduling & Capacity</h2>
           <span>
-            First-phase audit calendar, scheduling notes, sync status, and conflict warnings.
+            Plan audit dates, review simple warnings, and send Outlook invites when ready.
           </span>
           <p className={calendarReady ? "calendar-ready-note ready" : "calendar-ready-note blocked"}>
             {calendarReady
@@ -5606,7 +5631,7 @@ function SchedulingCapacity({
           <SummaryCard label="Scheduled" value={scheduledProjects.length - unscheduled.length} />
           <SummaryCard label="Needs date" value={unscheduled.length} tone="warning" />
           <SummaryCard label="Warnings" value={conflictCount} tone="danger" />
-          <SummaryCard label="Ready to sync" value={readyToSync} />
+          <SummaryCard label="Invites sent" value={invitesSent} />
         </div>
       </article>
       <div className="scheduling-grid">
@@ -5702,6 +5727,94 @@ function SchedulingProjectCard({
         | "auditLocation"
         | "auditRemoteLink"
         | "auditDurationHours"
+        | "auditStartTime"
+        | "schedulingNotes"
+        | "confirmedAuditDate"
+        | "tentativeAuditWeek"
+      >
+    >,
+  ) => void;
+  onSyncOutlook: (project: AuditProject) => void;
+}) {
+  const [isScheduling, setIsScheduling] = useState(false);
+  const warnings = schedulingConflictWarnings(project, allProjects);
+  const scheduleDate = projectScheduleDate(project);
+  const status = scheduleStatus(project);
+
+  return (
+    <article className={`calendar-card simple ${warnings.length ? "has-warning" : ""}`}>
+      <div className="calendar-date">
+        <strong>{scheduleDate ? scheduleDate.slice(5) : "TBD"}</strong>
+        <span>{project.confirmedAuditDate ? "Confirmed" : project.tentativeAuditWeek || "No target"}</span>
+      </div>
+      <div className="calendar-main">
+        <div className="calendar-title-row">
+          <button type="button" className="link calendar-title" onClick={() => onSelect(project.id)}>
+            {project.assignmentNumber} - {project.auditEntity || "No entity"}
+          </button>
+          <span className={`pill ${status.className}`}>{status.label}</span>
+        </div>
+        <div className="calendar-meta">
+          <span>{project.assignmentType}</span>
+          <span>{project.auditType}</span>
+          <span>{formatAuditTeam(project) || "No audit team"}</span>
+          {project.auditDurationHours ? <span>{project.auditDurationHours}h</span> : null}
+          {project.auditStartTime ? <span>{project.auditStartTime}</span> : null}
+        </div>
+        {warnings.length > 0 && (
+          <ul className="calendar-warnings">
+            {warnings.slice(0, 3).map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        )}
+        <div className="schedule-card-actions">
+          <button type="button" disabled={!canUpdate} onClick={() => setIsScheduling(true)}>
+            {project.confirmedAuditDate || project.tentativeAuditWeek ? "Edit schedule" : "Schedule audit"}
+          </button>
+          {project.calendarEventWebLink && (
+            <a className="secondary outlook-event-button" href={project.calendarEventWebLink} target="_blank" rel="noreferrer">
+              Open invite
+            </a>
+          )}
+        </div>
+      </div>
+      {isScheduling && (
+        <ScheduleAuditModal
+          project={project}
+          allProjects={allProjects}
+          calendarReady={calendarReady}
+          onClose={() => setIsScheduling(false)}
+          onUpdateScheduling={onUpdateScheduling}
+          onSyncOutlook={onSyncOutlook}
+        />
+      )}
+    </article>
+  );
+}
+
+function ScheduleAuditModal({
+  project,
+  allProjects,
+  calendarReady,
+  onClose,
+  onUpdateScheduling,
+  onSyncOutlook,
+}: {
+  project: AuditProject;
+  allProjects: AuditProject[];
+  calendarReady: boolean;
+  onClose: () => void;
+  onUpdateScheduling: (
+    project: AuditProject,
+    update: Partial<
+      Pick<
+        AuditProject,
+        | "calendarSyncStatus"
+        | "auditLocation"
+        | "auditRemoteLink"
+        | "auditDurationHours"
+        | "auditStartTime"
         | "schedulingNotes"
         | "confirmedAuditDate"
         | "tentativeAuditWeek"
@@ -5713,82 +5826,73 @@ function SchedulingProjectCard({
   const [notes, setNotes] = useState(project.schedulingNotes);
   const [confirmedDate, setConfirmedDate] = useState(project.confirmedAuditDate);
   const [tentativeWeek, setTentativeWeek] = useState(project.tentativeAuditWeek);
+  const [auditStartTime, setAuditStartTime] = useState(project.auditStartTime || "09:00");
   const [auditLocation, setAuditLocation] = useState(project.auditLocation);
   const [auditRemoteLink, setAuditRemoteLink] = useState(project.auditRemoteLink);
   const [auditDurationHours, setAuditDurationHours] = useState(String(project.auditDurationHours || 1));
-  useEffect(() => {
-    setNotes(project.schedulingNotes);
-    setConfirmedDate(project.confirmedAuditDate);
-    setTentativeWeek(project.tentativeAuditWeek);
-    setAuditLocation(project.auditLocation);
-    setAuditRemoteLink(project.auditRemoteLink);
-    setAuditDurationHours(String(project.auditDurationHours || 1));
-  }, [
-    project.id,
-    project.schedulingNotes,
-    project.confirmedAuditDate,
-    project.tentativeAuditWeek,
-    project.auditLocation,
-    project.auditRemoteLink,
-    project.auditDurationHours,
-  ]);
-  const warnings = schedulingConflictWarnings(project, allProjects);
-  const scheduleDate = projectScheduleDate(project);
-  const statusClass =
-    project.calendarSyncStatus === "Synced"
-      ? "ok"
-      : project.calendarSyncStatus === "Conflict Review"
-        ? "danger"
-        : project.calendarSyncStatus === "Ready to Sync"
-          ? "warning"
-          : "muted";
-  const saveDates = () => {
-    if (
-      confirmedDate !== project.confirmedAuditDate ||
-      tentativeWeek !== project.tentativeAuditWeek ||
-      auditLocation !== project.auditLocation ||
-      auditRemoteLink !== project.auditRemoteLink ||
-      Number(auditDurationHours || 1) !== project.auditDurationHours
-    ) {
-      onUpdateScheduling(project, {
-        confirmedAuditDate: confirmedDate,
-        tentativeAuditWeek: tentativeWeek,
-        auditLocation,
-        auditRemoteLink,
-        auditDurationHours: Number(auditDurationHours || 1),
-      });
-    }
+  const previewProject = withProjectDefaults({
+    ...project,
+    confirmedAuditDate: confirmedDate,
+    tentativeAuditWeek: tentativeWeek,
+    auditLocation,
+    auditRemoteLink,
+    auditDurationHours: Number(auditDurationHours || 1),
+    auditStartTime,
+    schedulingNotes: notes,
+  });
+  const warnings = schedulingConflictWarnings(previewProject, allProjects);
+  const scheduleChanged =
+    confirmedDate !== project.confirmedAuditDate ||
+    tentativeWeek !== project.tentativeAuditWeek ||
+    auditLocation !== project.auditLocation ||
+    auditRemoteLink !== project.auditRemoteLink ||
+    Number(auditDurationHours || 1) !== project.auditDurationHours ||
+    auditStartTime !== (project.auditStartTime || "09:00") ||
+    notes !== project.schedulingNotes;
+  const update = {
+    confirmedAuditDate: confirmedDate,
+    tentativeAuditWeek: tentativeWeek,
+    auditLocation,
+    auditRemoteLink,
+    auditDurationHours: Number(auditDurationHours || 1),
+    auditStartTime,
+    schedulingNotes: notes,
+    calendarSyncStatus: scheduleChanged
+      ? nextCalendarStatusForScheduleChange(project)
+      : project.calendarSyncStatus,
   };
-  const saveNotes = () => {
-    if (notes !== project.schedulingNotes) {
-      onUpdateScheduling(project, { schedulingNotes: notes });
+  const saveSchedule = () => {
+    if (scheduleChanged) {
+      onUpdateScheduling(project, update);
     }
+    onClose();
+  };
+  const saveAndSendInvite = () => {
+    const nextProject = withProjectDefaults({
+      ...previewProject,
+      calendarSyncStatus: update.calendarSyncStatus,
+    });
+    if (scheduleChanged) {
+      onUpdateScheduling(project, update);
+    }
+    onSyncOutlook(nextProject);
+    onClose();
   };
 
   return (
-    <article className={`calendar-card ${warnings.length ? "has-warning" : ""}`}>
-      <div className="calendar-date">
-        <strong>{scheduleDate ? scheduleDate.slice(5) : "TBD"}</strong>
-        <span>{project.confirmedAuditDate ? "Confirmed" : project.tentativeAuditWeek || "No target"}</span>
-      </div>
-      <div className="calendar-main">
-        <button type="button" className="link calendar-title" onClick={() => onSelect(project.id)}>
-          {project.assignmentNumber} - {project.auditEntity || "No entity"}
-        </button>
-        <div className="calendar-meta">
-          <span>{project.assignmentType}</span>
-          <span>{project.auditType}</span>
-          <span>{formatAuditTeam(project) || "No audit team"}</span>
-          <span className={`pill ${statusClass}`}>{project.calendarSyncStatus}</span>
+    <div className="modal-backdrop">
+      <section className="modal schedule-modal">
+        <div className="section-title modal-title-row">
+          <div>
+            <p className="eyebrow dark">Schedule audit</p>
+            <h2>{project.assignmentNumber} - {project.auditEntity || "No entity"}</h2>
+            <span>Save the tracker schedule first, then optionally send or update the Outlook invite.</span>
+          </div>
+          <button type="button" className="link" onClick={onClose}>
+            Close
+          </button>
         </div>
-        {warnings.length > 0 && (
-          <ul className="calendar-warnings">
-            {warnings.map((warning) => (
-              <li key={warning}>{warning}</li>
-            ))}
-          </ul>
-        )}
-        <div className="schedule-edit-grid">
+        <div className="schedule-modal-grid">
           <Input
             label="Tentative week"
             value={tentativeWeek}
@@ -5801,37 +5905,12 @@ function SchedulingProjectCard({
             value={confirmedDate}
             onChange={setConfirmedDate}
           />
-          <Select
-            label="Calendar sync"
-            value={project.calendarSyncStatus}
-            options={calendarSyncStatusOptions}
-            placeholder="Select status"
-            onChange={(value) => {
-              if (!canUpdate) return;
-              onUpdateScheduling(project, {
-                calendarSyncStatus: value as CalendarSyncStatus,
-              });
-            }}
+          <Input
+            label="Start time"
+            type="time"
+            value={auditStartTime}
+            onChange={setAuditStartTime}
           />
-          <button type="button" className="secondary" disabled={!canUpdate} onClick={saveDates}>
-            Save schedule
-          </button>
-          <button
-            type="button"
-            disabled={!canUpdate || !calendarReady || !project.confirmedAuditDate}
-            onClick={() => onSyncOutlook(project)}
-            title={
-              !calendarReady
-                ? "Grant Calendars.ReadWrite in Microsoft Entra before creating Outlook events."
-                : !project.confirmedAuditDate
-                  ? "Add a confirmed audit date first."
-                  : "Create an Outlook calendar event for this audit."
-            }
-          >
-            {project.calendarEventId ? "Update Outlook" : "Add to Outlook"}
-          </button>
-        </div>
-        <div className="schedule-detail-grid">
           <Input
             label="Duration hours"
             type="number"
@@ -5851,23 +5930,58 @@ function SchedulingProjectCard({
             onChange={setAuditRemoteLink}
           />
         </div>
-        {project.calendarEventWebLink && (
-          <a className="outlook-event-link" href={project.calendarEventWebLink} target="_blank" rel="noreferrer">
-            Open Outlook event
-          </a>
-        )}
         <label>
           Scheduling notes
           <textarea
-            disabled={!canUpdate}
             value={notes}
             placeholder="Availability, travel constraints, client scheduling notes, or calendar blockers"
-            onBlur={saveNotes}
             onChange={(event) => setNotes(event.target.value)}
           />
         </label>
-      </div>
-    </article>
+        <div className="schedule-preview-panel">
+          <strong>Outlook invite preview</strong>
+          <div className="meta-grid">
+            <Meta label="Subject" value={`Audit: ${project.assignmentNumber || project.id} - ${project.auditEntity || "Assignment"}`} />
+            <Meta label="Date" value={confirmedDate || "Add confirmed date before sending"} />
+            <Meta label="Time" value={`${auditStartTime || "09:00"} for ${Number(auditDurationHours || 1)}h`} />
+            <Meta label="Attendees" value={formatAuditTeam(project) || "No audit team assigned"} />
+            <Meta label="Location" value={auditLocation || auditRemoteLink || "Not set"} />
+          </div>
+        </div>
+        {warnings.length > 0 && (
+          <div className="schedule-warning-panel">
+            <strong>Review before sending</strong>
+            <ul>
+              {warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <div className="modal-actions sticky-actions">
+          <button type="button" className="secondary" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="button" className="secondary" onClick={saveSchedule}>
+            Save schedule
+          </button>
+          <button
+            type="button"
+            disabled={!calendarReady || !confirmedDate}
+            onClick={saveAndSendInvite}
+            title={
+              !calendarReady
+                ? "Outlook invite sending needs Calendars.ReadWrite permission."
+                : !confirmedDate
+                  ? "Add a confirmed audit date first."
+                  : "Save the schedule and send or update the Outlook invite."
+            }
+          >
+            {project.calendarEventId ? "Save and update invite" : "Save and send Outlook invite"}
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -6899,7 +7013,7 @@ function ProjectDetail({
             label="Audit timing"
             value={`${project.tentativeAuditWeek || "No week"} · ${project.confirmedAuditDate || "No date"}`}
           />
-          <Meta label="Calendar sync" value={project.calendarSyncStatus} />
+          <Meta label="Schedule" value={scheduleStatus(project).label} />
           <Meta
             label="Linked contact"
             value={project.linkedContactSource || "Not linked"}
@@ -8366,14 +8480,11 @@ function ProjectForm({
           placeholder="Select stage"
           onChange={(value) => update("currentStage", value as Stage)}
         />
-        <Select
-          label="Calendar sync status"
-          value={draft.calendarSyncStatus}
-          options={calendarSyncStatusOptions}
-          placeholder="Select status"
-          onChange={(value) =>
-            update("calendarSyncStatus", value as CalendarSyncStatus)
-          }
+        <Input
+          label="Start time"
+          type="time"
+          value={draft.auditStartTime || "09:00"}
+          onChange={(value) => update("auditStartTime", value)}
         />
         <Input
           label="Duration hours"

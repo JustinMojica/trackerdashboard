@@ -927,7 +927,7 @@ async function createProjectCalendarEvent(request, response) {
       message: "Your role cannot create a calendar event for this project.",
     });
   }
-  const startDate = String(project.confirmedAuditDate || project.dueDate || "").trim();
+  const startDate = String(body.confirmedAuditDate || project.confirmedAuditDate || project.dueDate || "").trim();
   if (!startDate) {
     return sendJson(request, response, 400, {
       error: "missing_schedule_date",
@@ -935,6 +935,7 @@ async function createProjectCalendarEvent(request, response) {
     });
   }
   const durationHours = clampNumber(Number(body.durationHours || project.auditDurationHours || 1), 0.5, 12);
+  const startTime = normalizeEventStartTime(body.startTime || project.auditStartTime || "09:00");
   const location = String(body.location || project.auditLocation || "").trim();
   const remoteLink = String(body.remoteLink || project.auditRemoteLink || "").trim();
   const attendeeEmails = Array.isArray(body.attendeeEmails)
@@ -944,6 +945,7 @@ async function createProjectCalendarEvent(request, response) {
   try {
     event = await createOutlookEventForProject(user, project, startDate, {
       durationHours,
+      startTime,
       location,
       remoteLink,
       attendeeEmails,
@@ -998,6 +1000,7 @@ function normalizeProjectRecord(project) {
     auditLocation: String(record.auditLocation || ""),
     auditRemoteLink: String(record.auditRemoteLink || ""),
     auditDurationHours: Number(record.auditDurationHours || 1),
+    auditStartTime: String(record.auditStartTime || "09:00"),
     linkedContactId: String(record.linkedContactId || ""),
     linkedContactSource: String(record.linkedContactSource || ""),
     invoiceStatus: String(record.invoiceStatus || "Not Started"),
@@ -1126,12 +1129,15 @@ async function sendGraphMail(to, subject, content) {
 async function createOutlookEventForProject(user, project, startDate, options = {}) {
   const token = await getGraphAppToken();
   const subject = `Audit: ${project.assignmentNumber || project.id} - ${project.auditEntity || "Assignment"}`;
-  const start = `${startDate}T09:00:00`;
-  const end = eventEndDateTime(startDate, options.durationHours || 1);
+  const startTime = normalizeEventStartTime(options.startTime || project.auditStartTime || "09:00");
+  const start = `${startDate}T${startTime}:00`;
+  const end = eventEndDateTime(startDate, startTime, options.durationHours || 1);
   const body = [
     `Assignment: ${project.assignmentNumber || project.id}`,
     `Audit entity: ${project.auditEntity || "Not set"}`,
     `Audit type: ${project.auditType || "Not set"}`,
+    `Start time: ${startTime}`,
+    `Duration: ${clampNumber(options.durationHours || 1, 0.5, 12)} hour(s)`,
     `Audit team: ${assignedAuditorNames(project).join(", ") || "Not set"}`,
     options.location ? `Location: ${options.location}` : "",
     options.remoteLink ? `Remote link: ${options.remoteLink}` : "",
@@ -1208,11 +1214,20 @@ async function createOutlookEventForProject(user, project, startDate, options = 
   };
 }
 
-function eventEndDateTime(startDate, durationHours) {
+function eventEndDateTime(startDate, startTime, durationHours) {
   const [year, month, day] = String(startDate).split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day, 9, 0, 0));
+  const [hour, minute] = normalizeEventStartTime(startTime).split(":").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
   date.setTime(date.getTime() + clampNumber(durationHours, 0.5, 12) * 60 * 60 * 1000);
   return `${String(date.getUTCFullYear()).padStart(4, "0")}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}T${String(date.getUTCHours()).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}:00`;
+}
+
+function normalizeEventStartTime(value) {
+  const match = String(value || "").trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return "09:00";
+  const hour = Math.min(Math.max(Number(match[1]), 0), 23);
+  const minute = Math.min(Math.max(Number(match[2]), 0), 59);
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
 function clampNumber(value, min, max) {
@@ -1545,6 +1560,7 @@ const auditorProjectUpdateFields = new Set([
   "auditLocation",
   "auditRemoteLink",
   "auditDurationHours",
+  "auditStartTime",
   "schedulingNotes",
   "auditType",
   "nextAction",

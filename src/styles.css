@@ -1127,6 +1127,13 @@ main {
   gap: 0.75rem;
   min-width: 0;
 }
+.calendar-title-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  justify-content: space-between;
+}
 .calendar-title {
   font-size: 1.05rem;
   font-weight: 900;
@@ -1153,6 +1160,59 @@ main {
   gap: 0.25rem;
   margin: 0;
   padding: 0.65rem 0.85rem 0.65rem 1.6rem;
+}
+.schedule-card-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.outlook-event-button {
+  align-items: center;
+  background: #eaf1ff;
+  border-radius: 10px;
+  color: #15386d;
+  display: inline-flex;
+  font-weight: 900;
+  min-height: 42px;
+  padding: 0.55rem 0.85rem;
+  text-decoration: none;
+}
+.outlook-event-button:hover {
+  background: #dce9ff;
+  text-decoration: none;
+}
+.schedule-modal {
+  max-width: 920px;
+}
+.schedule-modal-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  padding: 1.25rem;
+}
+.schedule-modal > label,
+.schedule-preview-panel,
+.schedule-warning-panel {
+  margin: 0 1.25rem 1rem;
+}
+.schedule-preview-panel,
+.schedule-warning-panel {
+  background: #f8fbff;
+  border: 1px solid #dfe7f2;
+  border-radius: 14px;
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.9rem;
+}
+.schedule-warning-panel {
+  background: #fff8eb;
+  border-color: #e9cb83;
+  color: #6b4e00;
+}
+.schedule-warning-panel ul {
+  margin: 0;
+  padding-left: 1.1rem;
 }
 .schedule-edit-grid {
   align-items: end;
@@ -2942,6 +3002,7 @@ td span {
   .scheduling-grid,
   .schedule-edit-grid,
   .schedule-detail-grid,
+  .schedule-modal-grid,
   .contact-tools,
   .linked-contact-intake,
   .storage-stats {
