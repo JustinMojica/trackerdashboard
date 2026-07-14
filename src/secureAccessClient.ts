@@ -179,6 +179,10 @@ export type LinkedContactWarning = {
 export type LinkedContactSourcesResponse = {
   configured: boolean;
   generatedAt: string;
+  cache?: {
+    status: "hit" | "refreshed";
+    ageSeconds: number;
+  };
   sources: LinkedContactSource[];
   contacts: LinkedContact[];
   warnings: LinkedContactWarning[];
@@ -278,14 +282,19 @@ export async function getSecureSystemHealth(): Promise<SecureSystemHealth> {
   return response.json();
 }
 
-export async function getLinkedContactSources(): Promise<LinkedContactSourcesResponse> {
+export async function getLinkedContactSources(
+  forceRefresh = false,
+): Promise<LinkedContactSourcesResponse> {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), 25000);
   try {
-    const response = await fetch(secureAccessUrl("/api/contact-sources"), {
+    const response = await fetch(
+      secureAccessUrl(`/api/contact-sources${forceRefresh ? "?refresh=1" : ""}`),
+      {
       credentials: "include",
       signal: controller.signal,
-    });
+      },
+    );
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
       throw new Error(payload.message || payload.error || "Contact source refresh failed.");

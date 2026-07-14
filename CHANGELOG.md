@@ -34,6 +34,11 @@ other sensitive configuration values.
   confirmation wording.
 - Collapsed blockers by default, removed extra override-helper wording, and
   explained that suggested folders are a copyable audit file-structure plan.
+- Improved linked spreadsheet contact refresh by reading workbook worksheets in
+  limited parallel batches, caching successful refreshes, and reusing in-flight
+  refresh requests instead of stacking duplicate reads.
+- Allowed Admin and Audit Manager users to archive active projects with
+  confirmation instead of requiring the project to be Closed first.
 
 ### Verified
 

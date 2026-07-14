@@ -1,6 +1,7 @@
 const graphRoot = "https://graph.microsoft.com/v1.0";
 const instructionSheetSampleRange = "A1:Z40";
 const graphRequestTimeoutMs = 12000;
+const worksheetReadConcurrency = 8;
 
 const fieldMatchers = [
   { key: "email", patterns: [/e-?mail/i, /email address/i] },
@@ -120,10 +121,13 @@ async function readWorkbookSource({ source, token, fetchImpl }) {
   const warnings = [];
   const worksheetList = Array.isArray(worksheets?.value) ? worksheets.value : [];
 
-  for (const worksheet of worksheetList) {
+  const worksheetResults = await mapWithConcurrency(
+    worksheetList,
+    worksheetReadConcurrency,
+    async (worksheet) => {
     const worksheetId = worksheet.id || worksheet.name;
-    if (!worksheetId) continue;
-    if (isNonContactWorksheet(worksheet.name || worksheetId)) continue;
+      if (!worksheetId) return null;
+      if (isNonContactWorksheet(worksheet.name || worksheetId)) return null;
     try {
       const range = await graphGet(
         `/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(
@@ -141,18 +145,27 @@ async function readWorkbookSource({ source, token, fetchImpl }) {
         worksheetName: worksheet.name || worksheetId,
         values,
       });
-      worksheetRows.push(...parsed.contacts);
-      warnings.push(...parsed.warnings);
+        return parsed;
     } catch (error) {
-      warnings.push({
-        sourceId: source.id,
-        worksheetName: worksheet.name || worksheetId,
-        message:
-          error instanceof Error
-            ? error.message
-            : "Worksheet could not be read.",
-      });
+        return {
+          contacts: [],
+          warnings: [
+            {
+              sourceId: source.id,
+              worksheetName: worksheet.name || worksheetId,
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Worksheet could not be read.",
+            },
+          ],
+        };
     }
+    },
+  );
+  for (const result of worksheetResults.filter(Boolean)) {
+    worksheetRows.push(...result.contacts);
+    warnings.push(...result.warnings);
   }
 
   return {
@@ -505,6 +518,23 @@ function dedupeContacts(contacts) {
     seen.add(key);
     return true;
   });
+}
+
+async function mapWithConcurrency(items, concurrency, mapper) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    async () => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+      }
+    },
+  );
+  await Promise.all(workers);
+  return results;
 }
 
 function contactId(sourceId, worksheetName, email, company, contactName) {

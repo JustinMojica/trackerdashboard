@@ -940,6 +940,10 @@ function canOverrideStageRestriction(user: PrototypeUser) {
   return hasFullProjectAccess(user);
 }
 
+function canArchiveProject(user: PrototypeUser) {
+  return hasFullProjectAccess(user);
+}
+
 function canCreateProject(user: PrototypeUser) {
   return user.role === "Admin" || user.role === "Audit Manager";
 }
@@ -2743,12 +2747,12 @@ function App() {
     }
   };
 
-  const refreshContactSources = async () => {
+  const refreshContactSources = async (forceRefresh = false) => {
     if (!signedInUser) return;
     setContactSourcesLoading(true);
     setContactSourcesError("");
     try {
-      setContactSources(await getLinkedContactSources());
+      setContactSources(await getLinkedContactSources(forceRefresh));
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Contact source refresh failed.";
@@ -3210,34 +3214,42 @@ function App() {
   };
 
   const archiveProject = (project: AuditProject) => {
-    if (!canEditProject(signedInUser, project)) {
-      setMessage("Your role cannot archive this project.");
+    if (!canArchiveProject(signedInUser)) {
+      setMessage("Only admins and audit managers can archive projects.");
       return;
     }
-    if (project.currentStage !== "Closed") {
-      setMessage("Move the project to Closed before archiving it.");
+    const activeWorkstreams = coordinatedWorkstreamSummary(project).active;
+    if (project.currentStage !== "Closed" || activeWorkstreams > 0) {
+      requestConfirmation({
+        title: "Archive this project?",
+        message:
+          project.currentStage !== "Closed"
+            ? `This project is currently in ${project.currentStage}. Archiving hides it from active boards without deleting the record.`
+            : `This project still has ${activeWorkstreams} active managing-agent workstream${
+                activeWorkstreams === 1 ? "" : "s"
+              }. Archiving hides it from active boards without deleting the record.`,
+        confirmLabel: "Archive project",
+        tone: "danger",
+        onConfirm: () => applyProjectArchive(project),
+      });
       return;
     }
-    const workstreamSummary = coordinatedWorkstreamSummary(project);
-    if (project.auditStructure === "Coordinated" && !workstreamSummary.allResolved) {
-      setMessage(
-        `Resolve or waive ${workstreamSummary.active} active managing agent workstream${
-          workstreamSummary.active === 1 ? "" : "s"
-        } before archiving.`,
-      );
-      return;
-    }
+    applyProjectArchive(project);
+  };
+
+  const applyProjectArchive = (project: AuditProject) => {
     const updatedProject = withProjectDefaults({
       ...project,
       archived: true,
-      assignmentStatus: "Completed",
+      assignmentStatus:
+        project.currentStage === "Closed" ? "Completed" : project.assignmentStatus,
       lastUpdatedDate: new Date().toISOString().slice(0, 10),
       activityEvents: [
         ...(project.activityEvents ?? []),
         createActivityEvent(
           "stage",
           "Project archived",
-          "Closed project was hidden from active operational views without deleting the record.",
+          "Project was hidden from active operational views without deleting the record.",
           signedInUser.fullName,
         ),
       ],
@@ -3954,7 +3966,7 @@ function App() {
           contactSources={contactSources}
           contactSourcesLoading={contactSourcesLoading}
           contactSourcesError={contactSourcesError}
-          onRefreshContactSources={() => void refreshContactSources()}
+          onRefreshContactSources={() => void refreshContactSources(true)}
           onCreateProjectFromContact={startProjectFromContact}
           accessUsers={managedAccessUsers}
           pendingRequests={pendingAccessRequests}
@@ -4588,6 +4600,12 @@ function ContactSourcesPanel({
     0,
   );
   const hasRefreshed = Boolean(contactSources);
+  const cacheSummary =
+    contactSources?.cache?.status === "hit"
+      ? `Showing cached contacts from ${contactSources.cache.ageSeconds}s ago.`
+      : contactSources?.cache?.status === "refreshed"
+        ? "Showing freshly refreshed workbook contacts."
+        : "";
   const normalizedQuery = query.trim().toLowerCase();
   const filteredContacts = contacts.filter(
     (contact) =>
@@ -4646,6 +4664,7 @@ function ContactSourcesPanel({
           <small>Use Refresh contacts to retry after the workbook or Graph issue is corrected.</small>
         </div>
       )}
+      {cacheSummary && <p className="muted-note">{cacheSummary}</p>}
       {contactSources && (
         <div className="contact-source-grid">
           {contactSources.sources.map((source) => (
@@ -7009,7 +7028,7 @@ function ProjectDetail({
           <h2>{project.assignmentNumber}</h2>
           <div className="detail-actions">
             {canEdit && <button onClick={onEdit}>Edit project</button>}
-            {canEdit && project.currentStage === "Closed" && !project.archived && (
+            {canArchiveProject(currentUser) && !project.archived && (
               <button
                 type="button"
                 className="secondary"

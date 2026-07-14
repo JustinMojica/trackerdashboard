@@ -71,6 +71,9 @@ const authority = `https://login.microsoftonline.com/${config.tenantId}/oauth2/v
 const userStoreStatus = accessUserStoreStatus(config);
 const currentProjectStoreStatus = projectStoreStatus(config);
 const currentContactWorkbookStatus = contactWorkbookStatus(config);
+const contactSourcesCacheTtlMs = 10 * 60 * 1000;
+let contactSourcesCache = null;
+let contactSourcesReadPromise = null;
 const accessUserStore = createAccessUserStore({
   mode: userStoreStatus.mode,
   usersFile,
@@ -884,12 +887,37 @@ async function contactSources(request, response) {
       ],
     });
   }
-  const result = await readLinkedContactWorkbooks({
-    sources,
-    getAccessToken: getGraphAppToken,
-  });
+  const url = new URL(request.url, requestPublicOrigin(request));
+  const forceRefresh = url.searchParams.get("refresh") === "1";
+  const cacheAgeMs = contactSourcesCache
+    ? Date.now() - new Date(contactSourcesCache.generatedAt).getTime()
+    : Number.POSITIVE_INFINITY;
+  if (!forceRefresh && contactSourcesCache && cacheAgeMs < contactSourcesCacheTtlMs) {
+    return sendJson(request, response, 200, {
+      configured: true,
+      cache: {
+        status: "hit",
+        ageSeconds: Math.round(cacheAgeMs / 1000),
+      },
+      ...contactSourcesCache,
+    });
+  }
+  if (!contactSourcesReadPromise) {
+    contactSourcesReadPromise = readLinkedContactWorkbooks({
+      sources,
+      getAccessToken: getGraphAppToken,
+    }).finally(() => {
+      contactSourcesReadPromise = null;
+    });
+  }
+  const result = await contactSourcesReadPromise;
+  contactSourcesCache = result;
   return sendJson(request, response, 200, {
     configured: true,
+    cache: {
+      status: "refreshed",
+      ageSeconds: 0,
+    },
     ...result,
   });
 }
