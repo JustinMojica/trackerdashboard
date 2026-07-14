@@ -7735,34 +7735,9 @@ function FinancePanel({
 }
 
 function WorkflowEnginePanel({ project }: { project: AuditProject }) {
-  const [copyMessage, setCopyMessage] = useState("");
   const gates = workflowGates(project);
   const signals = slaSignals(project);
-  const drafts = recommendedDrafts(project);
-  const folders = workspaceFolders(project);
   const target = nextStage(project);
-
-  const copyWorkspacePlan = async () => {
-    try {
-      await navigator.clipboard.writeText(folders.join("\n"));
-      setCopyMessage("Workspace folder plan copied.");
-    } catch {
-      setCopyMessage("Copy failed. Select the folder list manually.");
-    }
-  };
-
-  const copyFirstDraft = async () => {
-    const firstDraft = drafts[0];
-    if (!firstDraft) return;
-    try {
-      await navigator.clipboard.writeText(
-        `Subject: ${firstDraft.subject}\n\n${firstDraft.body}`,
-      );
-      setCopyMessage(`${firstDraft.label} copied.`);
-    } catch {
-      setCopyMessage("Copy failed. Select the draft manually.");
-    }
-  };
 
   return (
     <article className="panel workflow-engine-panel">
@@ -7789,52 +7764,19 @@ function WorkflowEnginePanel({ project }: { project: AuditProject }) {
       <div className="workflow-columns">
         <div>
           <h3>Timing alerts</h3>
-          <ul className="compact-list">
-            {signals.map((signal) => (
-              <li key={`${signal.label}-${signal.detail}`}>
-                <strong>{signal.label}:</strong> {signal.detail}
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div>
-          <h3>Suggested folders</h3>
-          <p className="muted-note">
-            A suggested file structure for organizing this audit's documents.
-            Copying this list does not create folders automatically.
-          </p>
-          <ul className="compact-list">
-            {folders.slice(0, 5).map((folder) => (
-              <li key={folder}>{folder}</li>
-            ))}
-          </ul>
-          <button type="button" className="secondary" onClick={copyWorkspacePlan}>
-            Copy folder plan
-          </button>
-        </div>
-        <div>
-          <h3>Suggested emails</h3>
-          {drafts.length === 0 ? (
-            <p className="muted-note">No email draft recommended.</p>
+          {signals.length === 0 ? (
+            <p className="muted-note">No timing alerts right now.</p>
           ) : (
             <ul className="compact-list">
-              {drafts.slice(0, 4).map((draft) => (
-                <li key={draft.id}>
-                  <strong>{draft.label}:</strong> {draft.reason}
+              {signals.map((signal) => (
+                <li key={`${signal.label}-${signal.detail}`}>
+                  <strong>{signal.label}:</strong> {signal.detail}
                 </li>
               ))}
             </ul>
           )}
-          <button
-            type="button"
-            disabled={drafts.length === 0}
-            onClick={copyFirstDraft}
-          >
-            Copy first email
-          </button>
         </div>
       </div>
-      {copyMessage && <p className="muted-note">{copyMessage}</p>}
     </article>
   );
 }

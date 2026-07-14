@@ -55,6 +55,8 @@ other sensitive configuration values.
   a final Add Project review step before saving.
 - Refined the Add Project Contacts field into a true searchable dropdown:
   users can type before selecting or open the dropdown to browse contacts.
+- Removed suggested folder and suggested email cards from the project workflow
+  attention panel.
 
 ### Verified
 
