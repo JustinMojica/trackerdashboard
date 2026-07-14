@@ -60,6 +60,8 @@ other sensitive configuration values.
 - Fixed the Add Project Contacts dropdown so clearing a selected contact returns
   to normal search, while recent contacts remain shortcuts instead of replacing
   search results.
+- Split the assignment detail page into Overview, Documents, Team & scheduling,
+  and Activity tabs, with Overview as the default view for cleaner daily use.
 
 ### Verified
 

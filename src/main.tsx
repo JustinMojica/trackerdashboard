@@ -7139,6 +7139,35 @@ function LabelChip({
   );
 }
 
+type AssignmentDetailTab = "overview" | "documents" | "team" | "activity";
+
+const assignmentDetailTabs: Array<{
+  id: AssignmentDetailTab;
+  label: string;
+  description: string;
+}> = [
+  {
+    id: "overview",
+    label: "Overview",
+    description: "Core assignment details, next action, stage movement, and workflow gates.",
+  },
+  {
+    id: "documents",
+    label: "Documents",
+    description: "Readiness, evidence checks, checklist items, and email templates.",
+  },
+  {
+    id: "team",
+    label: "Team & scheduling",
+    description: "Managing-agent workstreams, audit team, and ownership coordination.",
+  },
+  {
+    id: "activity",
+    label: "Activity",
+    description: "Comments and audit trail history.",
+  },
+];
+
 function ProjectDetail({
   project,
   onEdit,
@@ -7177,176 +7206,228 @@ function ProjectDetail({
 }) {
   const blockers = computedBlockers(project);
   const nextSteps = recommendedNextSteps(project);
+  const [activeDetailTab, setActiveDetailTab] =
+    useState<AssignmentDetailTab>("overview");
   const [showRecommendedSteps, setShowRecommendedSteps] = useState(false);
   const [showBlockers, setShowBlockers] = useState(false);
   const canEdit = canEditProject(currentUser, project);
   const canManageFinance =
     canUpdateFinance(currentUser, project) || hasFullProjectAccess(currentUser);
+
+  useEffect(() => {
+    setActiveDetailTab("overview");
+  }, [project.id]);
+
   return (
-    <section className="detail-grid">
-      <article className="panel detail">
-        <div className="section-title">
-          <h2>{project.assignmentNumber}</h2>
-          <div className="detail-actions">
-            {canEdit && <button onClick={onEdit}>Edit project</button>}
-            {canArchiveProject(currentUser) && !project.archived && (
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => onArchive(project)}
-              >
-                Archive project
-              </button>
-            )}
-          </div>
-        </div>
-        {project.labels.length > 0 && (
-          <div className="label-strip">
-            {project.labels.map((label) => (
-              <LabelChip
-                label={label}
-                key={label}
-                onRemove={canEdit ? () => onRemoveLabel(project, label) : undefined}
-              />
-            ))}
-          </div>
-        )}
-        <div className="meta-grid">
-          <Meta label="Source" value={project.assignmentSource} />
-          <Meta label="Assignment type" value={project.assignmentType} />
-          <Meta label="Audit structure" value={project.auditStructure} />
-          <Meta label="Audit entity" value={project.auditEntity || "Not set"} />
-          <Meta
-            label="Client / coverholder code"
-            value={project.clientCoverholderCode}
-          />
-          <Meta label="Broker" value={project.broker} />
-          <Meta label="Audit team" value={formatAuditTeam(project)} />
-          <Meta label="Status" value={project.assignmentStatus} />
-          <Meta
-            label="Quote"
-            value={`${project.quoteStatus} · ${project.quoteAmount.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })}`}
-          />
-          <Meta
-            label="Audit timing"
-            value={`${project.tentativeAuditWeek || "No week"} · ${project.confirmedAuditDate || "No date"}`}
-          />
-          <Meta label="Schedule" value={scheduleStatus(project).label} />
-          <Meta
-            label="Linked contact"
-            value={project.linkedContactSource || "Not linked"}
-          />
-          <Meta label="Audit type" value={project.auditType} />
-          <Meta
-            label="Payment received"
-            value={project.paymentReceived ? "Yes" : "No"}
-          />
-          <Meta label="Last updated" value={project.lastUpdatedDate} />
-        </div>
-        <div className="next-action-heading">
-          <h3>Next action</h3>
-          <HoverLink
-            label="Why these steps?"
-            helper="Recommended next steps combine blockers, due date, document readiness, stage, and the recorded next action."
-          />
-        </div>
-        <p>{project.nextAction || "No next action recorded."}</p>
-        <div className="recommended-next">
+    <section className="assignment-detail-shell">
+      <div
+        className="assignment-detail-tabs"
+        role="tablist"
+        aria-label="Assignment detail sections"
+      >
+        {assignmentDetailTabs.map((tab) => (
           <button
+            key={tab.id}
             type="button"
-            className="recommended-next-toggle"
-            aria-expanded={showRecommendedSteps}
-            onClick={() => setShowRecommendedSteps((value) => !value)}
+            role="tab"
+            aria-selected={activeDetailTab === tab.id}
+            className={activeDetailTab === tab.id ? "active" : undefined}
+            onClick={() => setActiveDetailTab(tab.id)}
           >
-            <strong>Recommended next steps</strong>
-            <span>{showRecommendedSteps ? "Hide" : `Show ${nextSteps.length}`}</span>
+            <strong>{tab.label}</strong>
+            <span>{tab.description}</span>
           </button>
-          {showRecommendedSteps && (
-            <ul>
-              {nextSteps.map((step) => (
-                <li key={step}>{step}</li>
-              ))}
-            </ul>
-          )}
-        </div>
-        <div className="recommended-next blocker-disclosure">
-          <button
-            type="button"
-            className="recommended-next-toggle"
-            aria-expanded={showBlockers}
-            onClick={() => setShowBlockers((value) => !value)}
-          >
-            <strong>Blockers</strong>
-            <span className={blockers.length ? undefined : "ok-count"}>
-              {blockers.length ? (showBlockers ? "Hide" : `Show ${blockers.length}`) : "None"}
-            </span>
-          </button>
-          {showBlockers && blockers.length > 0 && (
-            <ul className="blockers">
-              {blockers.map((blocker) => (
-                <li key={blocker}>{blocker}</li>
-              ))}
-            </ul>
-          )}
-          {showBlockers && blockers.length === 0 && (
-            <p className="muted-note">No blockers recorded.</p>
-          )}
-        </div>
-        {canEdit && (
-          <div className="move-row">
-            <label>
-              Move stage
-              <select
-                value={project.currentStage}
-                onChange={(event) => onMove(project, event.target.value as Stage)}
-              >
-                {stages.map((stage) => (
-                  <option key={stage}>{stage}</option>
-                ))}
-              </select>
-            </label>
-            {canOverrideStageRestriction(currentUser) && (
-              <HoverLink
-                label="Stage override help"
-                helper="If a required item is missing, choose the stage anyway and confirm the override."
-              />
-            )}
-          </div>
+        ))}
+      </div>
+
+      <div className={`assignment-tab-grid ${activeDetailTab}`}>
+        {activeDetailTab === "overview" && (
+          <>
+            <article className="panel detail">
+              <div className="section-title">
+                <h2>{project.assignmentNumber}</h2>
+                <div className="detail-actions">
+                  {canEdit && <button onClick={onEdit}>Edit project</button>}
+                  {canArchiveProject(currentUser) && !project.archived && (
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => onArchive(project)}
+                    >
+                      Archive project
+                    </button>
+                  )}
+                </div>
+              </div>
+              {project.labels.length > 0 && (
+                <div className="label-strip">
+                  {project.labels.map((label) => (
+                    <LabelChip
+                      label={label}
+                      key={label}
+                      onRemove={canEdit ? () => onRemoveLabel(project, label) : undefined}
+                    />
+                  ))}
+                </div>
+              )}
+              <div className="meta-grid">
+                <Meta label="Source" value={project.assignmentSource} />
+                <Meta label="Assignment type" value={project.assignmentType} />
+                <Meta label="Audit structure" value={project.auditStructure} />
+                <Meta label="Audit entity" value={project.auditEntity || "Not set"} />
+                <Meta
+                  label="Client / coverholder code"
+                  value={project.clientCoverholderCode}
+                />
+                <Meta label="Broker" value={project.broker} />
+                <Meta label="Audit team" value={formatAuditTeam(project)} />
+                <Meta label="Status" value={project.assignmentStatus} />
+                <Meta
+                  label="Quote"
+                  value={`${project.quoteStatus} - ${project.quoteAmount.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })}`}
+                />
+                <Meta
+                  label="Audit timing"
+                  value={`${project.tentativeAuditWeek || "No week"} - ${project.confirmedAuditDate || "No date"}`}
+                />
+                <Meta label="Schedule" value={scheduleStatus(project).label} />
+                <Meta
+                  label="Linked contact"
+                  value={project.linkedContactSource || "Not linked"}
+                />
+                <Meta label="Audit type" value={project.auditType} />
+                <Meta
+                  label="Payment received"
+                  value={project.paymentReceived ? "Yes" : "No"}
+                />
+                <Meta label="Last updated" value={project.lastUpdatedDate} />
+              </div>
+              <div className="next-action-heading">
+                <h3>Next action</h3>
+                <HoverLink
+                  label="Why these steps?"
+                  helper="Recommended next steps combine blockers, due date, document readiness, stage, and the recorded next action."
+                />
+              </div>
+              <p>{project.nextAction || "No next action recorded."}</p>
+              <div className="recommended-next">
+                <button
+                  type="button"
+                  className="recommended-next-toggle"
+                  aria-expanded={showRecommendedSteps}
+                  onClick={() => setShowRecommendedSteps((value) => !value)}
+                >
+                  <strong>Recommended next steps</strong>
+                  <span>{showRecommendedSteps ? "Hide" : `Show ${nextSteps.length}`}</span>
+                </button>
+                {showRecommendedSteps && (
+                  <ul>
+                    {nextSteps.map((step) => (
+                      <li key={step}>{step}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="recommended-next blocker-disclosure">
+                <button
+                  type="button"
+                  className="recommended-next-toggle"
+                  aria-expanded={showBlockers}
+                  onClick={() => setShowBlockers((value) => !value)}
+                >
+                  <strong>Blockers</strong>
+                  <span className={blockers.length ? undefined : "ok-count"}>
+                    {blockers.length
+                      ? showBlockers
+                        ? "Hide"
+                        : `Show ${blockers.length}`
+                      : "None"}
+                  </span>
+                </button>
+                {showBlockers && blockers.length > 0 && (
+                  <ul className="blockers">
+                    {blockers.map((blocker) => (
+                      <li key={blocker}>{blocker}</li>
+                    ))}
+                  </ul>
+                )}
+                {showBlockers && blockers.length === 0 && (
+                  <p className="muted-note">No blockers recorded.</p>
+                )}
+              </div>
+              {canEdit && (
+                <div className="move-row">
+                  <label>
+                    Move stage
+                    <select
+                      value={project.currentStage}
+                      onChange={(event) => onMove(project, event.target.value as Stage)}
+                    >
+                      {stages.map((stage) => (
+                        <option key={stage}>{stage}</option>
+                      ))}
+                    </select>
+                  </label>
+                  {canOverrideStageRestriction(currentUser) && (
+                    <HoverLink
+                      label="Stage override help"
+                      helper="If a required item is missing, choose the stage anyway and confirm the override."
+                    />
+                  )}
+                </div>
+              )}
+            </article>
+            <WorkflowEnginePanel project={project} />
+            <FinancePanel
+              key={project.id}
+              project={project}
+              canUpdateFinance={canManageFinance}
+              onUpdateFinance={onUpdateFinance}
+            />
+          </>
         )}
-      </article>
-      <ManagingAgentWorkstreamsPanel project={project} />
-      <AuditTeamPanel
-        project={project}
-        auditors={auditors}
-        onAddSupportingAuditor={onAddSupportingAuditor}
-        canManageTeam={hasFullProjectAccess(currentUser)}
-      />
-      <DocumentReadiness
-        project={project}
-        onDocumentWorkflowAction={onDocumentWorkflowAction}
-        canUpdateDocuments={canEdit}
-      />
-      <ProjectDocumentIntelligence project={project} />
-      <WorkflowEnginePanel project={project} />
-      <FinancePanel
-        key={project.id}
-        project={project}
-        canUpdateFinance={canManageFinance}
-        onUpdateFinance={onUpdateFinance}
-      />
-      <Checklist
-        project={project}
-        onToggleChecklist={onToggleChecklist}
-        canUpdateChecklist={canEdit}
-      />
-      <Comments
-        project={project}
-        currentUser={currentUser}
-        canAddComment={canComment(currentUser, project)}
-        onAddComment={onAddComment}
-      />
-      <TemplateLibrary project={project} contactSources={contactSources} />
-      <ActivityTimeline project={project} />
+
+        {activeDetailTab === "documents" && (
+          <>
+            <DocumentReadiness
+              project={project}
+              onDocumentWorkflowAction={onDocumentWorkflowAction}
+              canUpdateDocuments={canEdit}
+            />
+            <ProjectDocumentIntelligence project={project} />
+            <Checklist
+              project={project}
+              onToggleChecklist={onToggleChecklist}
+              canUpdateChecklist={canEdit}
+            />
+            <TemplateLibrary project={project} contactSources={contactSources} />
+          </>
+        )}
+
+        {activeDetailTab === "team" && (
+          <>
+            <ManagingAgentWorkstreamsPanel project={project} />
+            <AuditTeamPanel
+              project={project}
+              auditors={auditors}
+              onAddSupportingAuditor={onAddSupportingAuditor}
+              canManageTeam={hasFullProjectAccess(currentUser)}
+            />
+          </>
+        )}
+
+        {activeDetailTab === "activity" && (
+          <>
+            <Comments
+              project={project}
+              currentUser={currentUser}
+              canAddComment={canComment(currentUser, project)}
+              onAddComment={onAddComment}
+            />
+            <ActivityTimeline project={project} />
+          </>
+        )}
+      </div>
     </section>
   );
 }

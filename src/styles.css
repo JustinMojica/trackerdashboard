@@ -1839,6 +1839,71 @@ textarea {
     "trail trail";
   grid-template-columns: minmax(0, 1.25fr) minmax(360px, 0.75fr);
 }
+.assignment-detail-shell {
+  display: grid;
+  gap: 1rem;
+}
+.assignment-detail-tabs {
+  background: #f8fbff;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 0.65rem;
+}
+.assignment-detail-tabs button {
+  align-items: start;
+  background: #e8f0ff;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  color: #173766;
+  display: grid;
+  gap: 0.25rem;
+  min-height: 78px;
+  padding: 0.8rem;
+  text-align: left;
+}
+.assignment-detail-tabs button.active {
+  background: #1358db;
+  box-shadow: 0 14px 28px rgba(19, 88, 219, 0.22);
+  color: #fff;
+}
+.assignment-detail-tabs button:focus-visible {
+  outline: 3px solid rgba(19, 88, 219, 0.35);
+  outline-offset: 2px;
+}
+.assignment-detail-tabs strong {
+  font-size: 1rem;
+}
+.assignment-detail-tabs span {
+  color: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1.35;
+  opacity: 0.82;
+}
+.assignment-tab-grid {
+  align-items: start;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.assignment-tab-grid > .panel {
+  grid-area: auto;
+  min-width: 0;
+}
+.assignment-tab-grid.overview {
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+}
+.assignment-tab-grid.overview > .detail {
+  grid-column: 1 / -1;
+}
+.assignment-tab-grid.documents > .template-panel,
+.assignment-tab-grid.team > .managing-agent-panel,
+.assignment-tab-grid.activity > .activity-panel {
+  grid-column: 1 / -1;
+}
 .detail {
   grid-area: detail;
   min-height: 100%;
@@ -2453,6 +2518,7 @@ textarea {
     grid-area: auto;
   }
   .filters,
+  .assignment-detail-tabs,
   .form-grid,
   .meta-grid,
   .storage-stats,
@@ -2489,6 +2555,9 @@ textarea {
   .summary-grid,
   .todays-work-grid,
   .detail-grid,
+  .assignment-detail-tabs,
+  .assignment-tab-grid,
+  .assignment-tab-grid.overview,
   .filters,
   .form-grid,
   .meta-grid,
