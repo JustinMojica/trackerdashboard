@@ -1700,8 +1700,8 @@ textarea {
   grid-template-areas:
     "detail detail team"
     "agents agents documents"
-    "workflow workflow docintel"
-    "finance finance documents"
+    "workflow workflow documents"
+    "finance finance docintel"
     "checklist comments templates"
     "trail trail trail";
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(280px, 0.82fr);
@@ -2288,6 +2288,7 @@ textarea {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .detail,
+  .managing-agent-panel,
   .team-panel,
   .document-workflow,
   .project-document-intelligence,

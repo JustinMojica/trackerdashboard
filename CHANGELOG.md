@@ -22,6 +22,8 @@ other sensitive configuration values.
 - Updated Outlook invite creation to use the selected audit start time.
 - Limited assignment export, JSON backup, and JSON import controls to Admin
   users only so regular users see only the daily view controls.
+- Fixed the project detail grid layout so workflow, templates, and audit trail
+  panels no longer overlap.
 
 ### Verified
 
