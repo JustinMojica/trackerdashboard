@@ -44,6 +44,9 @@ other sensitive configuration values.
   an Outlook draft action.
 - Simplified the linked contact selector to show contact names only, retitled
   it to Contacts, and added search before selecting workbook contacts.
+- Added a template recipient picker that shows all detected workbook email
+  options and remembers the preferred recipient for the same contact and
+  routing type.
 
 ### Verified
 

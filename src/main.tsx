@@ -282,6 +282,13 @@ type TemplateReceiverKind =
   | "Report contact"
   | "Project contact";
 
+type TemplateRecipientOption = {
+  id: string;
+  email: string;
+  label: string;
+  source: string;
+};
+
 type TemplateReceiver = {
   kind: TemplateReceiverKind;
   name: string;
@@ -290,6 +297,8 @@ type TemplateReceiver = {
   source: string;
   confidence: "Matched workbook" | "Needs review";
   guidance: string;
+  preferenceKey: string;
+  recipientOptions: TemplateRecipientOption[];
 };
 
 type WorkflowGate = {
@@ -368,6 +377,8 @@ const today = new Date("2026-05-05T12:00:00Z");
 const storageKey = "audit-assignment-tracker-projects-v1";
 const usersStorageKey = "audit-assignment-tracker-users-v1";
 const lastExportStorageKey = "audit-assignment-tracker-last-export-v1";
+const recipientPreferenceStorageKey =
+  "audit-assignment-tracker-recipient-preferences-v1";
 
 const defaultFilters: Filters = {
   auditor: "",
@@ -1214,6 +1225,31 @@ function saveProjects(projects: AuditProject[]) {
   localStorage.setItem(storageKey, JSON.stringify(projects));
 }
 
+function loadRecipientPreferences(): Record<string, string> {
+  try {
+    const parsed = JSON.parse(
+      localStorage.getItem(recipientPreferenceStorageKey) ?? "{}",
+    );
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed).filter(
+        ([key, value]) => key && typeof value === "string" && value.includes("@"),
+      ),
+    ) as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+function saveRecipientPreference(key: string, email: string) {
+  if (!key || !email) return;
+  const current = loadRecipientPreferences();
+  localStorage.setItem(
+    recipientPreferenceStorageKey,
+    JSON.stringify({ ...current, [key]: email }),
+  );
+}
+
 function withUserDefaults(user: Partial<PrototypeUser>): PrototypeUser {
   const role = user.role ?? "Auditor";
   const emailVerified = user.emailVerified ?? Boolean(user.active ?? true);
@@ -1926,6 +1962,40 @@ function contactBlockForReceiver(contact: LinkedContact, kind: TemplateReceiverK
   return "";
 }
 
+function recipientPreferenceKey(contact: LinkedContact | undefined, kind: TemplateReceiverKind) {
+  if (!contact) return "";
+  const name = normalizedToken(linkedContactName(contact));
+  return name ? `${kind}:${name}` : "";
+}
+
+function recipientOptionLabel(email: string, source: string) {
+  if (/invoice|billing|finance/i.test(email)) return `Invoice mailbox - ${email}`;
+  if (/report/i.test(email)) return `Report mailbox - ${email}`;
+  if (/claim|dca|delegated/i.test(email)) return `DCA mailbox - ${email}`;
+  return `${source} - ${email}`;
+}
+
+function buildRecipientOptions(
+  entries: { emails: string[]; source: string }[],
+): TemplateRecipientOption[] {
+  const seen = new Set<string>();
+  return entries.flatMap((entry) =>
+    entry.emails.flatMap((email) => {
+      const normalizedEmail = email.trim().toLowerCase();
+      if (!normalizedEmail || seen.has(normalizedEmail)) return [];
+      seen.add(normalizedEmail);
+      return [
+        {
+          id: normalizedEmail,
+          email: normalizedEmail,
+          label: recipientOptionLabel(normalizedEmail, entry.source),
+          source: entry.source,
+        },
+      ];
+    }),
+  );
+}
+
 function resolveTemplateReceiver(
   project: AuditProject,
   template: CommunicationTemplate,
@@ -1955,7 +2025,12 @@ function resolveTemplateReceiver(
         ...extractEmailsFromText(matchedContact.email || Object.values(matchedContact.raw ?? {}).join(" ")),
       ]
     : [];
-  const email = blockEmails[0] || contactEmails[0] || "";
+  const recipientOptions = buildRecipientOptions([
+    { emails: blockEmails, source: kind },
+    { emails: structuredEmails, source: "Workbook field" },
+    { emails: contactEmails, source: "Linked contact" },
+  ]);
+  const email = recipientOptions[0]?.email ?? "";
   const name =
     extractNameFromContactBlock(block) ||
     matchedContact?.contactName ||
@@ -1977,6 +2052,8 @@ function resolveTemplateReceiver(
       ? `${matchedContact.workbookName} / ${matchedContact.worksheetName}`
       : "No linked workbook match",
     confidence: matchedContact && email ? "Matched workbook" : "Needs review",
+    preferenceKey: recipientPreferenceKey(matchedContact, kind),
+    recipientOptions,
     guidance:
       kind === "DCA contact"
         ? "DCA audits should route document and quote requests to the DCA contact."
@@ -7685,6 +7762,9 @@ function TemplateLibrary({
     communicationTemplates[0].id,
   );
   const [copyMessage, setCopyMessage] = useState("");
+  const [recipientPreferences, setRecipientPreferences] = useState(
+    loadRecipientPreferences,
+  );
   const template =
     communicationTemplates.find((item) => item.id === selectedTemplateId) ??
     communicationTemplates[0];
@@ -7695,14 +7775,26 @@ function TemplateLibrary({
     template,
     contactSources?.contacts ?? [],
   );
+  const savedRecipientEmail = receiver.preferenceKey
+    ? recipientPreferences[receiver.preferenceKey] ?? ""
+    : "";
+  const savedRecipientIsAvailable = receiver.recipientOptions.some(
+    (option) => option.email === savedRecipientEmail,
+  );
+  const selectedReceiverEmail = savedRecipientIsAvailable
+    ? savedRecipientEmail
+    : receiver.email;
+  const selectedRecipient = receiver.recipientOptions.find(
+    (option) => option.email === selectedReceiverEmail,
+  );
   const fullDraft = [
-    `To: ${receiver.email || `[${receiver.kind} email needed]`}`,
+    `To: ${selectedReceiverEmail || `[${receiver.kind} email needed]`}`,
     `Receiver: ${receiver.name} (${receiver.kind})`,
     `Subject: ${subject}`,
     "",
     body,
   ].join("\n");
-  const mailToRecipients = receiver.email
+  const mailToRecipients = selectedReceiverEmail
     .split(/[;,]/)
     .map((email) => email.trim())
     .filter(Boolean)
@@ -7722,6 +7814,16 @@ function TemplateLibrary({
     } catch {
       setCopyMessage("Copy failed. Select the preview text manually.");
     }
+  };
+
+  const selectRecipient = (email: string) => {
+    if (!email || !receiver.preferenceKey) return;
+    saveRecipientPreference(receiver.preferenceKey, email);
+    setRecipientPreferences((current) => ({
+      ...current,
+      [receiver.preferenceKey]: email,
+    }));
+    setCopyMessage("Recipient preference saved for this contact.");
   };
 
   return (
@@ -7751,11 +7853,38 @@ function TemplateLibrary({
         <article className={`receiver-card ${receiver.confidence === "Matched workbook" ? "ready" : "blocked"}`}>
           <span>Receiver</span>
           <strong>{receiver.name}</strong>
-          <p>{receiver.email || "No email found yet"}</p>
+          <p>{selectedReceiverEmail || "No email found yet"}</p>
           <small>
             {receiver.kind} | {receiver.confidence}
           </small>
-          <small>{receiver.source}</small>
+          {selectedRecipient && <small>{selectedRecipient.source}</small>}
+        </article>
+        <article className="receiver-card recipient-picker-card">
+          <span>Recipient picker</span>
+          {receiver.recipientOptions.length > 1 ? (
+            <>
+              <Select
+                label="Recipient"
+                value={selectedReceiverEmail}
+                options={receiver.recipientOptions.map((option) => [
+                  option.email,
+                  option.label,
+                ])}
+                placeholder="Choose recipient"
+                onChange={selectRecipient}
+              />
+              <p>
+                Saved choices are reused for future projects with this contact
+                and routing type.
+              </p>
+            </>
+          ) : (
+            <p>
+              {selectedReceiverEmail
+                ? "Only one recipient was found for this routing type."
+                : "No recipient was found for this routing type."}
+            </p>
+          )}
         </article>
         <article className="receiver-card">
           <span>Routing rule</span>
@@ -7771,7 +7900,7 @@ function TemplateLibrary({
       <div className="template-preview">
         <label>
           To
-          <input readOnly value={receiver.email || `${receiver.kind} email not found`} />
+          <input readOnly value={selectedReceiverEmail || `${receiver.kind} email not found`} />
         </label>
         <label>
           Subject
@@ -7785,7 +7914,7 @@ function TemplateLibrary({
       <div className="template-actions">
         <button
           type="button"
-          disabled={!receiver.email}
+          disabled={!selectedReceiverEmail}
           onClick={() => {
             window.location.href = outlookDraftUrl;
           }}
@@ -7795,8 +7924,8 @@ function TemplateLibrary({
         <button
           type="button"
           className="secondary"
-          disabled={!receiver.email}
-          onClick={() => void copyText("Receiver", receiver.email)}
+          disabled={!selectedReceiverEmail}
+          onClick={() => void copyText("Receiver", selectedReceiverEmail)}
         >
           Copy receiver
         </button>

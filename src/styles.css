@@ -2077,7 +2077,7 @@ textarea {
 .template-context-grid {
   display: grid;
   gap: 0.75rem;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   margin-top: 0.85rem;
 }
 .receiver-card {
@@ -2112,6 +2112,13 @@ textarea {
 .receiver-card small {
   color: #53637a;
   margin: 0;
+}
+.recipient-picker-card {
+  grid-column: 1 / -1;
+}
+.recipient-picker-card label {
+  display: grid;
+  gap: 0.35rem;
 }
 .template-preview textarea {
   min-height: 240px;
