@@ -42,6 +42,8 @@ other sensitive configuration values.
 - Moved stage override guidance into a hover tip, collapsed document-review
   recommended actions by default, and replaced the signature placeholder with
   an Outlook draft action.
+- Simplified the linked contact selector to show contact names only, retitled
+  it to Contacts, and added search before selecting workbook contacts.
 
 ### Verified
 

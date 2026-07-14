@@ -1278,7 +1278,11 @@ main {
   border-radius: 14px;
   display: grid;
   gap: 0.25rem;
+  grid-column: 1 / -1;
   padding: 0.8rem;
+}
+.linked-contact-intake > .muted-note {
+  grid-column: 1 / -1;
 }
 .linked-contact-preview span,
 .linked-contact-preview small {

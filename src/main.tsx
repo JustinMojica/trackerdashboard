@@ -2002,11 +2002,7 @@ function linkedContactName(contact: LinkedContact) {
 }
 
 function linkedContactLabel(contact: LinkedContact) {
-  const name = linkedContactName(contact);
-  const source = contact.workbookName
-    ? contact.workbookName.replace(/^Client Instructions\s*/i, "Instructions ")
-    : contact.sourceLabel;
-  return `${name} - ${source}`;
+  return linkedContactName(contact);
 }
 
 function contactEmailBuckets(contact: LinkedContact) {
@@ -8267,6 +8263,7 @@ function ProjectForm({
   const [draft, setDraft] = useState(withProjectDefaults(project));
   const [step, setStep] = useState(0);
   const [attemptedSave, setAttemptedSave] = useState(false);
+  const [contactSearchQuery, setContactSearchQuery] = useState("");
   const isNewProject = project.statusHistory.length === 0;
   const steps = [
     "Client / contact",
@@ -8300,6 +8297,16 @@ function ProjectForm({
   const selectedLinkedContact = linkedContacts.find(
     (contact) => contact.id === draft.linkedContactId,
   );
+  const normalizedContactSearch = contactSearchQuery.trim().toLowerCase();
+  const filteredLinkedContacts = linkedContacts.filter(
+    (contact) =>
+      !normalizedContactSearch ||
+      contactSearchText(contact).includes(normalizedContactSearch),
+  );
+  const contactSelectOptions = selectedLinkedContact &&
+    !filteredLinkedContacts.some((contact) => contact.id === selectedLinkedContact.id)
+    ? [selectedLinkedContact, ...filteredLinkedContacts]
+    : filteredLinkedContacts;
   const selectLinkedContact = (contactId: string) => {
     const contact = linkedContacts.find((item) => item.id === contactId);
     if (!contact) {
@@ -8397,10 +8404,16 @@ function ProjectForm({
         </div>
       )}
       <div className="linked-contact-intake">
+        <Input
+          label="Search contacts"
+          value={contactSearchQuery}
+          placeholder="Search agent, client, email, or instruction"
+          onChange={setContactSearchQuery}
+        />
         <Select
-          label="Linked client workbook contact"
+          label="Contacts"
           value={draft.linkedContactId}
-          options={linkedContacts.map((contact) => [
+          options={contactSelectOptions.map((contact) => [
             contact.id,
             linkedContactLabel(contact),
           ])}
@@ -8408,7 +8421,9 @@ function ProjectForm({
           placeholder={
             contactSources
               ? linkedContacts.length > 0
-                ? "Select client/contact from linked spreadsheets"
+                ? filteredLinkedContacts.length > 0
+                  ? "Select contact"
+                  : "No contacts match search"
                 : "No linked contacts loaded yet"
               : "Contacts loading or unavailable"
           }
@@ -8418,7 +8433,6 @@ function ProjectForm({
           <div className="linked-contact-preview">
             <strong>{linkedContactName(selectedLinkedContact)}</strong>
             <span>{selectedLinkedContact.email || "No email detected"}</span>
-            <small>{draft.linkedContactSource}</small>
             <div className="contact-tags">
               {selectedLinkedContact.raw?.dcaContact && <span>DCA contact available</span>}
               {selectedLinkedContact.raw?.coverholderContact && <span>CH contact available</span>}
