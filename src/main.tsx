@@ -247,6 +247,11 @@ type ProjectVisibility =
   | "Assigned Projects"
   | "Finance Records";
 
+type GlobalSearchResult = {
+  project: AuditProject;
+  matches: string[];
+};
+
 type PrototypeUser = {
   fullName: string;
   username: string;
@@ -1240,6 +1245,123 @@ function formatCountdown(milliseconds: number) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function projectGlobalSearchFields(project: AuditProject) {
+  return [
+    {
+      label: "Assignment",
+      text: [project.assignmentNumber, project.umrNumber, project.id].join(" "),
+    },
+    {
+      label: "Client",
+      text: [
+        project.auditEntity,
+        project.clientCoverholderCode,
+        project.broker,
+        project.linkedContactId,
+        project.linkedContactSource,
+      ].join(" "),
+    },
+    {
+      label: "Status",
+      text: [
+        project.assignmentType,
+        project.auditType,
+        project.auditStructure,
+        project.currentStage,
+        displayAssignmentStatus(project.assignmentStatus),
+        project.quoteStatus,
+        project.reportStatus,
+        project.invoiceStatus,
+        project.damSubmissionStatus,
+        project.archived ? "archived" : "active",
+      ].join(" "),
+    },
+    {
+      label: "People",
+      text: [
+        project.assignedAuditor,
+        formatAuditTeam(project),
+        ...normalizeManagingAgentWorkstreams(project).flatMap((workstream) => [
+          workstream.managingAgentName,
+          workstream.managingAgentCode,
+          workstream.leadAuditor,
+          workstream.supportAuditors.join(" "),
+        ]),
+      ].join(" "),
+    },
+    {
+      label: "Schedule",
+      text: [
+        project.tentativeAuditWeek,
+        project.confirmedAuditDate,
+        project.dueDate,
+        project.auditLocation,
+        project.auditRemoteLink,
+        project.schedulingNotes,
+        project.calendarSyncStatus,
+      ].join(" "),
+    },
+    {
+      label: "Action",
+      text: [
+        project.nextAction,
+        project.blockers,
+        ...auditAttentionReasons(project),
+        ...project.labels,
+      ].join(" "),
+    },
+    {
+      label: "Comments",
+      text: project.comments
+        .map((comment) => `${comment.author} ${comment.body}`)
+        .join(" "),
+    },
+    {
+      label: "Activity",
+      text: [
+        ...project.statusHistory.map(
+          (item) => `${item.changedBy} ${item.fromStage} ${item.toStage} ${item.note}`,
+        ),
+        ...project.activityEvents.map(
+          (item) => `${item.actor} ${item.type} ${item.title} ${item.detail}`,
+        ),
+      ].join(" "),
+    },
+  ];
+}
+
+function globalSearchResults(projects: AuditProject[], query: string): GlobalSearchResult[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (normalizedQuery.length < 2) return [];
+  const terms = normalizedQuery.split(/\s+/).filter(Boolean);
+  return projects
+    .map((project) => {
+      const fields = projectGlobalSearchFields(project);
+      const searchable = fields.map((field) => field.text).join(" ").toLowerCase();
+      if (!terms.every((term) => searchable.includes(term))) return null;
+      const matches = fields
+        .filter((field) => {
+          const text = field.text.toLowerCase();
+          return text.includes(normalizedQuery) || terms.some((term) => text.includes(term));
+        })
+        .map((field) => field.label);
+      return {
+        project,
+        matches: Array.from(new Set(matches)).slice(0, 3),
+      };
+    })
+    .filter((result): result is GlobalSearchResult => Boolean(result))
+    .sort((a, b) => {
+      const aNumber = a.project.assignmentNumber.toLowerCase();
+      const bNumber = b.project.assignmentNumber.toLowerCase();
+      const aStarts = aNumber.startsWith(normalizedQuery) ? 0 : 1;
+      const bStarts = bNumber.startsWith(normalizedQuery) ? 0 : 1;
+      if (aStarts !== bStarts) return aStarts - bStarts;
+      return daysUntil(a.project.dueDate) - daysUntil(b.project.dueDate);
+    })
+    .slice(0, 8);
 }
 
 function createActivityEvent(
@@ -4117,6 +4239,15 @@ function App() {
         user={signedInUser}
         visibleCount={activeVisibleProjects.length}
       />
+      <GlobalSearch
+        projects={
+          hasFullProjectAccess(signedInUser) ? visibleProjects : activeVisibleProjects
+        }
+        onSelect={(project) => {
+          setSelectedId(project.id);
+          setActiveSection(project.archived ? "archive" : "assignments");
+        }}
+      />
       <AppNavigation
         activeSection={activeSection}
         setActiveSection={setActiveSection}
@@ -4643,6 +4774,76 @@ function AccessBanner({
         </div>
       </div>
       <strong>{visibleProjectMessage(user)}</strong>
+    </section>
+  );
+}
+
+function GlobalSearch({
+  projects,
+  onSelect,
+}: {
+  projects: AuditProject[];
+  onSelect: (project: AuditProject) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const results = useMemo(() => globalSearchResults(projects, query), [projects, query]);
+  const normalizedQuery = query.trim();
+
+  const openResult = (project: AuditProject) => {
+    setQuery("");
+    onSelect(project);
+  };
+
+  return (
+    <section className="panel global-search" aria-label="Global audit search">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (results[0]) openResult(results[0].project);
+        }}
+      >
+        <label>
+          Search audits
+          <input
+            type="search"
+            value={query}
+            placeholder="Search assignment, UMR, client, auditor, contact, status, note, or comment"
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </label>
+        {query && (
+          <button type="button" className="secondary" onClick={() => setQuery("")}>
+            Clear
+          </button>
+        )}
+      </form>
+      {normalizedQuery.length >= 2 && (
+        <div className="global-search-results" role="listbox">
+          {results.length === 0 ? (
+            <p className="muted-note">No visible audits match that search.</p>
+          ) : (
+            results.map(({ project, matches }) => (
+              <button
+                type="button"
+                key={project.id}
+                className="global-search-result"
+                onClick={() => openResult(project)}
+              >
+                <div>
+                  <strong>{project.assignmentNumber}</strong>
+                  <span>{project.auditEntity || project.clientCoverholderCode}</span>
+                  <small>
+                    {matches.length > 0 ? `Matched: ${matches.join(", ")}` : "Matched audit record"}
+                  </small>
+                </div>
+                <span className={project.archived ? "pill muted" : "pill ok"}>
+                  {project.archived ? "Archived" : project.currentStage}
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
     </section>
   );
 }

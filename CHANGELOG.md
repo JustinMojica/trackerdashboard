@@ -21,6 +21,8 @@ other sensitive configuration values.
   after 10 minutes and repeated incorrect entries are temporarily blocked.
 - Expanded the admin access preview so admins can pick a specific approved
   account and see the exact active audits currently visible to that user.
+- Added a global audit search that searches visible audits by assignment, UMR,
+  client, contact, auditor, status, schedule, notes, comments, and activity.
 
 ### Changed
 

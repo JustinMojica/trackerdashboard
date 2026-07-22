@@ -1119,6 +1119,46 @@ main {
   background: #edf5ff;
   border-color: #b8d8ff;
 }
+.global-search {
+  display: grid;
+  gap: 0.75rem;
+}
+.global-search form {
+  align-items: end;
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(260px, 1fr) auto;
+}
+.global-search input {
+  font-size: 1rem;
+}
+.global-search-results {
+  display: grid;
+  gap: 0.55rem;
+}
+.global-search-result {
+  align-items: center;
+  background: #f8fbff;
+  border: 1px solid #dfe7f2;
+  border-radius: 14px;
+  color: #172033;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.8rem;
+  text-align: left;
+}
+.global-search-result:hover {
+  background: #eef4ff;
+}
+.global-search-result div {
+  display: grid;
+  gap: 0.2rem;
+}
+.global-search-result span:not(.pill),
+.global-search-result small {
+  color: #53637a;
+}
 
 .summary-grid {
   display: grid;
@@ -2818,6 +2858,7 @@ textarea {
   }
   .summary-grid,
   .todays-work-grid,
+  .global-search form,
   .detail-grid,
   .assignment-action-bar,
   .assignment-detail-tabs,
@@ -2861,6 +2902,10 @@ textarea {
   }
   .assignment-action-buttons button {
     flex: 1 1 150px;
+  }
+  .global-search-result {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 
