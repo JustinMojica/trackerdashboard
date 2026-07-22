@@ -6234,6 +6234,9 @@ function OperationsCommandCenter({
   onExportReport: () => void;
 }) {
   const [copyMessage, setCopyMessage] = useState("");
+  const [openDetailSections, setOpenDetailSections] = useState<
+    Record<string, boolean>
+  >({});
   const openProjects = projects.filter((project) => project.currentStage !== "Closed");
   const criticalProjects = openProjects.filter((project) =>
     slaSignals(project).some((signal) => signal.level === "Critical"),
@@ -6242,30 +6245,25 @@ function OperationsCommandCenter({
   const brief = operationsBrief(projects, currentUser);
   const coordinatorInsights = auditCoordinatorInsights(openProjects, currentUser);
   const documentPackages = documentIntelligenceSummary(openProjects);
-  const roleCards = [
+  const needsReview = documentPackages.filter((item) => item.confidence !== "High");
+  const priorityInsights = coordinatorInsights.filter((insight) =>
+    ["Critical", "High"].includes(insight.priority),
+  );
+  const commandSummaryCards = [
     {
-      label: "Manager console",
-      value: criticalProjects.length,
-      detail: "Critical SLA or blocker items needing review.",
-    },
-    {
-      label: "Auditor console",
+      label: "My assignments",
       value: openProjects.filter((project) => projectHasAuditor(project, currentUser.fullName)).length,
-      detail: "Open assignments where you are lead or support.",
+      detail: "Open work where you are lead or support.",
     },
     {
-      label: "Finance console",
-      value: openProjects.filter(
-        (project) =>
-          stages.indexOf(project.currentStage) >= stages.indexOf("Invoice") &&
-          project.invoiceStatus !== "Paid",
-      ).length,
-      detail: "Invoice-stage assignments still not paid.",
+      label: "Needs review",
+      value: priorityInsights.length,
+      detail: "Critical or high-priority operating actions.",
     },
     {
-      label: "Draft queue",
+      label: "Drafts ready",
       value: draftQueue.length,
-      detail: "Email or document drafts ready for manual review.",
+      detail: "Email or document drafts waiting for review.",
     },
   ];
 
@@ -6277,14 +6275,23 @@ function OperationsCommandCenter({
       setCopyMessage("Copy failed. Select the brief text manually.");
     }
   };
+  const toggleDetailSection = (section: string) => {
+    setOpenDetailSections((current) => ({
+      ...current,
+      [section]: !current[section],
+    }));
+  };
 
   return (
     <section className="panel operations-command">
       <div className="section-title">
         <div>
           <p className="eyebrow dark">Operating system</p>
-          <h2>Workflow, SLA, automation, and reporting control</h2>
-          <span>{brief.summary}</span>
+          <h2>Command center</h2>
+          <span>
+            Start with the top actions. Expand supporting queues only when you
+            need detail.
+          </span>
         </div>
         <div className="storage-actions">
           <button type="button" className="secondary" onClick={copyPrompt}>
@@ -6296,8 +6303,8 @@ function OperationsCommandCenter({
         </div>
       </div>
       {copyMessage && <p className="muted-note">{copyMessage}</p>}
-      <div className="ops-role-grid">
-        {roleCards.map((card) => (
+      <div className="ops-focus-grid">
+        {commandSummaryCards.map((card) => (
           <article key={card.label}>
             <span>{card.label}</span>
             <strong>{card.value}</strong>
@@ -6305,11 +6312,25 @@ function OperationsCommandCenter({
           </article>
         ))}
       </div>
-      <AiAuditCoordinatorPanel insights={coordinatorInsights} onSelect={onSelect} />
-      <DocumentIntelligenceOverview packages={documentPackages} onSelect={onSelect} />
-      <div className="ops-grid">
-        <article>
-          <h3>SLA escalation</h3>
+      <AiAuditCoordinatorPanel
+        insights={coordinatorInsights.slice(0, 3)}
+        onSelect={onSelect}
+      />
+      <div className="command-detail-stack">
+        <CommandCenterDisclosure
+          title="Evidence package review"
+          count={needsReview.length}
+          open={Boolean(openDetailSections.evidence)}
+          onToggle={() => toggleDetailSection("evidence")}
+        >
+          <DocumentIntelligenceOverview packages={documentPackages} onSelect={onSelect} />
+        </CommandCenterDisclosure>
+        <CommandCenterDisclosure
+          title="SLA escalation"
+          count={criticalProjects.length}
+          open={Boolean(openDetailSections.sla)}
+          onToggle={() => toggleDetailSection("sla")}
+        >
           {criticalProjects.length === 0 ? (
             <p className="muted-note">No critical visible assignments.</p>
           ) : (
@@ -6328,9 +6349,13 @@ function OperationsCommandCenter({
               ))}
             </div>
           )}
-        </article>
-        <article>
-          <h3>Email and document queue</h3>
+        </CommandCenterDisclosure>
+        <CommandCenterDisclosure
+          title="Email and document queue"
+          count={draftQueue.length}
+          open={Boolean(openDetailSections.drafts)}
+          onToggle={() => toggleDetailSection("drafts")}
+        >
           {draftQueue.length === 0 ? (
             <p className="muted-note">No draft actions needed for visible assignments.</p>
           ) : (
@@ -6349,18 +6374,54 @@ function OperationsCommandCenter({
               ))}
             </div>
           )}
-        </article>
-        <article>
-          <h3>Assistant brief</h3>
+        </CommandCenterDisclosure>
+        <CommandCenterDisclosure
+          title="Assistant brief"
+          count={brief.managerFocus.length}
+          open={Boolean(openDetailSections.brief)}
+          onToggle={() => toggleDetailSection("brief")}
+        >
           <p>{brief.summary}</p>
           <ul className="compact-list">
             {brief.managerFocus.map((item) => (
               <li key={item}>{item}</li>
             ))}
           </ul>
-        </article>
+        </CommandCenterDisclosure>
       </div>
     </section>
+  );
+}
+
+function CommandCenterDisclosure({
+  title,
+  count,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string;
+  count: number;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <article className="command-detail-section">
+      <button
+        type="button"
+        className="command-detail-toggle"
+        aria-expanded={open}
+        onClick={onToggle}
+      >
+        <span>
+          <strong>{title}</strong>
+          <small>{count} item{count === 1 ? "" : "s"}</small>
+        </span>
+        <em>{open ? "Hide" : "Show"}</em>
+      </button>
+      {open && <div className="command-detail-content">{children}</div>}
+    </article>
   );
 }
 
@@ -6377,11 +6438,10 @@ function AiAuditCoordinatorPanel({
       <div className="section-title">
         <div>
           <p className="eyebrow dark">AI audit coordinator</p>
-          <h2>Recommended operating actions</h2>
+          <h2>Top operating actions</h2>
           <span>
-            Ranked from project status, blockers, documents, quote stage,
-            scheduling, and finance signals. External AI can be added later;
-            this version is deterministic and reviewable.
+            The highest-priority visible items from blockers, document gaps,
+            quote stage, scheduling, and finance signals.
           </span>
         </div>
       </div>

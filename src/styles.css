@@ -1418,14 +1418,14 @@ main {
 }
 .operations-command {
   display: grid;
-  gap: 1rem;
+  gap: 0.9rem;
 }
-.ops-role-grid {
+.ops-focus-grid {
   display: grid;
   gap: 0.75rem;
-  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
 }
-.ops-role-grid article,
+.ops-focus-grid article,
 .ops-grid article {
   background: #f8fbff;
   border: 1px solid #dfe7f2;
@@ -1434,17 +1434,17 @@ main {
   gap: 0.35rem;
   padding: 0.9rem;
 }
-.ops-role-grid span {
+.ops-focus-grid span {
   color: #66748a;
   font-size: 0.78rem;
   font-weight: 900;
   text-transform: uppercase;
 }
-.ops-role-grid strong {
+.ops-focus-grid strong {
   color: #172033;
   font-size: 1.7rem;
 }
-.ops-role-grid p,
+.ops-focus-grid p,
 .ops-grid p {
   color: #53637a;
   margin: 0;
@@ -1469,7 +1469,7 @@ main {
 .document-intelligence-columns {
   display: grid;
   gap: 0.75rem;
-  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  grid-template-columns: repeat(3, minmax(200px, 1fr));
 }
 .coordinator-card,
 .document-intelligence-card {
@@ -1527,6 +1527,55 @@ main {
 .readiness-track.compact {
   height: 8px;
   width: 100%;
+}
+.command-detail-stack {
+  display: grid;
+  gap: 0.65rem;
+}
+.command-detail-section {
+  background: #f8fbff;
+  border: 1px solid #dfe7f2;
+  border-radius: 14px;
+  overflow: hidden;
+}
+.command-detail-toggle {
+  align-items: center;
+  background: transparent;
+  box-shadow: none;
+  color: #172033;
+  display: flex;
+  justify-content: space-between;
+  padding: 0.85rem 1rem;
+  text-align: left;
+  width: 100%;
+}
+.command-detail-toggle:hover {
+  background: #eef4ff;
+  transform: none;
+}
+.command-detail-toggle span {
+  display: grid;
+  gap: 0.15rem;
+}
+.command-detail-toggle small {
+  color: #53637a;
+  font-weight: 800;
+}
+.command-detail-toggle em {
+  color: #1358db;
+  font-style: normal;
+  font-weight: 900;
+}
+.command-detail-content {
+  border-top: 1px solid #dfe7f2;
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.85rem;
+}
+.command-detail-content .document-intelligence-panel {
+  background: transparent;
+  border: 0;
+  padding: 0;
 }
 .draft-list {
   display: grid;
@@ -2599,7 +2648,7 @@ textarea {
   .storage-config,
   .storage-list-id-grid,
   .admin-activity-controls,
-  .ops-role-grid,
+  .ops-focus-grid,
   .ops-grid,
   .coordinator-grid,
   .document-intelligence-grid,
@@ -2647,7 +2696,7 @@ textarea {
   .storage-config,
   .storage-list-id-grid,
   .admin-activity-controls,
-  .ops-role-grid,
+  .ops-focus-grid,
   .ops-grid,
   .coordinator-grid,
   .document-intelligence-grid,

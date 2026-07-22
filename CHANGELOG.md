@@ -70,6 +70,9 @@ other sensitive configuration values.
   loaded contact list instead of stopping at the first few A contacts.
 - Consolidated backend storage, rollout health, exports, and guarded
   maintenance into a single Admin tools tab so daily admin work stays separate.
+- Simplified the Command Center default view into a focused summary plus top
+  operating actions, with evidence review, SLA, draft queue, and assistant
+  brief available as collapsed detail sections.
 
 ### Verified
 
