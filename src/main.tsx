@@ -1072,9 +1072,10 @@ function rolePermissionPreview(user: PrototypeUser) {
     },
     {
       label: "Finance updates",
-      allowed: user.role === "Finance",
-      detail:
-        user.role === "Finance"
+      allowed: user.role === "Finance" || fullAccess,
+      detail: fullAccess
+        ? "Can update finance fields on visible audits."
+        : user.role === "Finance"
           ? "Can update finance fields on finance-visible audits."
           : "Cannot update finance-only fields.",
     },
@@ -4795,6 +4796,7 @@ function AdminWorkspace({
             <UserManagementPanel
               accessUsers={accessUsers}
               pendingRequests={pendingRequests}
+              activeProjects={activeProjects}
               onSaveUser={onSaveUser}
               onApproveRequest={onApproveRequest}
               onRejectRequest={onRejectRequest}
@@ -5533,12 +5535,14 @@ function CentralStoragePanel({
 function UserManagementPanel({
   accessUsers,
   pendingRequests,
+  activeProjects,
   onSaveUser,
   onApproveRequest,
   onRejectRequest,
 }: {
   accessUsers: PrototypeUser[];
   pendingRequests: PrototypeUser[];
+  activeProjects: AuditProject[];
   onSaveUser: (email: string, user: PrototypeUser) => void;
   onApproveRequest: (username: string, update: AccessApprovalUpdate) => void;
   onRejectRequest: (username: string) => void;
@@ -5557,6 +5561,8 @@ function UserManagementPanel({
   const [approvalDrafts, setApprovalDrafts] = useState<
     Record<string, AccessApprovalUpdate>
   >({});
+  const [previewMode, setPreviewMode] = useState<"role" | "account">("account");
+  const [previewEmail, setPreviewEmail] = useState(firstEmail);
   const [previewRole, setPreviewRole] = useState<UserRole>("Auditor");
   const [previewVisibility, setPreviewVisibility] =
     useState<ProjectVisibility>("Role Default");
@@ -5592,6 +5598,14 @@ function UserManagementPanel({
     setDraft(latest);
   }, [approvedUsersSignature, selectedEmail]);
 
+  useEffect(() => {
+    if (!approvedAccessUsers.length) return;
+    const latest =
+      approvedAccessUsers.find((user) => user.email === previewEmail) ??
+      approvedAccessUsers[0];
+    setPreviewEmail(latest.email);
+  }, [approvedUsersSignature, previewEmail]);
+
   const updateDraft = <K extends keyof PrototypeUser>(
     key: K,
     value: PrototypeUser[K],
@@ -5621,7 +5635,7 @@ function UserManagementPanel({
       },
     }));
   };
-  const previewUser = withUserDefaults({
+  const roleTemplatePreviewUser = withUserDefaults({
     fullName: `${previewRole} preview`,
     username: `preview.${previewRole.toLowerCase().replace(/\s+/g, ".")}`,
     role: previewRole,
@@ -5632,9 +5646,19 @@ function UserManagementPanel({
     emailVerified: true,
     accessRequestStatus: "Approved",
   });
+  const selectedPreviewUser =
+    approvedAccessUsers.find((user) => user.email === previewEmail) ??
+    approvedAccessUsers[0];
+  const previewUser =
+    previewMode === "account" && selectedPreviewUser
+      ? selectedPreviewUser
+      : roleTemplatePreviewUser;
   const previewVisibilityDetails = auditVisibilityPreview(previewUser);
   const previewTabs = visibleAppSectionsForUser(previewUser);
   const previewPermissions = rolePermissionPreview(previewUser);
+  const visiblePreviewAudits = activeProjects
+    .filter((project) => canViewProject(previewUser, project))
+    .sort((a, b) => a.assignmentNumber.localeCompare(b.assignmentNumber));
 
   return (
     <section className="panel user-management">
@@ -5864,19 +5888,41 @@ function UserManagementPanel({
         <div className="access-preview-panel">
           <div className="section-subhead">
             <div>
-              <h3>Role access preview</h3>
+              <h3>Access preview</h3>
               <span>
-                Check what a role can see before approving an account or changing
-                a user.
+                Check generic role access or pick an approved account to see the
+                exact active audits visible to that user.
               </span>
             </div>
           </div>
           <div className="form-grid access-preview-controls">
             <Select
+              label="Preview type"
+              value={previewMode}
+              options={[
+                ["account", "Specific approved account"],
+                ["role", "Role template"],
+              ]}
+              placeholder="Select preview type"
+              onChange={(value) => setPreviewMode(value as "role" | "account")}
+            />
+            <Select
+              label="Approved account"
+              value={previewEmail}
+              options={approvedAccessUsers.map((user) => [
+                user.email,
+                `${user.fullName} (${user.role})`,
+              ])}
+              placeholder="Select user"
+              disabled={previewMode !== "account" || approvedAccessUsers.length === 0}
+              onChange={setPreviewEmail}
+            />
+            <Select
               label="Preview role"
               value={previewRole}
               options={userRoleOptions}
               placeholder="Select role"
+              disabled={previewMode !== "role"}
               onChange={(value) => setPreviewRole(value as UserRole)}
             />
             <Select
@@ -5884,6 +5930,7 @@ function UserManagementPanel({
               value={previewVisibility}
               options={projectVisibilityOptions}
               placeholder="Select visibility"
+              disabled={previewMode !== "role"}
               onChange={(value) =>
                 setPreviewVisibility(value as ProjectVisibility)
               }
@@ -5905,7 +5952,49 @@ function UserManagementPanel({
               </span>
               <p>{previewVisibilityDetails.detail}</p>
             </article>
+            <article>
+              <strong>Previewing</strong>
+              <span>{previewUser.fullName}</span>
+              <p>
+                {previewMode === "account"
+                  ? `${previewUser.role} with ${previewUser.defaultVisibility} visibility.`
+                  : "Template preview only; actual audit visibility depends on assigned audit team records."}
+              </p>
+            </article>
+            <article>
+              <strong>Visible active audits</strong>
+              <span className="user-status-badge visibility">
+                {visiblePreviewAudits.length}
+              </span>
+              <p>
+                {previewMode === "account"
+                  ? "These are the active audits this approved account can currently open."
+                  : "Role templates show what the role can access in general."}
+              </p>
+            </article>
           </div>
+          {previewMode === "account" && (
+            <div className="visible-audit-preview-list">
+              {visiblePreviewAudits.length === 0 ? (
+                <p className="muted-note">
+                  No active audits are visible to this account with its current
+                  role, visibility, and audit assignments.
+                </p>
+              ) : (
+                visiblePreviewAudits.map((project) => (
+                  <article key={project.id}>
+                    <div>
+                      <strong>{project.assignmentNumber}</strong>
+                      <span>{project.auditEntity}</span>
+                    </div>
+                    <span className="user-status-badge visibility">
+                      {project.currentStage}
+                    </span>
+                  </article>
+                ))
+              )}
+            </div>
+          )}
           <div className="permission-preview-list">
             {previewPermissions.map((permission) => (
               <article

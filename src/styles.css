@@ -955,6 +955,34 @@ main {
   gap: 0.6rem;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
+.visible-audit-preview-list {
+  background: #fff;
+  border: 1px solid #dfe7f2;
+  border-radius: 14px;
+  display: grid;
+  gap: 0.5rem;
+  max-height: 300px;
+  overflow: auto;
+  padding: 0.75rem;
+}
+.visible-audit-preview-list article {
+  align-items: center;
+  background: #f8fbff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  padding: 0.65rem;
+}
+.visible-audit-preview-list article div {
+  display: grid;
+  gap: 0.15rem;
+}
+.visible-audit-preview-list article span:not(.user-status-badge) {
+  color: #53637a;
+  font-size: 0.82rem;
+}
 .permission-preview-list article {
   border-left: 4px solid #94a3b8;
   display: grid;
