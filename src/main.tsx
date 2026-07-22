@@ -1003,6 +1003,100 @@ function visibleProjectMessage(user: PrototypeUser) {
   return "Showing audits where you are the lead or supporting auditor.";
 }
 
+function visibleAppSectionsForUser(user: PrototypeUser) {
+  const sections = [
+    "Dashboard",
+    "Assignments",
+    "Scheduling",
+    "Command center",
+    "Reports",
+  ];
+  if (hasFullProjectAccess(user)) sections.push("Archive");
+  if (user.role === "Admin") sections.push("Admin");
+  return sections;
+}
+
+function auditVisibilityPreview(user: PrototypeUser) {
+  const visibility = effectiveVisibility(user);
+  if (visibility === "All Audits") {
+    return {
+      label: visibility,
+      detail: "Can see every active audit in the tracker.",
+    };
+  }
+  if (visibility === "Finance Records") {
+    return {
+      label: visibility,
+      detail:
+        "Can see invoice, final submission, close-out, and audits with invoice activity.",
+    };
+  }
+  return {
+    label: visibility,
+    detail: "Can see audits where they are the lead or supporting auditor.",
+  };
+}
+
+function rolePermissionPreview(user: PrototypeUser) {
+  const fullAccess = hasFullProjectAccess(user);
+  return [
+    {
+      label: "Create audits",
+      allowed: canCreateProject(user),
+      detail: canCreateProject(user)
+        ? "Can add new audit records."
+        : "Cannot add new audit records.",
+    },
+    {
+      label: "Edit audits",
+      allowed: fullAccess || user.role === "Auditor",
+      detail: fullAccess
+        ? "Can edit all visible audit records."
+        : user.role === "Auditor"
+          ? "Can edit assigned audits."
+          : "Cannot edit audit fields.",
+    },
+    {
+      label: "Stage override",
+      allowed: canOverrideStageRestriction(user),
+      detail: canOverrideStageRestriction(user)
+        ? "Can move audits past required-item warnings."
+        : "Cannot override stage requirements.",
+    },
+    {
+      label: "Archive audits",
+      allowed: canArchiveProject(user),
+      detail: canArchiveProject(user)
+        ? "Can archive and restore audits."
+        : "Cannot archive or restore audits.",
+    },
+    {
+      label: "Finance updates",
+      allowed: user.role === "Finance",
+      detail:
+        user.role === "Finance"
+          ? "Can update finance fields on finance-visible audits."
+          : "Cannot update finance-only fields.",
+    },
+    {
+      label: "User approvals",
+      allowed: user.role === "Admin",
+      detail:
+        user.role === "Admin"
+          ? "Can approve accounts and manage roles."
+          : "Cannot approve accounts or manage roles.",
+    },
+    {
+      label: "Comments",
+      allowed: user.role !== "Read Only",
+      detail:
+        user.role !== "Read Only"
+          ? "Can add comments on visible audits."
+          : "Can view visible audits without adding comments.",
+    },
+  ];
+}
+
 function projectMatchesWorkState(project: AuditProject, workState: string) {
   if (workState === "blocked") {
     return (
@@ -5423,6 +5517,9 @@ function UserManagementPanel({
   const [approvalDrafts, setApprovalDrafts] = useState<
     Record<string, AccessApprovalUpdate>
   >({});
+  const [previewRole, setPreviewRole] = useState<UserRole>("Auditor");
+  const [previewVisibility, setPreviewVisibility] =
+    useState<ProjectVisibility>("Role Default");
   const waitingOnEmailCount = pendingRequests.filter(
     (user) => user.accessRequestStatus === "Pending Verification",
   ).length;
@@ -5484,6 +5581,20 @@ function UserManagementPanel({
       },
     }));
   };
+  const previewUser = withUserDefaults({
+    fullName: `${previewRole} preview`,
+    username: `preview.${previewRole.toLowerCase().replace(/\s+/g, ".")}`,
+    role: previewRole,
+    permissionGroup: previewRole,
+    email: "preview@mosaic-international.com",
+    active: true,
+    defaultVisibility: previewVisibility,
+    emailVerified: true,
+    accessRequestStatus: "Approved",
+  });
+  const previewVisibilityDetails = auditVisibilityPreview(previewUser);
+  const previewTabs = visibleAppSectionsForUser(previewUser);
+  const previewPermissions = rolePermissionPreview(previewUser);
 
   return (
     <section className="panel user-management">
@@ -5710,6 +5821,66 @@ function UserManagementPanel({
             </>
           )}
         </form>
+        <div className="access-preview-panel">
+          <div className="section-subhead">
+            <div>
+              <h3>Role access preview</h3>
+              <span>
+                Check what a role can see before approving an account or changing
+                a user.
+              </span>
+            </div>
+          </div>
+          <div className="form-grid access-preview-controls">
+            <Select
+              label="Preview role"
+              value={previewRole}
+              options={userRoleOptions}
+              placeholder="Select role"
+              onChange={(value) => setPreviewRole(value as UserRole)}
+            />
+            <Select
+              label="Preview visibility"
+              value={previewVisibility}
+              options={projectVisibilityOptions}
+              placeholder="Select visibility"
+              onChange={(value) =>
+                setPreviewVisibility(value as ProjectVisibility)
+              }
+            />
+          </div>
+          <div className="access-preview-summary">
+            <article>
+              <strong>Visible tabs</strong>
+              <div className="access-preview-chips">
+                {previewTabs.map((tab) => (
+                  <span key={tab}>{tab}</span>
+                ))}
+              </div>
+            </article>
+            <article>
+              <strong>Audit visibility</strong>
+              <span className="user-status-badge visibility">
+                {previewVisibilityDetails.label}
+              </span>
+              <p>{previewVisibilityDetails.detail}</p>
+            </article>
+          </div>
+          <div className="permission-preview-list">
+            {previewPermissions.map((permission) => (
+              <article
+                className={permission.allowed ? "allowed" : "not-allowed"}
+                key={permission.label}
+              >
+                <div>
+                  <strong>{permission.label}</strong>
+                  <span>{permission.allowed ? "Allowed" : "Not allowed"}</span>
+                </div>
+                <p>{permission.detail}</p>
+              </article>
+            ))}
+          </div>
+        </div>
       </div>
     </section>
   );

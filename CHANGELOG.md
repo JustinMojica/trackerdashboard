@@ -15,6 +15,8 @@ other sensitive configuration values.
 - Added an Admin/Audit Manager stage override confirmation so required-item
   restrictions can be bypassed when needed while still recording the reason in
   the audit trail.
+- Added an admin role access preview so admins can check visible tabs, audit
+  visibility, and common permissions before approving or editing users.
 
 ### Changed
 
