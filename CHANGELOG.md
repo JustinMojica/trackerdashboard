@@ -91,6 +91,8 @@ other sensitive configuration values.
   the collapsed section is more specific.
 - Updated attention summary wording so mixed DCA/CH document issues use neutral
   document language instead of labeling CH audits as missing DCA agreements.
+- Clarified Command Center attention summaries with explicit "other issue"
+  wording, blocker chips on each audit, and access reasons in Admin user previews.
 
 ### Verified
 

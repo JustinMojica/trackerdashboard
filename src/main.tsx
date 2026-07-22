@@ -967,6 +967,18 @@ function canViewProject(user: PrototypeUser, project: AuditProject) {
   return projectHasAuditor(project, user.fullName);
 }
 
+function auditAccessReason(user: PrototypeUser, project: AuditProject) {
+  const visibility = effectiveVisibility(user);
+  if (visibility === "All Audits") return "All audits visibility";
+  if (visibility === "Finance Records" && isFinanceProject(project)) {
+    return "Finance visibility";
+  }
+  const teamRole = auditTeamRole(project, user.fullName);
+  if (teamRole === "Lead Auditor") return "Lead auditor";
+  if (teamRole === "Supporting Auditor") return "Supporting auditor";
+  return "Visible by role";
+}
+
 function canEditProject(user: PrototypeUser, project: AuditProject) {
   if (hasFullProjectAccess(user)) return true;
   return user.role === "Auditor" && projectHasAuditor(project, user.fullName);
@@ -1617,7 +1629,9 @@ function topAttentionSummary(projects: AuditProject[]) {
       label = "Missing coverholder documents";
     }
   }
-  return ranked.length > 1 ? `${label} +${ranked.length - 1}` : label;
+  if (ranked.length === 1) return label;
+  const otherCount = ranked.length - 1;
+  return `${label} +${otherCount} other issue${otherCount === 1 ? "" : "s"}`;
 }
 
 function intakeRequiredIssues(project: AuditProject) {
@@ -6004,6 +6018,7 @@ function UserManagementPanel({
                     <div>
                       <strong>{project.assignmentNumber}</strong>
                       <span>{project.auditEntity}</span>
+                      <small>{auditAccessReason(previewUser, project)}</small>
                     </div>
                     <span className="user-status-badge visibility">
                       {project.currentStage}
@@ -6734,18 +6749,34 @@ function OperationsCommandCenter({
             <p className="muted-note">No critical visible assignments.</p>
           ) : (
             <div className="queue-list">
-              {criticalProjects.slice(0, 5).map((project) => (
-                <button
-                  type="button"
-                  className="queue-item"
-                  key={project.id}
-                  onClick={() => onSelect(project.id)}
-                >
-                  <strong>{project.assignmentNumber}</strong>
-                  <span>{project.auditEntity || project.clientCoverholderCode}</span>
-                  <small>{slaSignals(project).map((signal) => signal.label).join(", ")}</small>
-                </button>
-              ))}
+              {criticalProjects.slice(0, 5).map((project) => {
+                const attentionReasons = auditAttentionReasons(project);
+                const chips =
+                  attentionReasons.length > 0
+                    ? attentionReasons
+                    : slaSignals(project).map((signal) => signal.label);
+                return (
+                  <button
+                    type="button"
+                    className="queue-item"
+                    key={project.id}
+                    onClick={() => onSelect(project.id)}
+                  >
+                    <strong>{project.assignmentNumber}</strong>
+                    <span>{project.auditEntity || project.clientCoverholderCode}</span>
+                    <span className="attention-chip-row">
+                      {chips.slice(0, 3).map((chip) => (
+                        <small className="pill danger" key={chip}>
+                          {chip}
+                        </small>
+                      ))}
+                      {chips.length > 3 && (
+                        <small className="pill muted">+{chips.length - 3} more</small>
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           )}
         </CommandCenterDisclosure>

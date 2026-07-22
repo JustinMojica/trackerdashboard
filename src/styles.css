@@ -983,6 +983,11 @@ main {
   color: #53637a;
   font-size: 0.82rem;
 }
+.visible-audit-preview-list article small {
+  color: #174ea6;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
 .permission-preview-list article {
   border-left: 4px solid #94a3b8;
   display: grid;
@@ -1796,6 +1801,15 @@ main {
 }
 .queue-item small {
   font-size: 0.76rem;
+}
+.attention-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.queue-item .attention-chip-row {
+  color: inherit;
+  font-size: inherit;
 }
 .panel {
   border-radius: 18px;
