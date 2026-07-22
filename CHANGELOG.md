@@ -89,6 +89,8 @@ other sensitive configuration values.
   when no workbook email is detected, while keeping workbook-prefilled recipients.
 - Renamed the Command Center attention section to Items holding up audits so
   the collapsed section is more specific.
+- Updated attention summary wording so mixed DCA/CH document issues use neutral
+  document language instead of labeling CH audits as missing DCA agreements.
 
 ### Verified
 

@@ -1598,7 +1598,25 @@ function topAttentionSummary(projects: AuditProject[]) {
   });
   const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
   if (ranked.length === 0) return "Needs attention";
-  const [label] = ranked[0];
+  const hasDcaAudit = projects.some(isDcaProject);
+  const hasCoverholderAudit = projects.some((project) => !isDcaProject(project));
+  const documentReasonCount = ranked.filter(([label]) =>
+    [
+      "Missing BAA",
+      "Missing endorsements",
+      "Missing Premium BDX",
+      "Missing Claims BDX",
+      "Missing DCA Agreement",
+    ].includes(label),
+  ).length;
+  let [label] = ranked[0];
+  if (documentReasonCount > 1) {
+    if (hasDcaAudit && hasCoverholderAudit) {
+      label = "Missing required documents";
+    } else if (hasCoverholderAudit) {
+      label = "Missing coverholder documents";
+    }
+  }
   return ranked.length > 1 ? `${label} +${ranked.length - 1}` : label;
 }
 
