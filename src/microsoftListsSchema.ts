@@ -31,6 +31,7 @@ export type CentralActivityEvent = {
 export type CentralAuditProject = {
   id: string;
   assignmentNumber: string;
+  umrNumber: string;
   assignmentSource: string;
   assignmentType: string;
   auditEntity: string;
@@ -175,6 +176,7 @@ export const microsoftListSchemas: MicrosoftListSchema[] = [
     columns: [
       text("TrackerAssignmentId", "Tracker assignment ID", true, true),
       text("AssignmentNumber", "Assignment number", true, true),
+      text("UmrNumber", "UMR number", false, true),
       choice("AssignmentSource", "Assignment source", ["Email", "DAM"], true),
       choice("AssignmentType", "Assignment type", ["DCA", "CH", "MGA", "Company Contract"], true),
       text("AuditEntity", "Audit entity", true, true),
@@ -436,6 +438,7 @@ function projectToAssignmentRow(project: CentralAuditProject): MicrosoftListSeed
     Title: project.assignmentNumber,
     TrackerAssignmentId: project.id,
     AssignmentNumber: project.assignmentNumber,
+    UmrNumber: project.umrNumber,
     AssignmentSource: project.assignmentSource,
     AssignmentType: project.assignmentType,
     AuditEntity: project.auditEntity,

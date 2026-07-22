@@ -11,6 +11,7 @@ import {
 const project: CentralAuditProject = {
   id: "project-1",
   assignmentNumber: "A-100",
+  umrNumber: "B1234ABC5678",
   assignmentSource: "Email",
   assignmentType: "CH",
   auditEntity: "Example Coverholder",

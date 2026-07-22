@@ -48,6 +48,8 @@ other sensitive configuration values.
   and current README language.
 - Replaced generic attention labels with specific attention reasons such as
   missing BAA, missing Premium BDX, missing Claims BDX, or quote not accepted.
+- Added a UMR number field to Add/Edit Audit, audit detail, CSV exports, and
+  the Microsoft Lists audit assignment schema.
 - Added a template recipient picker that shows all detected workbook email
   options and remembers the preferred recipient for the same contact and
   routing type.

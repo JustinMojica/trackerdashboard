@@ -154,6 +154,7 @@ export type ManagingAgentWorkstream = {
 export type AuditProject = {
   id: string;
   assignmentNumber: string;
+  umrNumber: string;
   assignmentSource: AssignmentSource;
   assignmentType: AssignmentType;
   auditEntity: string;
@@ -590,6 +591,7 @@ const legacySampleProjectIds = new Set([
 const blankProject = (): AuditProject => ({
   id: `audit-${Date.now()}`,
   assignmentNumber: `AA-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+  umrNumber: "",
   assignmentSource: "Email",
   assignmentType: "CH",
   auditEntity: "",
@@ -1188,6 +1190,7 @@ export function withProjectDefaults(project: AuditProject): AuditProject {
       : "Solo");
   const normalizedProject = {
     ...project,
+    umrNumber: project.umrNumber ?? "",
     assignmentType: project.assignmentType ?? "CH",
     auditEntity: project.auditEntity ?? "",
     assignedAuditor: primaryAuditor({ ...project, auditTeam }),
@@ -2815,6 +2818,7 @@ function exportProjectsToCsv(projects: AuditProject[]) {
     (project: AuditProject) => string | number | boolean,
   ][] = [
     ["Assignment Number", (project) => project.assignmentNumber],
+    ["UMR Number", (project) => project.umrNumber],
     ["Source", (project) => project.assignmentSource],
     ["Assignment Type", (project) => project.assignmentType],
     ["Audit Entity", (project) => project.auditEntity],
@@ -7547,6 +7551,7 @@ function ProjectDetail({
               )}
               <div className="meta-grid">
                 <Meta label="Source" value={project.assignmentSource} />
+                <Meta label="UMR number" value={project.umrNumber || "Not set"} />
                 <Meta label="Assignment type" value={project.assignmentType} />
                 <Meta label="Audit structure" value={project.auditStructure} />
                 <Meta label="Audit entity" value={project.auditEntity || "Not set"} />
@@ -9179,6 +9184,11 @@ function ProjectForm({
           label="Assignment number"
           value={draft.assignmentNumber}
           onChange={(value) => update("assignmentNumber", value)}
+        />
+        <Input
+          label="UMR number"
+          value={draft.umrNumber}
+          onChange={(value) => update("umrNumber", value)}
         />
         <Select
           label="Source"
