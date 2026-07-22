@@ -8066,12 +8066,18 @@ function TemplateLibrary({
     communicationTemplates[0].id,
   );
   const [copyMessage, setCopyMessage] = useState("");
+  const [manualReceiverEmail, setManualReceiverEmail] = useState<string | null>(
+    null,
+  );
   const [recipientPreferences, setRecipientPreferences] = useState(
     loadRecipientPreferences,
   );
   useEffect(() => {
     void loadSharedRecipientPreferences().then(setRecipientPreferences);
   }, []);
+  useEffect(() => {
+    setManualReceiverEmail(null);
+  }, [project.id, selectedTemplateId]);
   const template =
     communicationTemplates.find((item) => item.id === selectedTemplateId) ??
     communicationTemplates[0];
@@ -8088,20 +8094,23 @@ function TemplateLibrary({
   const savedRecipientIsAvailable = receiver.recipientOptions.some(
     (option) => option.email === savedRecipientEmail,
   );
-  const selectedReceiverEmail = savedRecipientIsAvailable
+  const detectedReceiverEmail = savedRecipientIsAvailable
     ? savedRecipientEmail
     : receiver.email;
+  const selectedReceiverEmail =
+    manualReceiverEmail === null ? detectedReceiverEmail : manualReceiverEmail;
+  const actionableReceiverEmail = selectedReceiverEmail.trim();
   const selectedRecipient = receiver.recipientOptions.find(
-    (option) => option.email === selectedReceiverEmail,
+    (option) => option.email === actionableReceiverEmail,
   );
   const fullDraft = [
-    `To: ${selectedReceiverEmail || `[${receiver.kind} email needed]`}`,
+    `To: ${actionableReceiverEmail || `[${receiver.kind} email needed]`}`,
     `Receiver: ${receiver.name} (${receiver.kind})`,
     `Subject: ${subject}`,
     "",
     body,
   ].join("\n");
-  const mailToRecipients = selectedReceiverEmail
+  const mailToRecipients = actionableReceiverEmail
     .split(/[;,]/)
     .map((email) => email.trim())
     .filter(Boolean)
@@ -8125,6 +8134,7 @@ function TemplateLibrary({
 
   const selectRecipient = (email: string) => {
     if (!email || !receiver.preferenceKey) return;
+    setManualReceiverEmail(email);
     setRecipientPreferences((current) => ({
       ...current,
       [receiver.preferenceKey]: email,
@@ -8162,7 +8172,7 @@ function TemplateLibrary({
         <article className={`receiver-card ${receiver.confidence === "Matched workbook" ? "ready" : "blocked"}`}>
           <span>Receiver</span>
           <strong>{receiver.name}</strong>
-          <p>{selectedReceiverEmail || "No email found yet"}</p>
+          <p>{actionableReceiverEmail || "No email found yet"}</p>
           <small>
             {receiver.kind} | {receiver.confidence}
           </small>
@@ -8174,7 +8184,7 @@ function TemplateLibrary({
             <>
               <Select
                 label="Recipient"
-                value={selectedReceiverEmail}
+                value={detectedReceiverEmail}
                 options={receiver.recipientOptions.map((option) => [
                   option.email,
                   option.label,
@@ -8189,7 +8199,7 @@ function TemplateLibrary({
             </>
           ) : (
             <p>
-              {selectedReceiverEmail
+              {actionableReceiverEmail
                 ? "Only one recipient was found for this routing type."
                 : "No recipient was found for this routing type."}
             </p>
@@ -8203,13 +8213,25 @@ function TemplateLibrary({
         <article className="receiver-card">
           <span>Signature</span>
           <strong>Handled by Outlook</strong>
-          <p>Open the draft in Outlook so your default account signature can be applied by Outlook.</p>
+          <p>
+            The tracker opens a draft. Your Outlook signature is applied by
+            Outlook when you send from your Outlook account.
+          </p>
         </article>
       </div>
       <div className="template-preview">
         <label>
           To
-          <input readOnly value={selectedReceiverEmail || `${receiver.kind} email not found`} />
+          <input
+            value={selectedReceiverEmail}
+            placeholder={`${receiver.kind} email`}
+            onChange={(event) => setManualReceiverEmail(event.target.value)}
+          />
+          <small className="field-help">
+            {detectedReceiverEmail
+              ? "Prefilled from the workbook. Type over it if needed."
+              : "No workbook email was found. Type the recipient email here."}
+          </small>
         </label>
         <label>
           Subject
@@ -8223,7 +8245,7 @@ function TemplateLibrary({
       <div className="template-actions">
         <button
           type="button"
-          disabled={!selectedReceiverEmail}
+          disabled={!actionableReceiverEmail}
           onClick={() => {
             window.location.href = outlookDraftUrl;
           }}
@@ -8233,8 +8255,8 @@ function TemplateLibrary({
         <button
           type="button"
           className="secondary"
-          disabled={!selectedReceiverEmail}
-          onClick={() => void copyText("Receiver", selectedReceiverEmail)}
+          disabled={!actionableReceiverEmail}
+          onClick={() => void copyText("Receiver", actionableReceiverEmail)}
         >
           Copy receiver
         </button>

@@ -73,6 +73,8 @@ other sensitive configuration values.
 - Simplified the Command Center default view into a focused summary plus top
   operating actions, with evidence review, SLA, draft queue, and assistant
   brief available as collapsed detail sections.
+- Made the template `To` field editable so users can manually enter a recipient
+  when no workbook email is detected, while keeping workbook-prefilled recipients.
 
 ### Verified
 

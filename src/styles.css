@@ -2433,6 +2433,11 @@ textarea {
   min-height: 240px;
   resize: vertical;
 }
+.field-help {
+  color: #53637a;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
 .template-actions {
   align-items: center;
   display: flex;
