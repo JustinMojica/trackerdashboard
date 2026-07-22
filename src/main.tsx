@@ -426,10 +426,10 @@ const calendarSyncStatusOptions: CalendarSyncStatus[] = [
   "Conflict Review",
 ];
 
-const assignmentStatusOptions: AssignmentStatus[] = [
+const assignmentStatusOptions: (AssignmentStatus | [AssignmentStatus, string])[] = [
   "New",
   "In Progress",
-  "Blocked",
+  ["Blocked", "Needs attention"],
   "On Hold",
   "Completed",
 ];
@@ -1028,7 +1028,7 @@ function filterPresetsForUser(user: PrototypeUser): FilterPreset[] {
     { id: "dueSoon", label: "Due soon", filters: { dueDate: "dueSoon" } },
     {
       id: "blocked",
-      label: "Blocked",
+      label: "Needs attention",
       filters: { workState: "blocked" },
     },
     {
@@ -1444,6 +1444,59 @@ export function computedBlockers(project: AuditProject) {
   return blockers;
 }
 
+function blockerDisplayLabel(blocker: string) {
+  const normalized = blocker.toLowerCase();
+  if (normalized === "baa received") return "Missing BAA";
+  if (normalized === "endorsements received") return "Missing endorsements";
+  if (normalized === "premium bdx received" || normalized.includes("premium bdx required")) {
+    return "Missing Premium BDX";
+  }
+  if (normalized === "dca agreement received") return "Missing DCA Agreement";
+  if (normalized === "claims bdx received" || normalized.includes("claims bdx required")) {
+    return "Missing Claims BDX";
+  }
+  if (normalized.includes("quote not accepted")) return "Quote not accepted";
+  if (normalized.includes("coverholder response required")) {
+    return "Waiting on coverholder response";
+  }
+  if (normalized.includes("managing agent workstream")) {
+    return "Managing agent needs attention";
+  }
+  return blocker;
+}
+
+function auditAttentionReasons(project: AuditProject) {
+  const reasons = computedBlockers(project).map(blockerDisplayLabel);
+  if (reasons.length === 0 && project.assignmentStatus === "Blocked") {
+    reasons.push("Marked for attention");
+  }
+  return reasons;
+}
+
+function primaryAttentionReason(project: AuditProject) {
+  return auditAttentionReasons(project)[0] || "";
+}
+
+function displayAssignmentStatus(status: AssignmentStatus) {
+  return status === "Blocked" ? "Needs attention" : status;
+}
+
+function displayGateStatus(status: WorkflowGate["status"]) {
+  return status === "Blocked" ? "Needs attention" : status;
+}
+
+function topAttentionSummary(projects: AuditProject[]) {
+  const counts = new Map<string, number>();
+  projects.forEach((project) => {
+    const reason = primaryAttentionReason(project);
+    if (reason) counts.set(reason, (counts.get(reason) ?? 0) + 1);
+  });
+  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  if (ranked.length === 0) return "Needs attention";
+  const [label] = ranked[0];
+  return ranked.length > 1 ? `${label} +${ranked.length - 1}` : label;
+}
+
 function intakeRequiredIssues(project: AuditProject) {
   const issues: string[] = [];
   if (!project.assignmentNumber.trim()) issues.push("Assignment number is required.");
@@ -1694,7 +1747,7 @@ function recommendedNextSteps(
   );
   pushUnique(
     steps,
-    "Review blockers and clear any stale labels before the next stage move.",
+    "Review attention items and clear any stale labels before the next stage move.",
   );
 
   return steps.slice(0, 5);
@@ -2368,7 +2421,7 @@ function workflowGates(project: AuditProject): WorkflowGate[] {
     {
       label: "Next stage",
       status: stageMoveBlocker ? "Blocked" : target ? "Ready" : "Watch",
-      detail: stageMoveBlocker || (target ? `Ready to move toward ${target}.` : "Project is at the final stage."),
+      detail: stageMoveBlocker || (target ? `Ready to move toward ${target}.` : "Audit is at the final stage."),
     },
     {
       label: "Documents",
@@ -2422,10 +2475,11 @@ function slaSignals(project: AuditProject): SlaSignal[] {
     });
   }
   if (project.assignmentStatus === "Blocked" || computedBlockers(project).length > 0) {
+    const attentionReasons = auditAttentionReasons(project);
     signals.push({
       level: "Critical",
-      label: "Blocked",
-      detail: computedBlockers(project).slice(0, 2).join("; ") || "Assignment is marked blocked.",
+      label: attentionReasons[0] || "Needs attention",
+      detail: attentionReasons.slice(0, 2).join("; ") || "Assignment needs attention.",
     });
   }
   if (project.labels.includes("Waiting on Broker")) {
@@ -2597,12 +2651,13 @@ function auditCoordinatorInsights(projects: AuditProject[], user: PrototypeUser)
       );
     }
     if (project.assignmentStatus === "Blocked" || computedBlockers(project).length > 0) {
+      const attentionReasons = auditAttentionReasons(project);
       addInsight(
         project,
         "Critical",
-        "Blocked workflow",
-        computedBlockers(project).slice(0, 2).join("; ") || "Assignment is marked blocked.",
-        "Clear or assign each blocker before moving the stage forward.",
+        attentionReasons[0] || "Needs attention",
+        attentionReasons.slice(0, 2).join("; ") || "Assignment needs attention.",
+        "Resolve or assign each attention item before moving the stage forward.",
       );
     }
     if (missingDocuments.length > 0) {
@@ -2737,7 +2792,9 @@ function buildOperationsReport(projects: AuditProject[], user: PrototypeUser) {
     totals: {
       projects: projects.length,
       open: projects.filter((project) => project.currentStage !== "Closed").length,
-      critical: rows.filter((row) => row.slaSignals.includes("Overdue") || row.slaSignals.includes("Blocked")).length,
+      critical: projects.filter(
+        (project) => daysUntil(project.dueDate) < 0 || auditAttentionReasons(project).length > 0,
+      ).length,
       drafts: rows.reduce((sum, row) => sum + row.drafts.length, 0),
     },
     assistantBrief: operationsBrief(projects, user),
@@ -2766,7 +2823,7 @@ function exportProjectsToCsv(projects: AuditProject[]) {
     ["Lead Auditor", (project) => primaryAuditor(project)],
     ["Audit Team", (project) => formatAuditTeam(project)],
     ["Current Stage", (project) => project.currentStage],
-    ["Assignment Status", (project) => project.assignmentStatus],
+    ["Assignment Status", (project) => displayAssignmentStatus(project.assignmentStatus)],
     ["Quote Status", (project) => project.quoteStatus],
     ["Quote Amount", (project) => project.quoteAmount],
     ["Due Date", (project) => project.dueDate],
@@ -2783,7 +2840,7 @@ function exportProjectsToCsv(projects: AuditProject[]) {
     ["Labels", (project) => project.labels.join("; ")],
     ["Payment Received", (project) => project.paymentReceived],
     ["Next Action", (project) => project.nextAction],
-    ["Blockers", (project) => computedBlockers(project).join("; ")],
+    ["Needs Attention", (project) => auditAttentionReasons(project).join("; ")],
   ];
   const csv = [
     columns.map(([label]) => escapeCsv(label)).join(","),
@@ -5769,6 +5826,7 @@ function Dashboard({ projects }: { projects: AuditProject[] }) {
       computedBlockers(project).length > 0 ||
       project.assignmentStatus === "Blocked",
   ).length;
+  const attentionLabel = topAttentionSummary(projects);
   const quoteValue = projects.reduce(
     (sum, project) => sum + project.quoteAmount,
     0,
@@ -5781,7 +5839,7 @@ function Dashboard({ projects }: { projects: AuditProject[] }) {
           projects.filter((project) => project.currentStage !== "Closed").length
         }
       />
-      <SummaryCard label="Blocked" value={blocked} tone="danger" />
+      <SummaryCard label={attentionLabel} value={blocked} tone="danger" />
       <SummaryCard label="Overdue" value={overdue} tone="danger" />
       <SummaryCard label="Due in 3 days" value={dueSoon} tone="warning" />
       <SummaryCard
@@ -6190,7 +6248,7 @@ function ScheduleAuditModal({
           Scheduling notes
           <textarea
             value={notes}
-            placeholder="Availability, travel constraints, client scheduling notes, or calendar blockers"
+            placeholder="Availability, travel constraints, client scheduling notes, or calendar conflicts"
             onChange={(event) => setNotes(event.target.value)}
           />
         </label>
@@ -6459,7 +6517,7 @@ function AiAuditCoordinatorPanel({
           <p className="eyebrow dark">AI audit coordinator</p>
           <h2>Top operating actions</h2>
           <span>
-            The highest-priority visible items from blockers, document gaps,
+            The highest-priority visible items from attention items, document gaps,
             quote stage, scheduling, and finance signals.
           </span>
         </div>
@@ -6556,6 +6614,9 @@ function TodaysWork({
   onSelect: (id: string) => void;
 }) {
   const openProjects = projects.filter((project) => project.currentStage !== "Closed");
+  const attentionItems = sortByUrgency(
+    openProjects.filter((project) => projectMatchesWorkState(project, "blocked")),
+  );
   const queues = [
     {
       label: "Overdue",
@@ -6575,11 +6636,9 @@ function TodaysWork({
       ),
     },
     {
-      label: "Blocked",
+      label: topAttentionSummary(attentionItems),
       tone: "queue-danger",
-      items: sortByUrgency(
-        openProjects.filter((project) => projectMatchesWorkState(project, "blocked")),
-      ),
+      items: attentionItems,
     },
     {
       label: "Waiting on broker",
@@ -6835,7 +6894,7 @@ function WorkloadCounts({
                 <strong>{row.auditor}</strong>
                 <small>
                   {row.openCount} open · {row.leadCount} lead · {row.supportCount} support ·{" "}
-                  {row.blockedCount} blocked
+                  {row.blockedCount} need attention
                 </small>
               </div>
             </div>
@@ -6846,7 +6905,7 @@ function WorkloadCounts({
               </span>
               <span className={row.blockedCount ? "workload-stat danger" : "workload-stat"}>
                 <strong>{row.blockedCount}</strong>
-                Blocked
+                Needs attention
               </span>
               <span className={row.dueSoonCount ? "workload-stat warning" : "workload-stat"}>
                 <strong>{row.dueSoonCount}</strong>
@@ -6903,7 +6962,7 @@ function ProjectTable({
               <th>Due</th>
               <th>Payment received</th>
               <th>Next action</th>
-              <th>Blockers</th>
+              <th>Needs attention</th>
             </tr>
           </thead>
           <tbody>
@@ -6927,7 +6986,7 @@ function ProjectTable({
                   </td>
                   <td>{project.paymentReceived ? "Yes" : "No"}</td>
                   <td>{project.nextAction}</td>
-                  <td>{blockers.length ? blockers.join("; ") : "—"}</td>
+                  <td>{blockers.length ? blockers.map(blockerDisplayLabel).join("; ") : "—"}</td>
                 </tr>
               );
             })}
@@ -7015,7 +7074,7 @@ function FiltersPanel({
           label="Work state"
           value={filters.workState}
           options={[
-            ["blocked", "Blocked"],
+            ["blocked", "Needs attention"],
             ["waitingOnBroker", "Waiting on broker"],
             ["pendingPayment", "Pending payment"],
           ]}
@@ -7178,7 +7237,7 @@ function Kanban({
                     )}
                     <span className={`pill ${due.className}`}>{due.text}</span>
                     {computedBlockers(project).length > 0 && (
-                      <span className="pill danger">Blocked</span>
+                      <span className="pill danger">{primaryAttentionReason(project)}</span>
                     )}
                     <select
                       value={project.currentStage}
@@ -7342,12 +7401,16 @@ function AssignmentOverviewSummary({
       <article>
         <span>Stage</span>
         <strong>{project.currentStage}</strong>
-        <small>{project.assignmentStatus}</small>
+        <small>{displayAssignmentStatus(project.assignmentStatus)}</small>
       </article>
       <article className={blockers.length ? "blocked" : "ready"}>
-        <span>Blockers</span>
-        <strong>{blockers.length ? blockers.length : "None"}</strong>
-        <small>{blockers[0] || "No blockers recorded"}</small>
+        <span>Needs attention</span>
+        <strong>{blockers.length ? blockerDisplayLabel(blockers[0]) : "None"}</strong>
+        <small>
+          {blockers.length > 1
+            ? `${blockers.length - 1} more item${blockers.length === 2 ? "" : "s"}`
+            : "No attention items recorded"}
+        </small>
       </article>
       <article className={readiness.percent === 100 ? "ready" : "watch"}>
         <span>Documents</span>
@@ -7518,7 +7581,7 @@ function ProjectDetail({
                 <h3>Next action</h3>
                 <HoverLink
                   label="Why these steps?"
-                  helper="Recommended next steps combine blockers, due date, document readiness, stage, and the recorded next action."
+                  helper="Recommended next steps combine attention items, due date, document readiness, stage, and the recorded next action."
                 />
               </div>
               <p>{project.nextAction || "No next action recorded."}</p>
@@ -7547,7 +7610,7 @@ function ProjectDetail({
                   aria-expanded={showBlockers}
                   onClick={() => setShowBlockers((value) => !value)}
                 >
-                  <strong>Blockers</strong>
+                  <strong>Needs attention</strong>
                   <span className={blockers.length ? undefined : "ok-count"}>
                     {blockers.length
                       ? showBlockers
@@ -7559,12 +7622,12 @@ function ProjectDetail({
                 {showBlockers && blockers.length > 0 && (
                   <ul className="blockers">
                     {blockers.map((blocker) => (
-                      <li key={blocker}>{blocker}</li>
+                      <li key={blocker}>{blockerDisplayLabel(blocker)}</li>
                     ))}
                   </ul>
                 )}
                 {showBlockers && blockers.length === 0 && (
-                  <p className="muted-note">No blockers recorded.</p>
+                  <p className="muted-note">No attention items recorded.</p>
                 )}
               </div>
               {canEdit && (
@@ -8048,7 +8111,7 @@ function WorkflowEnginePanel({ project }: { project: AuditProject }) {
       <div className="workflow-gates">
         {gates.map((gate) => (
           <div className={`workflow-gate ${gate.status.toLowerCase()}`} key={gate.label}>
-            <span>{gate.status}</span>
+            <span>{displayGateStatus(gate.status)}</span>
             <strong>{gate.label}</strong>
             <p>{gate.detail}</p>
           </div>
@@ -8703,7 +8766,7 @@ function ManagingAgentWorkstreamEditor({
             />
           </div>
           <label>
-            Workstream blockers
+            Workstream attention items
             <textarea
               value={workstream.blockers}
               onChange={(event) =>
@@ -9205,7 +9268,7 @@ function ProjectForm({
         <Select
           label="Assignment status"
           value={draft.assignmentStatus}
-          options={["New", "In Progress", "Blocked", "On Hold", "Completed"]}
+          options={assignmentStatusOptions}
           placeholder="Select status"
           onChange={(value) =>
             update("assignmentStatus", value as AssignmentStatus)
@@ -9310,7 +9373,7 @@ function ProjectForm({
         Scheduling notes
         <textarea
           value={draft.schedulingNotes}
-          placeholder="Availability, travel constraints, preferred dates, client scheduling notes, or calendar blockers"
+          placeholder="Availability, travel constraints, preferred dates, client scheduling notes, or calendar conflicts"
           onChange={(event) => update("schedulingNotes", event.target.value)}
         />
       </label>
@@ -9393,7 +9456,7 @@ function ProjectForm({
         />
       </label>
       <label>
-        Manual blockers
+        Manual attention items
         <textarea
           value={draft.blockers}
           onChange={(event) => update("blockers", event.target.value)}

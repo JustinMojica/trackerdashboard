@@ -32,7 +32,7 @@ other sensitive configuration values.
   email wording.
 - Collapsed recommended next steps by default and shortened stage override
   confirmation wording.
-- Collapsed blockers by default, removed extra override-helper wording, and
+- Collapsed attention items by default, removed extra override-helper wording, and
   explained that suggested folders are a copyable audit file-structure plan.
 - Improved linked spreadsheet contact refresh by reading workbook worksheets in
   limited parallel batches, caching successful refreshes, and reusing in-flight
@@ -44,8 +44,10 @@ other sensitive configuration values.
   an Outlook draft action.
 - Simplified the linked contact selector to show contact names only, retitled
   it to Contacts, and added search before selecting workbook contacts.
-- Replaced visible audit/audits wording with audit/audits wording across
-  the app UI and current README language.
+- Replaced old non-audit wording with audit/audits wording across the app UI
+  and current README language.
+- Replaced generic attention labels with specific attention reasons such as
+  missing BAA, missing Premium BDX, missing Claims BDX, or quote not accepted.
 - Added a template recipient picker that shows all detected workbook email
   options and remembers the preferred recipient for the same contact and
   routing type.
@@ -65,7 +67,7 @@ other sensitive configuration values.
 - Split the assignment detail page into Overview, Documents, Team & scheduling,
   and Activity tabs, with Overview as the default view for cleaner daily use.
 - Added an assignment action bar and compact Overview status summary for common
-  actions, blockers, readiness, schedule, quote, and next action.
+  actions, attention items, readiness, schedule, quote, and next action.
 - Moved archived audits into a dedicated Archive workspace that is visible
   only to Admin and Audit Manager users.
 - Fixed the Add Audit Contacts dropdown so browse mode can reach the full
@@ -90,7 +92,7 @@ other sensitive configuration values.
 ### Added
 
 - Added an AI Audit Coordinator panel in Command Center that ranks visible
-  audit actions by blockers, due dates, document gaps, quote status, calendar
+  audit actions by attention items, due dates, document gaps, quote status, calendar
   sync, and invoice follow-up.
 - Added document intelligence summaries that classify evidence package type,
   readiness confidence, missing evidence, and recommended handling at both the
@@ -207,7 +209,7 @@ other sensitive configuration values.
 
 - Added Solo vs Coordinated audit structure support so one parent audit card can
   track multiple managing-agent workstreams without duplicating Kanban cards.
-- Added managing-agent workstream rollups for active, complete, waived, blocked,
+- Added managing-agent workstream rollups for active, complete, waived, needing attention,
   missing-document, and needs-attention counts.
 - Added DCA-specific document readiness: DCA Agreement and Claims BDX are now
   the required readiness documents for DCA assignments.
@@ -282,7 +284,7 @@ other sensitive configuration values.
   assistant brief.
 - Added per-audit workflow controls for stage gates, document/quote/close-out
   gates, SLA signals, SharePoint workspace folder planning, and top draft copy.
-- Added an operations report export with blockers, next actions, SLA signals,
+- Added an operations report export with attention items, next actions, SLA signals,
   draft queue, and workspace folders for each visible assignment.
 - Added live deployment metadata support for GitHub Actions deployments.
 - Added admin health reporting for runtime configuration source, Node version,
