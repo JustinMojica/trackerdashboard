@@ -87,6 +87,8 @@ other sensitive configuration values.
   brief available as collapsed detail sections.
 - Made the template `To` field editable so users can manually enter a recipient
   when no workbook email is detected, while keeping workbook-prefilled recipients.
+- Renamed the Command Center attention section to Items holding up audits so
+  the collapsed section is more specific.
 
 ### Verified
 

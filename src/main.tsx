@@ -6707,7 +6707,7 @@ function OperationsCommandCenter({
           <DocumentIntelligenceOverview packages={documentPackages} onSelect={onSelect} />
         </CommandCenterDisclosure>
         <CommandCenterDisclosure
-          title="Needs attention"
+          title="Items holding up audits"
           count={criticalProjects.length}
           open={Boolean(openDetailSections.sla)}
           onToggle={() => toggleDetailSection("sla")}
