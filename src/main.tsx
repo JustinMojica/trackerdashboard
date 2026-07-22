@@ -2526,7 +2526,7 @@ function operationsBrief(projects: AuditProject[], user: PrototypeUser): Operati
   ];
   return {
     summary: `${user.role} console: ${openProjects.length} open, ${criticalProjects.length} critical, ${draftQueue.length} communication drafts ready for review.`,
-    risks: topRisks.length ? topRisks : ["No critical SLA risks in visible assignments."],
+    risks: topRisks.length ? topRisks : ["No critical items in visible assignments."],
     actions: actions.length ? actions : ["Create or import real assignments to populate the operating console."],
     managerFocus,
     aiPrompt: [
@@ -4436,7 +4436,7 @@ function AppNavigation({
     {
       id: "command",
       label: "Command center",
-      helper: "SLA escalation, draft queue, and manager operating brief.",
+      helper: "Items needing attention, draft queue, and manager operating brief.",
     },
     {
       id: "reports",
@@ -6326,7 +6326,7 @@ function OperationsCommandCenter({
           <DocumentIntelligenceOverview packages={documentPackages} onSelect={onSelect} />
         </CommandCenterDisclosure>
         <CommandCenterDisclosure
-          title="SLA escalation"
+          title="Needs attention"
           count={criticalProjects.length}
           open={Boolean(openDetailSections.sla)}
           onToggle={() => toggleDetailSection("sla")}
