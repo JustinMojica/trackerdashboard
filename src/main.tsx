@@ -1222,6 +1222,13 @@ function formatDateTime(value: string) {
   });
 }
 
+function formatCountdown(milliseconds: number) {
+  const totalSeconds = Math.max(Math.ceil(milliseconds / 1000), 0);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
 function createActivityEvent(
   type: AuditActivityEvent["type"],
   title: string,
@@ -4348,6 +4355,7 @@ function LoginScreen({
   onRefresh: () => void;
 }) {
   const [verificationCode, setVerificationCode] = useState("");
+  const [nowMs, setNowMs] = useState(Date.now());
 
   const submitEmailVerification = (event: FormEvent) => {
     event.preventDefault();
@@ -4370,6 +4378,21 @@ function LoginScreen({
     authStatus === "request-required" ||
     access?.status === "request-required" ||
     access?.status === "not-requested";
+  const verificationExpiresAt = access?.user?.verificationExpiresAt ?? "";
+  const verificationExpiresAtMs = verificationExpiresAt
+    ? new Date(verificationExpiresAt).getTime()
+    : 0;
+  const verificationRemainingMs = verificationExpiresAtMs
+    ? verificationExpiresAtMs - nowMs
+    : 0;
+  const verificationExpired =
+    pendingVerification && verificationExpiresAtMs > 0 && verificationRemainingMs <= 0;
+
+  useEffect(() => {
+    if (!pendingVerification || !verificationExpiresAtMs) return;
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [pendingVerification, verificationExpiresAtMs]);
 
   return (
     <main className="login-shell">
@@ -4429,13 +4452,30 @@ function LoginScreen({
                 A verification code was sent to {access?.user?.email}. Enter it before
                 admin approval.
               </p>
+              {verificationExpiresAtMs > 0 && (
+                <div
+                  className={`verification-timer ${verificationExpired ? "expired" : ""}`}
+                  role="status"
+                >
+                  {verificationExpired ? (
+                    <span>Code expired. Request account approval again to receive a new code.</span>
+                  ) : (
+                    <span>Code expires in {formatCountdown(verificationRemainingMs)}</span>
+                  )}
+                </div>
+              )}
               <Input
                 label="Verification code"
                 value={verificationCode}
                 onChange={setVerificationCode}
                 placeholder="6-digit code"
               />
-              <button type="submit">Confirm code</button>
+              <button
+                type="submit"
+                disabled={verificationExpired || verificationCode.trim().length === 0}
+              >
+                Confirm code
+              </button>
             </form>
           )}
           {pendingApproval && (

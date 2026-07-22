@@ -24,9 +24,13 @@ const recipientPreferencesFile = resolve(dataDir, "recipient-preferences.json");
 const distDir = resolve(rootDir, "dist");
 const deployInfoFile = resolve(rootDir, "server", "deploy-info.json");
 const oauthStates = new Map();
+const verificationFailures = new Map();
 const cookieName = "tracker_session";
 const oauthCookieName = "tracker_oauth_state";
 const sessionSecretMinLength = 32;
+const verificationCodeTtlMs = 10 * 60 * 1000;
+const verificationMaxAttempts = 5;
+const verificationLockoutMs = 15 * 60 * 1000;
 const requiredGraphRoles = ["Mail.Send", "Sites.ReadWrite.All", "Calendars.ReadWrite"];
 const weakSessionSecrets = new Set([
   "dev",
@@ -472,6 +476,7 @@ async function createOrRefreshAccessRequest(store, email, name) {
   user.rejectionReason = "";
   user.verificationCodeHash = hashCode(email, code);
   user.verificationSentAt = now;
+  clearVerificationFailures(email);
   await sendVerificationEmail(user, code);
   return user;
 }
@@ -490,12 +495,40 @@ async function verifyAccessCode(request, response) {
   if (!user || user.accessRequestStatus !== "Pending Verification") {
     return sendJson(request, response, 400, { error: "no_pending_verification" });
   }
+  const lockout = activeVerificationLockout(user.email);
+  if (lockout) {
+    return sendJson(request, response, 429, {
+      error: "verification_locked",
+      message: `Too many incorrect codes. Try again in ${formatRetryAfter(lockout.retryAfterMs)}.`,
+      retryAfterSeconds: Math.ceil(lockout.retryAfterMs / 1000),
+    });
+  }
+  if (verificationCodeExpired(user)) {
+    user.verificationCodeHash = "";
+    await saveUserStore(store);
+    clearVerificationFailures(user.email);
+    return sendJson(request, response, 400, {
+      error: "code_expired",
+      message: "That verification code expired. Request account approval again to receive a new code.",
+    });
+  }
   if (!code || hashCode(user.email, code) !== user.verificationCodeHash) {
-    return sendJson(request, response, 400, { error: "invalid_code" });
+    const attempt = recordVerificationFailure(user.email);
+    const locked = activeVerificationLockout(user.email);
+    const statusCode = locked ? 429 : 400;
+    return sendJson(request, response, statusCode, {
+      error: locked ? "verification_locked" : "invalid_code",
+      message: locked
+        ? `Too many incorrect codes. Try again in ${formatRetryAfter(locked.retryAfterMs)}.`
+        : `Verification code was not accepted. ${attempt.remainingAttempts} attempt${attempt.remainingAttempts === 1 ? "" : "s"} left before lockout.`,
+      remainingAttempts: attempt.remainingAttempts,
+      retryAfterSeconds: locked ? Math.ceil(locked.retryAfterMs / 1000) : 0,
+    });
   }
   user.emailVerified = true;
   user.accessRequestStatus = "Pending Approval";
   user.verificationCodeHash = "";
+  clearVerificationFailures(user.email);
   await saveUserStore(store);
   await sendAdminNotification(user).catch((error) => console.warn(error));
   return sendJson(request, response, 200, { ok: true, user: publicUser(user) });
@@ -1451,6 +1484,7 @@ async function serveStatic(request, response, url) {
 }
 
 function publicUser(user) {
+  const verificationExpiresAt = verificationExpiry(user);
   return {
     email: user.email,
     username: user.username,
@@ -1465,7 +1499,62 @@ function publicUser(user) {
     approvedAt: user.approvedAt,
     approvedBy: user.approvedBy,
     rejectionReason: user.rejectionReason,
+    verificationSentAt:
+      user.accessRequestStatus === "Pending Verification" ? user.verificationSentAt || "" : "",
+    verificationExpiresAt:
+      user.accessRequestStatus === "Pending Verification" && verificationExpiresAt
+        ? verificationExpiresAt.toISOString()
+        : "",
   };
+}
+
+function verificationExpiry(user) {
+  if (!user?.verificationSentAt) return null;
+  const sentAt = new Date(user.verificationSentAt).getTime();
+  if (Number.isNaN(sentAt)) return null;
+  return new Date(sentAt + verificationCodeTtlMs);
+}
+
+function verificationCodeExpired(user) {
+  const expiresAt = verificationExpiry(user);
+  if (!expiresAt) return true;
+  return Date.now() > expiresAt.getTime();
+}
+
+function activeVerificationLockout(email) {
+  const failure = verificationFailures.get(email.toLowerCase());
+  if (!failure?.lockedUntil) return null;
+  const retryAfterMs = failure.lockedUntil - Date.now();
+  if (retryAfterMs <= 0) {
+    verificationFailures.delete(email.toLowerCase());
+    return null;
+  }
+  return { retryAfterMs };
+}
+
+function recordVerificationFailure(email) {
+  const key = email.toLowerCase();
+  const current = verificationFailures.get(key);
+  const count = (current?.count ?? 0) + 1;
+  const remainingAttempts = Math.max(verificationMaxAttempts - count, 0);
+  verificationFailures.set(key, {
+    count,
+    lockedUntil: remainingAttempts === 0 ? Date.now() + verificationLockoutMs : 0,
+  });
+  return { remainingAttempts };
+}
+
+function clearVerificationFailures(email) {
+  verificationFailures.delete(email.toLowerCase());
+}
+
+function formatRetryAfter(milliseconds) {
+  const totalSeconds = Math.max(Math.ceil(milliseconds / 1000), 1);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes <= 0) return `${seconds} second${seconds === 1 ? "" : "s"}`;
+  if (seconds === 0) return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  return `${minutes} minute${minutes === 1 ? "" : "s"} ${seconds} second${seconds === 1 ? "" : "s"}`;
 }
 
 function setSession(response, session) {

@@ -307,6 +307,19 @@ main {
 .verification-form p {
   grid-column: 1 / -1;
 }
+.verification-timer {
+  background: #eef4ff;
+  border: 1px solid #cbdcf8;
+  color: #174ea6;
+  font-weight: 900;
+  grid-column: 1 / -1;
+  padding: 0.45rem 0.6rem;
+}
+.verification-timer.expired {
+  background: #fff2f2;
+  border-color: #f2b8b5;
+  color: #b42318;
+}
 .login-form {
   align-items: end;
   display: grid;

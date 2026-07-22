@@ -22,6 +22,8 @@ export type SecureAccessUser = {
   approvedAt: string;
   approvedBy: string;
   rejectionReason: string;
+  verificationSentAt?: string;
+  verificationExpiresAt?: string;
 };
 
 export type SecureAccessState = {

@@ -17,6 +17,8 @@ other sensitive configuration values.
   the audit trail.
 - Added an admin role access preview so admins can check visible tabs, audit
   visibility, and common permissions before approving or editing users.
+- Added email verification expiry and lockout protection so signup codes expire
+  after 10 minutes and repeated incorrect entries are temporarily blocked.
 
 ### Changed
 

@@ -179,3 +179,135 @@ test("configured admin email is repaired if stored as a non-admin", async () => 
     },
   );
 });
+
+test("expired email verification codes are rejected and cleared", async () => {
+  const sessionSecret = "this-is-a-strong-test-session-secret-value";
+  const email = "pending@example.com";
+  const code = "123456";
+  const oldSentAt = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+  await withAccessUsersFile(
+    [
+      {
+        email,
+        username: "pending",
+        fullName: "Pending User",
+        role: "Auditor",
+        permissionGroup: "Auditor",
+        active: false,
+        defaultVisibility: "Role Default",
+        emailVerified: false,
+        accessRequestStatus: "Pending Verification",
+        requestedAt: oldSentAt,
+        approvedAt: "",
+        approvedBy: "",
+        rejectionReason: "",
+        verificationCodeHash: createHmac("sha256", sessionSecret)
+          .update(`${email}:${code}`)
+          .digest("hex"),
+        verificationSentAt: oldSentAt,
+      },
+    ],
+    async (usersFile) => {
+      const { baseUrl, child } = await startSecureServer({
+        MICROSOFT_TENANT_ID: "11111111-1111-1111-1111-111111111111",
+        MICROSOFT_CLIENT_ID: "22222222-2222-2222-2222-222222222222",
+        MICROSOFT_CLIENT_SECRET: "configured-client-secret",
+        MICROSOFT_MAIL_FROM: "tracker@example.com",
+        TRACKER_SESSION_SECRET: sessionSecret,
+        TRACKER_ALLOWED_EMAIL_DOMAINS: "example.com",
+        TRACKER_ADMIN_EMAILS: "admin@example.com",
+        TRACKER_USER_STORE: "local",
+        TRACKER_USERS_SITE_ID: "",
+        TRACKER_USERS_LIST_ID: "",
+      });
+
+      try {
+        const response = await fetch(`${baseUrl}/api/access/verify-code`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            cookie: forgedSessionCookie(sessionSecret, { email, status: "pending" }),
+          },
+          body: JSON.stringify({ code }),
+        });
+        const body = await response.json();
+        const stored = JSON.parse(readFileSync(usersFile, "utf8"));
+
+        assert.equal(response.status, 400);
+        assert.equal(body.error, "code_expired");
+        assert.equal(stored.users[0].accessRequestStatus, "Pending Verification");
+        assert.equal(stored.users[0].verificationCodeHash, "");
+      } finally {
+        await stopSecureServer(child);
+      }
+    },
+  );
+});
+
+test("email verification locks after repeated invalid codes", async () => {
+  const sessionSecret = "this-is-a-strong-test-session-secret-value";
+  const email = "pending@example.com";
+  const code = "123456";
+  const sentAt = new Date().toISOString();
+  await withAccessUsersFile(
+    [
+      {
+        email,
+        username: "pending",
+        fullName: "Pending User",
+        role: "Auditor",
+        permissionGroup: "Auditor",
+        active: false,
+        defaultVisibility: "Role Default",
+        emailVerified: false,
+        accessRequestStatus: "Pending Verification",
+        requestedAt: sentAt,
+        approvedAt: "",
+        approvedBy: "",
+        rejectionReason: "",
+        verificationCodeHash: createHmac("sha256", sessionSecret)
+          .update(`${email}:${code}`)
+          .digest("hex"),
+        verificationSentAt: sentAt,
+      },
+    ],
+    async () => {
+      const { baseUrl, child } = await startSecureServer({
+        MICROSOFT_TENANT_ID: "11111111-1111-1111-1111-111111111111",
+        MICROSOFT_CLIENT_ID: "22222222-2222-2222-2222-222222222222",
+        MICROSOFT_CLIENT_SECRET: "configured-client-secret",
+        MICROSOFT_MAIL_FROM: "tracker@example.com",
+        TRACKER_SESSION_SECRET: sessionSecret,
+        TRACKER_ALLOWED_EMAIL_DOMAINS: "example.com",
+        TRACKER_ADMIN_EMAILS: "admin@example.com",
+        TRACKER_USER_STORE: "local",
+        TRACKER_USERS_SITE_ID: "",
+        TRACKER_USERS_LIST_ID: "",
+      });
+
+      try {
+        let latestBody = null;
+        let latestStatus = 0;
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          const response = await fetch(`${baseUrl}/api/access/verify-code`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              cookie: forgedSessionCookie(sessionSecret, { email, status: "pending" }),
+            },
+            body: JSON.stringify({ code: "000000" }),
+          });
+          latestStatus = response.status;
+          latestBody = await response.json();
+        }
+
+        assert.equal(latestStatus, 429);
+        assert.equal(latestBody.error, "verification_locked");
+        assert.equal(latestBody.remainingAttempts, 0);
+        assert.ok(latestBody.retryAfterSeconds > 0);
+      } finally {
+        await stopSecureServer(child);
+      }
+    },
+  );
+});
