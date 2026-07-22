@@ -5,7 +5,13 @@ export type SecureAccessUser = {
   role: "Admin" | "Audit Manager" | "Auditor" | "Finance" | "Read Only";
   permissionGroup: "Admin" | "Audit Manager" | "Auditor" | "Finance" | "Read Only";
   active: boolean;
-  defaultVisibility: "Role Default" | "All Projects" | "Assigned Projects" | "Finance Records";
+  defaultVisibility:
+    | "Role Default"
+    | "All Audits"
+    | "Assigned Audits"
+    | "All Projects"
+    | "Assigned Projects"
+    | "Finance Records";
   emailVerified: boolean;
   accessRequestStatus:
     | "Approved"

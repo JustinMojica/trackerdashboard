@@ -240,6 +240,8 @@ type AdminTab = "users" | "contacts" | "activity" | "tools";
 type UserRole = "Admin" | "Audit Manager" | "Auditor" | "Finance" | "Read Only";
 type ProjectVisibility =
   | "Role Default"
+  | "All Audits"
+  | "Assigned Audits"
   | "All Projects"
   | "Assigned Projects"
   | "Finance Records";
@@ -283,7 +285,7 @@ type TemplateReceiverKind =
   | "Coverholder contact"
   | "Invoice contact"
   | "Report contact"
-  | "Project contact";
+  | "Audit contact";
 
 type TemplateRecipientOption = {
   id: string;
@@ -404,8 +406,8 @@ const userRoleOptions: UserRole[] = [
 
 const projectVisibilityOptions: ProjectVisibility[] = [
   "Role Default",
-  "All Projects",
-  "Assigned Projects",
+  "All Audits",
+  "Assigned Audits",
   "Finance Records",
 ];
 
@@ -928,20 +930,37 @@ function isFinanceProject(project: AuditProject) {
 
 function roleDefaultVisibility(role: UserRole): ProjectVisibility {
   if (role === "Finance") return "Finance Records";
-  if (role === "Auditor") return "Assigned Projects";
-  return "All Projects";
+  if (role === "Auditor") return "Assigned Audits";
+  return "All Audits";
+}
+
+function normalizeProjectVisibility(
+  visibility: ProjectVisibility | string | undefined,
+): ProjectVisibility {
+  if (visibility === "All Projects") return "All Audits";
+  if (visibility === "Assigned Projects") return "Assigned Audits";
+  if (
+    visibility === "All Audits" ||
+    visibility === "Assigned Audits" ||
+    visibility === "Finance Records" ||
+    visibility === "Role Default"
+  ) {
+    return visibility;
+  }
+  return "Role Default";
 }
 
 function effectiveVisibility(user: PrototypeUser) {
-  return user.defaultVisibility === "Role Default"
+  const visibility = normalizeProjectVisibility(user.defaultVisibility);
+  return visibility === "Role Default"
     ? roleDefaultVisibility(user.role)
-    : user.defaultVisibility;
+    : visibility;
 }
 
 function canViewProject(user: PrototypeUser, project: AuditProject) {
   if (!user.active) return false;
   const visibility = effectiveVisibility(user);
-  if (visibility === "All Projects") return true;
+  if (visibility === "All Audits") return true;
   if (visibility === "Finance Records") return isFinanceProject(project);
   return projectHasAuditor(project, user.fullName);
 }
@@ -973,13 +992,13 @@ function canComment(user: PrototypeUser, project: AuditProject) {
 
 function visibleProjectMessage(user: PrototypeUser) {
   const visibility = effectiveVisibility(user);
-  if (visibility === "All Projects") {
-    return "Showing all projects.";
+  if (visibility === "All Audits") {
+    return "Showing all audits.";
   }
   if (visibility === "Finance Records") {
     return "Showing invoice, final submission, and close-out records.";
   }
-  return "Showing projects where you are the lead or supporting auditor.";
+  return "Showing audits where you are the lead or supporting auditor.";
 }
 
 function projectMatchesWorkState(project: AuditProject, workState: string) {
@@ -1062,27 +1081,27 @@ function emptyProjectState(user: PrototypeUser) {
     return {
       title: "No finance records are ready",
       message:
-        "Finance records appear after a project reaches final submission, invoice, closed status, or has invoice activity.",
+        "Finance records appear after an audit reaches final submission, invoice, closed status, or has invoice activity.",
     };
   }
-  if (visibility === "Assigned Projects") {
+  if (visibility === "Assigned Audits") {
     return {
       title: "No assignments are assigned to you",
       message:
-        "Assigned work appears here when your name is listed as lead or support on an active project.",
+        "Assigned work appears here when your name is listed as lead or support on an active audit.",
     };
   }
   if (user.role === "Read Only") {
     return {
-      title: "No read-only projects are available",
+      title: "No read-only audits are available",
       message:
-        "Read-only users can view projects once project records have been created and made visible.",
+        "Read-only users can view audits once audit records have been created and made visible.",
     };
   }
   return {
-    title: "No projects in the tracker",
+    title: "No audits in the tracker",
     message:
-      "Create a project or import a JSON backup to start working from shared tracker storage.",
+      "Create an audit or import a JSON backup to start working from shared tracker storage.",
   };
 }
 
@@ -1313,7 +1332,7 @@ function withUserDefaults(user: Partial<PrototypeUser>): PrototypeUser {
     permissionGroup: user.permissionGroup ?? role,
     email: user.email?.trim() || "new.user@[company-domain]",
     active: user.active ?? true,
-    defaultVisibility: user.defaultVisibility ?? "Role Default",
+    defaultVisibility: normalizeProjectVisibility(user.defaultVisibility),
     emailVerified,
     accessRequestStatus,
     verificationCode: user.verificationCode ?? "",
@@ -1925,7 +1944,7 @@ function templateReceiverKind(
   if (["document-request", "pre-audit-questionnaire", "quote-email"].includes(template.id)) {
     return "Coverholder contact";
   }
-  return "Project contact";
+  return "Audit contact";
 }
 
 function normalizedToken(value: string) {
@@ -2600,7 +2619,7 @@ function auditCoordinatorInsights(projects: AuditProject[], user: PrototypeUser)
         project,
         "High",
         "Scheduling ahead of quote",
-        `Project is in ${project.currentStage}, but quote status is ${project.quoteStatus}.`,
+        `Audit is in ${project.currentStage}, but quote status is ${project.quoteStatus}.`,
         "Confirm quote acceptance before committing more audit effort.",
       );
     }
@@ -3012,7 +3031,7 @@ function App() {
         setMessage(
           error instanceof Error
             ? error.message
-            : "Project storage is not available.",
+            : "Audit storage is not available.",
         );
       })
       .finally(() => {
@@ -3155,7 +3174,7 @@ function App() {
         setMessage(
           error instanceof Error
             ? error.message
-            : "Project changes were saved locally but not to the server.",
+            : "Audit changes were saved locally but not to the server.",
         );
       });
   };
@@ -3207,36 +3226,36 @@ function App() {
     saveRecentContactId(contact.id);
     setEditing(starter);
     setActiveSection("assignments");
-    setMessage(`Project intake started from ${linkedContactName(contact)}.`);
+    setMessage(`Audit intake started from ${linkedContactName(contact)}.`);
   };
 
   const clearProjectData = () => {
     requestConfirmation({
-      title: "Clear project data?",
+      title: "Clear audit data?",
       message:
-        "This removes all project records from the shared tracker so you can start testing with real audit data.",
-      confirmLabel: "Clear projects",
+        "This removes all audit records from the shared tracker so you can start testing with real audit data.",
+      confirmLabel: "Clear audits",
       tone: "danger",
       onConfirm: () => {
         persist([], {
           replaceAll: true,
           successMessage:
-            "Project data cleared. Add or import real audit records to continue testing.",
+            "Audit data cleared. Add or import real audit records to continue testing.",
         });
         setSelectedId("");
-        setMessage("Project data cleared. Add or import real audit records to continue testing.");
+        setMessage("Audit data cleared. Add or import real audit records to continue testing.");
       },
     });
   };
 
   const queueProjectImport = (file: File) => {
     if (!hasFullProjectAccess(signedInUser)) {
-      setMessage("Only admins and audit managers can import project data.");
+      setMessage("Only admins and audit managers can import audit data.");
       return;
     }
     requestConfirmation({
       title: "Import JSON backup?",
-      message: `Importing ${file.name} replaces the current project records in shared tracker storage.`,
+      message: `Importing ${file.name} replaces the current audit records in shared tracker storage.`,
       confirmLabel: "Import JSON",
       tone: "danger",
       onConfirm: () => importProjectsFromFile(file),
@@ -3250,7 +3269,7 @@ function App() {
       (exists && originalProject && !canEditProject(signedInUser, originalProject)) ||
       (!exists && !canCreateProject(signedInUser))
     ) {
-      setMessage("Your role cannot save that project.");
+      setMessage("Your role cannot save that audit.");
       return;
     }
     const cleanProject = withProjectDefaults({
@@ -3265,10 +3284,10 @@ function App() {
         ...(project.activityEvents ?? []),
         createActivityEvent(
           "field",
-          exists ? "Project edited" : "Project created",
-          exists
-            ? "Project fields were updated from Edit Project."
-            : "Project was created from guided intake.",
+            exists ? "Audit edited" : "Audit created",
+            exists
+              ? "Audit fields were updated from Edit Audit."
+              : "Audit was created from guided intake.",
           signedInUser.fullName,
         ),
       ],
@@ -3281,7 +3300,7 @@ function App() {
     persist(nextProjects);
     setSelectedId(cleanProject.id);
     setEditing(null);
-    setMessage(exists ? "Project updated." : "Project created.");
+    setMessage(exists ? "Audit updated." : "Audit created.");
   };
 
   const applyStageMove = (
@@ -3290,7 +3309,7 @@ function App() {
     overrideReason = "",
   ) => {
     if (!canEditProject(signedInUser, project)) {
-      setMessage("Your role cannot move this project.");
+      setMessage("Your role cannot move this audit.");
       return;
     }
     const updatedProject = { ...project, currentStage: targetStage };
@@ -3338,7 +3357,7 @@ function App() {
 
   const moveProject = (project: AuditProject, targetStage: Stage) => {
     if (!canEditProject(signedInUser, project)) {
-      setMessage("Your role cannot move this project.");
+      setMessage("Your role cannot move this audit.");
       return;
     }
     const blocker = canMoveToStage(project, targetStage);
@@ -3361,20 +3380,20 @@ function App() {
 
   const archiveProject = (project: AuditProject) => {
     if (!canArchiveProject(signedInUser)) {
-      setMessage("Only admins and audit managers can archive projects.");
+      setMessage("Only admins and audit managers can archive audits.");
       return;
     }
     const activeWorkstreams = coordinatedWorkstreamSummary(project).active;
     if (project.currentStage !== "Closed" || activeWorkstreams > 0) {
       requestConfirmation({
-        title: "Archive this project?",
+        title: "Archive this audit?",
         message:
           project.currentStage !== "Closed"
-            ? `This project is currently in ${project.currentStage}. Archiving hides it from active boards without deleting the record.`
-            : `This project still has ${activeWorkstreams} active managing-agent workstream${
+            ? `This audit is currently in ${project.currentStage}. Archiving hides it from active boards without deleting the record.`
+            : `This audit still has ${activeWorkstreams} active managing-agent workstream${
                 activeWorkstreams === 1 ? "" : "s"
               }. Archiving hides it from active boards without deleting the record.`,
-        confirmLabel: "Archive project",
+        confirmLabel: "Archive audit",
         tone: "danger",
         onConfirm: () => applyProjectArchive(project),
       });
@@ -3394,8 +3413,8 @@ function App() {
         ...(project.activityEvents ?? []),
         createActivityEvent(
           "stage",
-          "Project archived",
-          "Project was hidden from active operational views without deleting the record.",
+          "Audit archived",
+          "Audit was hidden from active operational views without deleting the record.",
           signedInUser.fullName,
         ),
       ],
@@ -3411,7 +3430,7 @@ function App() {
 
   const restoreProject = (project: AuditProject) => {
     if (!hasFullProjectAccess(signedInUser)) {
-      setMessage("Only admins and audit managers can restore archived projects.");
+      setMessage("Only admins and audit managers can restore archived audits.");
       return;
     }
     const updatedProject = withProjectDefaults({
@@ -3422,8 +3441,8 @@ function App() {
         ...(project.activityEvents ?? []),
         createActivityEvent(
           "stage",
-          "Project restored",
-          "Archived project was restored to active operational views.",
+          "Audit restored",
+          "Archived audit was restored to active operational views.",
           signedInUser.fullName,
         ),
       ],
@@ -3438,7 +3457,7 @@ function App() {
 
   const removeProjectLabel = (project: AuditProject, label: ProjectLabel) => {
     if (!canEditProject(signedInUser, project)) {
-      setMessage("Your role cannot update labels on this project.");
+      setMessage("Your role cannot update labels on this audit.");
       return;
     }
     if (!project.labels.includes(label)) return;
@@ -3454,7 +3473,7 @@ function App() {
         createActivityEvent(
           "field",
           "Label removed",
-          `${label} was removed from the project.`,
+          `${label} was removed from the audit.`,
           signedInUser.fullName,
         ),
       ],
@@ -3472,7 +3491,7 @@ function App() {
     comment: ProjectComment,
   ) => {
     if (!canComment(signedInUser, project)) {
-      setMessage("Your role cannot add comments to this project.");
+      setMessage("Your role cannot add comments to this audit.");
       return;
     }
     const updatedProject = {
@@ -3500,7 +3519,7 @@ function App() {
 
   const toggleChecklistItem = (project: AuditProject, key: string) => {
     if (!canEditProject(signedInUser, project)) {
-      setMessage("Your role cannot update checklist items on this project.");
+      setMessage("Your role cannot update checklist items on this audit.");
       return;
     }
     const updatedProject = {
@@ -3563,7 +3582,7 @@ function App() {
     action: DocumentWorkflowAction,
   ) => {
     if (!canEditProject(signedInUser, project)) {
-      setMessage("Your role cannot update document workflow on this project.");
+      setMessage("Your role cannot update document workflow on this audit.");
       return;
     }
     const readiness = documentReadiness(project);
@@ -3661,7 +3680,7 @@ function App() {
     >,
   ) => {
     if (!canEditProject(signedInUser, project)) {
-      setMessage("Your role cannot update scheduling for this project.");
+      setMessage("Your role cannot update scheduling for this audit.");
       return;
     }
     const updatedProject = withProjectDefaults({
@@ -3687,7 +3706,7 @@ function App() {
 
   const syncProjectToOutlook = async (project: AuditProject) => {
     if (!canEditProject(signedInUser, project)) {
-      setMessage("Your role cannot send an Outlook invite for this project.");
+      setMessage("Your role cannot send an Outlook invite for this audit.");
       return;
     }
     try {
@@ -3726,22 +3745,22 @@ function App() {
 
   const importProjectsFromFile = async (file: File) => {
     if (!hasFullProjectAccess(signedInUser)) {
-      setMessage("Only admins and audit managers can import project data.");
+      setMessage("Only admins and audit managers can import audit data.");
       return;
     }
     try {
       const text = await file.text();
       const importedProjects = normalizeImportedProjects(JSON.parse(text));
       if (!importedProjects || importedProjects.length === 0) {
-        setMessage("Import file did not contain any projects.");
+        setMessage("Import file did not contain any audits.");
         return;
       }
       persist(importedProjects, {
         replaceAll: true,
-        successMessage: `${importedProjects.length} projects imported from JSON.`,
+        successMessage: `${importedProjects.length} audits imported from JSON.`,
       });
       setSelectedId(importedProjects[0].id);
-      setMessage(`${importedProjects.length} projects imported from JSON.`);
+      setMessage(`${importedProjects.length} audits imported from JSON.`);
     } catch {
       setMessage("Could not import that JSON file.");
     }
@@ -3875,11 +3894,11 @@ function App() {
         </div>
         <div className="hero-actions">
           {canCreateProject(signedInUser) && (
-            <button onClick={() => setEditing(blankProject())}>Add project</button>
+            <button onClick={() => setEditing(blankProject())}>Add audit</button>
           )}
           {hasFullProjectAccess(signedInUser) && (
             <button className="secondary" onClick={clearProjectData}>
-              Clear project data
+              Clear audit data
             </button>
           )}
           <button className="secondary" onClick={signOut}>
@@ -3895,7 +3914,7 @@ function App() {
       )}
       {projectStorageLoading && (
         <div className="toast subtle" role="status">
-          Loading shared project storage...
+          Loading shared audit storage...
         </div>
       )}
 
@@ -4391,7 +4410,7 @@ function AccessBanner({
           <p className="eyebrow dark">Signed in</p>
           <h2>{user.fullName}</h2>
           <span>
-            {user.username} · {user.permissionGroup} · {visibleCount} visible projects
+            {user.username} · {user.permissionGroup} · {visibleCount} visible audits
           </span>
         </div>
       </div>
@@ -4425,7 +4444,7 @@ function AppNavigation({
     {
       id: "assignments",
       label: "Assignments",
-      helper: "Working board, filters, project detail, and intake/edit forms.",
+      helper: "Working board, filters, audit detail, and intake/edit forms.",
       count: activeCount,
     },
     {
@@ -4448,7 +4467,7 @@ function AppNavigation({
     items.push({
       id: "archive",
       label: "Archive",
-      helper: "Closed or archived projects hidden from daily work.",
+      helper: "Closed or archived audits hidden from daily work.",
       count: archivedCount,
     });
   }
@@ -4540,7 +4559,7 @@ function AdminWorkspace({
     {
       id: "activity",
       label: "Audit log",
-      helper: "Review recent project changes across visible records.",
+      helper: "Review recent audit changes across visible records.",
     },
     {
       id: "tools",
@@ -4656,14 +4675,14 @@ function DataSafetyPanel({
       <div className="section-title">
         <div>
           <p className="eyebrow dark">Data safety</p>
-          <h2>Deployments do not clear projects</h2>
+          <h2>Deployments do not clear audits</h2>
           <span>
-            Code updates replace the app files only. Project records stay in Microsoft Lists
+            Code updates replace the app files only. Audit records stay in Microsoft Lists
             unless an admin intentionally clears data or imports a replacement JSON file.
           </span>
         </div>
         <button type="button" className="danger-button" onClick={onClearProjects}>
-          Clear all projects
+          Clear all audits
         </button>
       </div>
       <div className="storage-stats">
@@ -4702,7 +4721,7 @@ function ArchivedProjectsPanel({
       <div className="section-title">
         <div>
           <p className="eyebrow dark">Archive</p>
-          <h2>Archived projects</h2>
+          <h2>Archived audits</h2>
           <span>
             Archived records are hidden from active boards and workload counts but
             remain saved for history and reporting.
@@ -4711,7 +4730,7 @@ function ArchivedProjectsPanel({
         <span className="archive-count">{projects.length}</span>
       </div>
       {projects.length === 0 ? (
-        <p className="muted-note">No archived projects yet.</p>
+        <p className="muted-note">No archived audits yet.</p>
       ) : (
         <div className="archive-list">
           {projects.map((project) => (
@@ -5038,7 +5057,7 @@ function SystemReadinessPanel({
           detail={
             calendarReady
               ? "Calendars.ReadWrite is active for Outlook invite sending."
-              : "Grant Calendars.ReadWrite application consent to create Outlook project events."
+              : "Grant Calendars.ReadWrite application consent to create Outlook audit events."
           }
         />
         <ReadinessCard
@@ -5050,11 +5069,11 @@ function SystemReadinessPanel({
           }
         />
         <ReadinessCard
-          label="Project storage"
+          label="Audit storage"
           ready={projectStoreReady}
           detail={
             health?.projectStore?.status ||
-            "Projects save on the app server until Microsoft Lists is configured."
+            "Audits save on the app server until Microsoft Lists is configured."
           }
         />
         <ReadinessCard
@@ -5180,11 +5199,11 @@ function CentralStoragePanel({
         : "Create/configure the Tracker Users Microsoft List before switching approvals.",
     },
     {
-      label: "4. Project storage",
+      label: "4. Audit storage",
       ready: projectStoreReady,
       detail: projectStoreReady
-        ? "Audit Assignments list is the active project store."
-        : "Create/configure the Audit Assignments Microsoft List before switching projects.",
+        ? "Audit Assignments list is the active audit store."
+        : "Create/configure the Audit Assignments Microsoft List before switching audits.",
     },
     {
       label: "5. Activity log",
@@ -5194,7 +5213,7 @@ function CentralStoragePanel({
   ];
   const listGroups = [
     {
-      label: "Core project records",
+      label: "Core audit records",
       lists: ["Audit Assignments", "Audit Team Members"],
     },
     {
@@ -5214,7 +5233,7 @@ function CentralStoragePanel({
           <p className="eyebrow dark">Data foundation</p>
           <h2>Microsoft Lists data foundation</h2>
           <span>
-            Server settings control Microsoft Graph and shared project data.
+            Server settings control Microsoft Graph and shared audit data.
             This panel shows what is live now and what still needs Microsoft
             Lists configuration.
           </span>
@@ -5234,10 +5253,10 @@ function CentralStoragePanel({
         </span>
       </div>
       <div className={`storage-status ${projectStoreReady ? "connected" : ""}`}>
-        <strong>Project records: {projectStoreLabel}</strong>
+        <strong>Audit records: {projectStoreLabel}</strong>
         <span>
           {health?.projectStore?.status ||
-            "Project records use server storage until Microsoft Lists project storage is configured."}
+            "Audit records use server storage until Microsoft Lists audit storage is configured."}
         </span>
       </div>
       <div className="readiness-grid">
@@ -5264,12 +5283,12 @@ function CentralStoragePanel({
           ready={projectStoreReady}
           detail={
             projectStoreReady
-              ? "Project reads and writes are configured for Microsoft Lists."
-              : "Add TRACKER_PROJECTS_SITE_ID and TRACKER_PROJECTS_LIST_ID before moving project storage."
+              ? "Audit reads and writes are configured for Microsoft Lists."
+              : "Add TRACKER_PROJECTS_SITE_ID and TRACKER_PROJECTS_LIST_ID before moving audit storage."
           }
         />
         <ReadinessCard
-          label="Project data package"
+          label="Audit data package"
           ready
           detail={`${packagePreview.totals.lists} lists, ${packagePreview.totals.rows} rows ready for export.`}
         />
@@ -5281,7 +5300,7 @@ function CentralStoragePanel({
         </span>
         <span>
           <strong>{packagePreview.totals.assignments}</strong>
-          Project records
+          Audit records
         </span>
         <span>
           <strong>{detailRows}</strong>
@@ -5673,7 +5692,7 @@ function AdminActivityPanel({ projects }: { projects: AuditProject[] }) {
         <div>
           <p className="eyebrow dark">Admin audit log</p>
           <h2>Recent tracker activity</h2>
-          <span>Recent project changes, comments, checklist updates, and stage movement.</span>
+          <span>Recent audit changes, comments, checklist updates, and stage movement.</span>
         </div>
       </div>
       <div className="admin-activity-controls">
@@ -5757,7 +5776,7 @@ function Dashboard({ projects }: { projects: AuditProject[] }) {
   return (
     <section className="summary-grid" aria-label="Audit dashboard summary">
       <SummaryCard
-        label="Open projects"
+        label="Open audits"
         value={
           projects.filter((project) => project.currentStage !== "Closed").length
         }
@@ -5881,7 +5900,7 @@ function SchedulingCapacity({
           </div>
           <div className="calendar-list">
             {scheduledProjects.length === 0 ? (
-              <p className="muted-note">No open projects to schedule yet.</p>
+              <p className="muted-note">No open audits to schedule yet.</p>
             ) : (
               scheduledProjects.map((project) => (
                 <SchedulingProjectCard
@@ -6446,7 +6465,7 @@ function AiAuditCoordinatorPanel({
         </div>
       </div>
       {topInsights.length === 0 ? (
-        <p className="muted-note">No coordinator actions detected for visible projects.</p>
+        <p className="muted-note">No coordinator actions detected for visible audits.</p>
       ) : (
         <div className="coordinator-grid">
           {topInsights.map((insight) => (
@@ -6578,7 +6597,7 @@ function TodaysWork({
         <div>
           <p className="eyebrow dark">Today</p>
           <h2>Today's work</h2>
-          <span>Priority queues from your visible projects</span>
+          <span>Priority queues from your visible audits</span>
         </div>
       </div>
       <div className="todays-work-grid">
@@ -7291,7 +7310,7 @@ function AssignmentActionBar({
           Add comment
         </button>
         <button type="button" className="secondary" disabled={!canEdit} onClick={onEdit}>
-          Edit project
+          Edit audit
         </button>
         {canArchive && (
           <button type="button" className="secondary" onClick={onArchive}>
@@ -8193,7 +8212,7 @@ function TemplateLibrary({
                 onChange={selectRecipient}
               />
               <p>
-                Saved choices are reused for future projects with this contact
+                Saved choices are reused for future audits with this contact
                 and routing type.
               </p>
             </>
@@ -9389,7 +9408,7 @@ function ProjectForm({
         <h3>Review before saving</h3>
         <p>
           Confirm the main tracking fields and recipient choice before creating
-          the project record.
+          the audit record.
         </p>
       </div>
       <div className="intake-review-grid">
@@ -9525,7 +9544,7 @@ function ProjectForm({
             <p className="eyebrow dark">
               {isNewProject ? "Guided intake" : "Advanced edit"}
             </p>
-            <h2>{isNewProject ? "Add project" : "Edit project"}</h2>
+            <h2>{isNewProject ? "Add audit" : "Edit audit"}</h2>
           </div>
           <button type="button" className="link" onClick={onCancel}>
             Close
@@ -9533,7 +9552,7 @@ function ProjectForm({
         </div>
         {isNewProject ? (
           <>
-            <div className="wizard-steps" aria-label="Add project steps">
+            <div className="wizard-steps" aria-label="Add audit steps">
               {steps.map((stepLabel, index) => (
                 <button
                   type="button"
@@ -9592,7 +9611,7 @@ function ProjectForm({
             </button>
           )}
           <button type="submit" disabled={attemptedSave && requiredIssues.length > 0}>
-            {isNewProject && step < steps.length - 1 ? "Next" : "Save project"}
+            {isNewProject && step < steps.length - 1 ? "Next" : "Save audit"}
           </button>
         </div>
       </form>

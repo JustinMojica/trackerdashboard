@@ -8,8 +8,8 @@ The current app is no longer a browser-storage-only prototype. It has:
 - Email verification code workflow.
 - Admin approval before tracker access.
 - Signed HTTP-only session cookies.
-- Role-based project visibility and edit controls.
-- Server-backed project storage with Microsoft Lists persistence in production.
+- Role-based audit visibility and edit controls.
+- Server-backed audit storage with Microsoft Lists persistence in production.
 - Microsoft Lists schema/export support for assignments, team members, comments, checklist items, status history, activity log, and tracker users.
 - Solo and Coordinated audit structures, including multiple managing-agent workstreams under one parent audit card.
 - DCA-specific readiness tracking for DCA Agreement and Claims BDX requirements.
@@ -88,7 +88,7 @@ npm test
 npm run build
 ```
 
-Current test coverage includes workflow logic, Microsoft Lists package generation, access-request rules, role/project permissions, and server security checks for weak or missing session secrets.
+Current test coverage includes workflow logic, Microsoft Lists package generation, access-request rules, role/audit permissions, and server security checks for weak or missing session secrets.
 
 ## Change Log
 
@@ -222,13 +222,13 @@ Target lists:
 - Audit Activity Log
 - Tracker Users
 
-`Audit Assignments` includes `TrackerProjectJson`, allowing the backend to store the full project object in Microsoft Lists while still exposing clean reporting columns.
+`Audit Assignments` includes `TrackerProjectJson`, allowing the backend to store the full audit object in Microsoft Lists while still exposing clean reporting columns.
 
 Current production state:
 
 - The root SharePoint site is used for the tracker Microsoft Lists.
 - `Tracker Users` stores approved Microsoft account profiles.
-- `Audit Assignments` stores project records, including the full `TrackerProjectJson` payload.
+- `Audit Assignments` stores audit records, including the full `TrackerProjectJson` payload.
 - Code deployments update the application files only; they do not clear Microsoft Lists records.
 - Destructive data actions are limited to explicit admin clear/import replacement flows.
 
@@ -250,7 +250,7 @@ Recent hardening includes:
 
 - Weak or missing `TRACKER_SESSION_SECRET` fails closed.
 - Admin APIs return setup-required while security-critical config is invalid.
-- Project update validation prevents overposting by role.
+- Audit update validation prevents overposting by role.
 - Opaque Codex patch auto-apply support was removed.
 - Deployment workflow is gated to `main` and `ENABLE_AZURE_DEPLOY=true`.
 
@@ -265,12 +265,12 @@ Important operational requirement:
 - Account request, email verification, and admin approval.
 - Admin user management for approved Microsoft accounts.
 - Role-based visibility: Admin, Audit Manager, Auditor, Finance, Read Only.
-- Guided project intake with required-field checks.
+- Guided audit intake with required-field checks.
 - Assignment dashboard, Today queue, workload, cycle-time reporting, filters, Kanban/table views.
 - Focused app navigation for Dashboard, Assignments, Command Center, Reports, and Admin.
-- Project archive/restore so completed work can leave active views without being deleted.
-- Operating system command center for workflow gates, SLA escalation, role consoles, draft queue, and AI-ready assistant brief.
-- Per-project workflow controls for stage gates, workspace folder planning, and communication draft review.
+- Audit archive/restore so completed work can leave active views without being deleted.
+- Operating system command center for workflow gates, attention items, role consoles, draft queue, and AI-ready assistant brief.
+- Per-audit workflow controls for stage gates, workspace folder planning, and communication draft review.
 - Document readiness workflow and broker follow-up actions.
 - Finance update path for invoice/payment records.
 - Activity timeline and admin activity review.
