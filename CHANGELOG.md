@@ -99,6 +99,8 @@ other sensitive configuration values.
   only queues with active audit work render as cards.
 - Consolidated the redundant Dashboard and Assignments areas into one Audits
   workspace, with Today's work shown above the audit filters and board/table.
+- Converted the audit detail attention and finance panels into collapsed
+  dropdown sections with status summaries to reduce visual clutter.
 
 ### Verified
 

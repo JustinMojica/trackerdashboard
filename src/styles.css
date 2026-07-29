@@ -2323,9 +2323,62 @@ textarea {
 .text-button:disabled {
   color: #9aa7ba;
 }
-.workflow-engine-panel {
+.collapsible-panel {
+  display: block;
+}
+.collapsible-summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  list-style: none;
+}
+.collapsible-summary::-webkit-details-marker {
+  display: none;
+}
+.collapsible-summary h2,
+.collapsible-summary p,
+.collapsible-summary span {
+  margin: 0;
+}
+.collapsible-summary > div {
+  display: grid;
+  gap: 0.25rem;
+}
+.collapsible-summary > div > span {
+  color: #53637a;
+  font-size: 0.95rem;
+}
+.collapsible-state {
+  align-items: center;
+  background: #eaf1fb;
+  border: 1px solid #d4e1f2;
+  border-radius: 999px;
+  color: #11366f;
+  display: inline-flex;
+  font-size: 0.85rem;
+  font-weight: 900;
+  justify-content: center;
+  min-width: 72px;
+  padding: 0.45rem 0.7rem;
+}
+.collapsible-state::before {
+  content: "Show";
+}
+details[open] .collapsible-state::before {
+  content: "Hide";
+}
+.collapsible-body {
   display: grid;
   gap: 0.85rem;
+  margin-top: 0.95rem;
+}
+.panel-intro {
+  color: #53637a;
+  margin: 0;
+}
+.workflow-engine-panel {
   grid-area: workflow;
 }
 .workflow-gates {
@@ -2528,8 +2581,6 @@ textarea {
   grid-template-columns: 1fr;
 }
 .finance-panel {
-  display: grid;
-  gap: 0.85rem;
   grid-area: finance;
 }
 .finance-grid {

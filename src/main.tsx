@@ -8540,41 +8540,48 @@ function FinancePanel({
   const [paymentReceived, setPaymentReceived] = useState(project.paymentReceived);
 
   return (
-    <article className="panel finance-panel">
-      <div className="section-title">
+    <details className="panel collapsible-panel finance-panel">
+      <summary className="collapsible-summary">
         <div>
           <h2>Finance</h2>
-          <span>Invoice and payment status</span>
+          <span>
+            Invoice: {project.invoiceStatus}. Payment{" "}
+            {project.paymentReceived ? "received" : "not received"}.
+          </span>
         </div>
+        <span className="collapsible-state" aria-hidden="true" />
+      </summary>
+      <div className="collapsible-body">
+        <p className="panel-intro">Invoice and payment status</p>
+        <div className="finance-grid">
+          <Select
+            label="Invoice status"
+            value={invoiceStatus}
+            options={["Not Started", "Prepared", "Sent", "Paid"]}
+            placeholder="Select invoice status"
+            onChange={(value) => {
+              const nextStatus = value as InvoiceStatus;
+              setInvoiceStatus(nextStatus);
+              if (nextStatus === "Paid") setPaymentReceived(true);
+            }}
+          />
+          <Check
+            label="Payment received"
+            checked={paymentReceived}
+            onChange={setPaymentReceived}
+          />
+        </div>
+        <button
+          type="button"
+          disabled={!canUpdateFinance}
+          onClick={() =>
+            onUpdateFinance(project, invoiceStatus, paymentReceived)
+          }
+        >
+          Save finance
+        </button>
       </div>
-      <div className="finance-grid">
-        <Select
-          label="Invoice status"
-          value={invoiceStatus}
-          options={["Not Started", "Prepared", "Sent", "Paid"]}
-          placeholder="Select invoice status"
-          onChange={(value) => {
-            const nextStatus = value as InvoiceStatus;
-            setInvoiceStatus(nextStatus);
-            if (nextStatus === "Paid") setPaymentReceived(true);
-          }}
-        />
-        <Check
-          label="Payment received"
-          checked={paymentReceived}
-          onChange={setPaymentReceived}
-        />
-      </div>
-      <button
-        type="button"
-        disabled={!canUpdateFinance}
-        onClick={() =>
-          onUpdateFinance(project, invoiceStatus, paymentReceived)
-        }
-      >
-        Save finance
-      </button>
-    </article>
+    </details>
   );
 }
 
@@ -8582,46 +8589,57 @@ function WorkflowEnginePanel({ project }: { project: AuditProject }) {
   const gates = workflowGates(project);
   const signals = slaSignals(project);
   const target = nextStage(project);
+  const issueCount =
+    gates.filter((gate) => gate.status !== "Ready").length + signals.length;
 
   return (
-    <article className="panel workflow-engine-panel">
-      <div className="section-title">
+    <details className="panel collapsible-panel workflow-engine-panel">
+      <summary className="collapsible-summary">
         <div>
           <p className="eyebrow dark">Next steps</p>
           <h2>What needs attention</h2>
           <span>
-            {target
-              ? `Next goal: move this audit toward ${target}.`
-              : "This audit is at the end of the workflow."}
+            {issueCount > 0
+              ? `${issueCount} item${issueCount === 1 ? "" : "s"} to review`
+              : "No current attention items"}
+            {target ? ` before ${target}.` : "."}
           </span>
         </div>
-      </div>
-      <div className="workflow-gates">
-        {gates.map((gate) => (
-          <div className={`workflow-gate ${gate.status.toLowerCase()}`} key={gate.label}>
-            <span>{displayGateStatus(gate.status)}</span>
-            <strong>{gate.label}</strong>
-            <p>{gate.detail}</p>
+        <span className="collapsible-state" aria-hidden="true" />
+      </summary>
+      <div className="collapsible-body">
+        <p className="panel-intro">
+          {target
+            ? `Next goal: move this audit toward ${target}.`
+            : "This audit is at the end of the workflow."}
+        </p>
+        <div className="workflow-gates">
+          {gates.map((gate) => (
+            <div className={`workflow-gate ${gate.status.toLowerCase()}`} key={gate.label}>
+              <span>{displayGateStatus(gate.status)}</span>
+              <strong>{gate.label}</strong>
+              <p>{gate.detail}</p>
+            </div>
+          ))}
+        </div>
+        <div className="workflow-columns">
+          <div>
+            <h3>Timing alerts</h3>
+            {signals.length === 0 ? (
+              <p className="muted-note">No timing alerts right now.</p>
+            ) : (
+              <ul className="compact-list">
+                {signals.map((signal) => (
+                  <li key={`${signal.label}-${signal.detail}`}>
+                    <strong>{signal.label}:</strong> {signal.detail}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-        ))}
-      </div>
-      <div className="workflow-columns">
-        <div>
-          <h3>Timing alerts</h3>
-          {signals.length === 0 ? (
-            <p className="muted-note">No timing alerts right now.</p>
-          ) : (
-            <ul className="compact-list">
-              {signals.map((signal) => (
-                <li key={`${signal.label}-${signal.detail}`}>
-                  <strong>{signal.label}:</strong> {signal.detail}
-                </li>
-              ))}
-            </ul>
-          )}
         </div>
       </div>
-    </article>
+    </details>
   );
 }
 
