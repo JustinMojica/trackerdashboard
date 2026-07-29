@@ -95,6 +95,8 @@ other sensitive configuration values.
   document language instead of labeling CH audits as missing DCA agreements.
 - Clarified Command Center attention summaries with explicit "other issue"
   wording, blocker chips on each audit, and access reasons in Admin user previews.
+- Simplified Today's work so empty queues collapse into clear-status chips and
+  only queues with active audit work render as cards.
 
 ### Verified
 

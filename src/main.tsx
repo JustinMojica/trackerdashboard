@@ -7174,6 +7174,7 @@ function TodaysWork({
   const queues = [
     {
       label: "Overdue",
+      clearLabel: "Overdue",
       tone: "queue-danger",
       items: sortByUrgency(
         openProjects.filter((project) => daysUntil(project.dueDate) < 0),
@@ -7181,6 +7182,7 @@ function TodaysWork({
     },
     {
       label: "Due soon",
+      clearLabel: "Due soon",
       tone: "queue-warning",
       items: sortByUrgency(
         openProjects.filter(
@@ -7191,11 +7193,13 @@ function TodaysWork({
     },
     {
       label: topAttentionSummary(attentionItems),
+      clearLabel: "Items holding up audits",
       tone: "queue-danger",
       items: attentionItems,
     },
     {
       label: "Waiting on broker",
+      clearLabel: "Waiting on broker",
       tone: "queue-warning",
       items: sortByUrgency(
         openProjects.filter((project) =>
@@ -7204,6 +7208,10 @@ function TodaysWork({
       ),
     },
   ];
+  const activeQueues = queues.filter((queue) => queue.items.length > 0);
+  const clearQueues = queues.filter((queue) => queue.items.length === 0);
+  const activeWorkCount = activeQueues.reduce((total, queue) => total + queue.items.length, 0);
+
   return (
     <section className="panel todays-work">
       <div className="section-title">
@@ -7212,17 +7220,18 @@ function TodaysWork({
           <h2>Today's work</h2>
           <span>Priority queues from your visible audits</span>
         </div>
+        <span className={activeWorkCount > 0 ? "work-count active" : "work-count"}>
+          {activeWorkCount > 0 ? `${activeWorkCount} open item${activeWorkCount === 1 ? "" : "s"}` : "All clear"}
+        </span>
       </div>
-      <div className="todays-work-grid">
-        {queues.map((queue) => (
-          <article className={`todays-work-queue ${queue.tone}`} key={queue.label}>
-            <div className="queue-heading">
-              <strong>{queue.label}</strong>
-              <span>{queue.items.length}</span>
-            </div>
-            {queue.items.length === 0 ? (
-              <p>No items</p>
-            ) : (
+      {activeQueues.length > 0 ? (
+        <div className="todays-work-grid">
+          {activeQueues.map((queue) => (
+            <article className={`todays-work-queue ${queue.tone}`} key={queue.label}>
+              <div className="queue-heading">
+                <strong>{queue.label}</strong>
+                <span>{queue.items.length}</span>
+              </div>
               <div className="queue-list">
                 {queue.items.slice(0, 4).map((project) => {
                   const due = dueLabel(project);
@@ -7240,10 +7249,23 @@ function TodaysWork({
                   );
                 })}
               </div>
-            )}
-          </article>
-        ))}
-      </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="todays-work-empty">
+          <strong>No urgent audit items.</strong>
+          <span>Use the audit table or global search to open a specific audit.</span>
+        </div>
+      )}
+      {clearQueues.length > 0 && (
+        <div className="queue-clear-row" aria-label="Clear audit queues">
+          <span>Clear</span>
+          {clearQueues.map((queue) => (
+            <strong key={queue.clearLabel}>{queue.clearLabel}</strong>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
