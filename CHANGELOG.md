@@ -97,6 +97,8 @@ other sensitive configuration values.
   wording, blocker chips on each audit, and access reasons in Admin user previews.
 - Simplified Today's work so empty queues collapse into clear-status chips and
   only queues with active audit work render as cards.
+- Consolidated the redundant Dashboard and Assignments areas into one Audits
+  workspace, with Today's work shown above the audit filters and board/table.
 
 ### Verified
 

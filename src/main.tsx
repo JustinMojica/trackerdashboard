@@ -230,7 +230,6 @@ type FilterPreset = {
 
 type ViewMode = "kanban" | "table";
 type AppSection =
-  | "dashboard"
   | "assignments"
   | "scheduling"
   | "command"
@@ -1022,8 +1021,7 @@ function visibleProjectMessage(user: PrototypeUser) {
 
 function visibleAppSectionsForUser(user: PrototypeUser) {
   const sections = [
-    "Dashboard",
-    "Assignments",
+    "Audits",
     "Scheduling",
     "Command center",
     "Reports",
@@ -3194,7 +3192,7 @@ function App() {
   const [filters, setFilters] = useState<Filters>(defaultFilters);
   const [message, setMessage] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
-  const [activeSection, setActiveSection] = useState<AppSection>("dashboard");
+  const [activeSection, setActiveSection] = useState<AppSection>("assignments");
   const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>("users");
   const [durationRange, setDurationRange] = useState<DurationRange>("ytd");
   const [lastExportedAt, setLastExportedAt] = useState(
@@ -3280,10 +3278,10 @@ function App() {
 
   useEffect(() => {
     if (activeSection === "admin" && signedInUser?.role !== "Admin") {
-      setActiveSection("dashboard");
+      setActiveSection("assignments");
     }
     if (activeSection === "archive" && signedInUser && !hasFullProjectAccess(signedInUser)) {
-      setActiveSection("dashboard");
+      setActiveSection("assignments");
     }
   }, [activeSection, signedInUser?.role]);
 
@@ -4257,49 +4255,9 @@ function App() {
         pendingRequestCount={pendingAccessRequests.length}
       />
 
-      {activeSection === "dashboard" && (
-        <>
-          <Dashboard projects={activeVisibleProjects} />
-          <TodaysWork projects={activeVisibleProjects} onSelect={(id) => {
-            setSelectedId(id);
-            setActiveSection("assignments");
-          }} />
-          <WorkloadCounts
-            projects={activeVisibleProjects}
-            auditors={auditors}
-            hiddenAuditors={effectiveHiddenWorkloadAuditors}
-            toggleAuditorHidden={(auditor) => {
-              const isZeroLoad = zeroLoadAuditors.includes(auditor);
-              if (effectiveHiddenWorkloadAuditors.includes(auditor)) {
-                setHiddenWorkloadAuditors((current) =>
-                  current.filter((item) => item !== auditor),
-                );
-                if (isZeroLoad) {
-                  setShownZeroLoadAuditors((current) =>
-                    current.includes(auditor) ? current : [...current, auditor],
-                  );
-                }
-                return;
-              }
-              setHiddenWorkloadAuditors((current) =>
-                current.includes(auditor) ? current : [...current, auditor],
-              );
-              if (isZeroLoad) {
-                setShownZeroLoadAuditors((current) =>
-                  current.filter((item) => item !== auditor),
-                );
-              }
-            }}
-            showAllAuditors={() => {
-              setHiddenWorkloadAuditors([]);
-              setShownZeroLoadAuditors(zeroLoadAuditors);
-            }}
-          />
-        </>
-      )}
-
       {activeSection === "assignments" && (
         <>
+          <TodaysWork projects={activeVisibleProjects} onSelect={setSelectedId} />
           <FiltersPanel
             filters={filters}
             setFilters={setFilters}
@@ -4865,15 +4823,9 @@ function AppNavigation({
 }) {
   const items: { id: AppSection; label: string; helper: string; count?: number }[] = [
     {
-      id: "dashboard",
-      label: "Dashboard",
-      helper: "Daily workload, due items, and auditor capacity.",
-      count: activeCount,
-    },
-    {
       id: "assignments",
-      label: "Assignments",
-      helper: "Working board, filters, audit detail, and intake/edit forms.",
+      label: "Audits",
+      helper: "Daily work, filters, audit board, audit detail, and intake/edit forms.",
       count: activeCount,
     },
     {
@@ -6349,47 +6301,6 @@ function secureUserToPrototypeUserPlaceholder(): PrototypeUser {
     approvedBy: "",
     rejectionReason: "",
   };
-}
-
-function Dashboard({ projects }: { projects: AuditProject[] }) {
-  const overdue = projects.filter(
-    (project) => daysUntil(project.dueDate) < 0,
-  ).length;
-  const dueSoon = projects.filter(
-    (project) =>
-      daysUntil(project.dueDate) >= 0 && daysUntil(project.dueDate) <= 3,
-  ).length;
-  const blocked = projects.filter(
-    (project) =>
-      computedBlockers(project).length > 0 ||
-      project.assignmentStatus === "Blocked",
-  ).length;
-  const attentionLabel = topAttentionSummary(projects);
-  const quoteValue = projects.reduce(
-    (sum, project) => sum + project.quoteAmount,
-    0,
-  );
-  return (
-    <section className="summary-grid" aria-label="Audit dashboard summary">
-      <SummaryCard
-        label="Open audits"
-        value={
-          projects.filter((project) => project.currentStage !== "Closed").length
-        }
-      />
-      <SummaryCard label={attentionLabel} value={blocked} tone="danger" />
-      <SummaryCard label="Overdue" value={overdue} tone="danger" />
-      <SummaryCard label="Due in 3 days" value={dueSoon} tone="warning" />
-      <SummaryCard
-        label="Pipeline value"
-        value={quoteValue.toLocaleString("en-US", {
-          style: "currency",
-          currency: "USD",
-          maximumFractionDigits: 0,
-        })}
-      />
-    </section>
-  );
 }
 
 function SchedulingCapacity({

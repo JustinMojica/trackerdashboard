@@ -266,8 +266,8 @@ Important operational requirement:
 - Admin user management for approved Microsoft accounts.
 - Role-based visibility: Admin, Audit Manager, Auditor, Finance, Read Only.
 - Guided audit intake with required-field checks.
-- Assignment dashboard, Today queue, workload, cycle-time reporting, filters, Kanban/table views.
-- Focused app navigation for Dashboard, Assignments, Command Center, Reports, and Admin.
+- Audits workspace with Today queue, filters, Kanban/table views, and audit detail.
+- Focused app navigation for Audits, Scheduling, Command Center, Reports, Archive, and Admin.
 - Audit archive/restore so completed work can leave active views without being deleted.
 - Operating system command center for workflow gates, attention items, role consoles, draft queue, and AI-ready assistant brief.
 - Per-audit workflow controls for stage gates, workspace folder planning, and communication draft review.
