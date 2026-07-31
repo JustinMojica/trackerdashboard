@@ -1,6 +1,6 @@
 # Changelog
 
-This log tracks practical production changes to the Audit Assignment Tracker.
+This log tracks practical production changes to MosaicAuditTracker.
 It intentionally excludes secrets, publish-profile values, client secrets, and
 other sensitive configuration values.
 
@@ -101,6 +101,8 @@ other sensitive configuration values.
   workspace, with Today's work shown above the audit filters and board/table.
 - Converted the audit detail attention and finance panels into collapsed
   dropdown sections with status summaries to reduce visual clutter.
+- Renamed the public website and product label to MosaicAuditTracker across the
+  browser title, app shell, sign-in screen, README, and access emails.
 
 ### Verified
 

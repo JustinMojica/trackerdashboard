@@ -1195,11 +1195,11 @@ async function validateIdToken(idToken, nonce) {
 }
 
 async function sendVerificationEmail(user, code) {
-  const subject = "Audit Assignment Tracker verification code";
+  const subject = "MosaicAuditTracker verification code";
   const body = [
     `Hello ${user.fullName},`,
     "",
-    "Use this verification code to finish your Audit Assignment Tracker access request:",
+    "Use this verification code to finish your MosaicAuditTracker access request:",
     "",
     code,
     "",
@@ -1212,7 +1212,7 @@ async function sendAdminNotification(user) {
   if (config.adminEmails.length === 0) return;
   await sendGraphMail(
     config.adminEmails,
-    "Tracker account request ready for approval",
+    "MosaicAuditTracker account request ready for approval",
     `${user.fullName} (${user.email}) confirmed their email and is waiting for admin approval.`,
   );
 }
@@ -1286,7 +1286,7 @@ async function createOutlookEventForProject(user, project, startDate, options = 
         emailAddress: { address: email },
         type: "required",
       })),
-    categories: ["Audit Assignment Tracker"],
+    categories: ["MosaicAuditTracker"],
     isReminderOn: true,
     reminderMinutesBeforeStart: 1440,
   };

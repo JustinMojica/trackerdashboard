@@ -4200,7 +4200,7 @@ function App() {
           <img src={mosaicLogoUrl} alt="Mosaic International Insurance Professionals" />
           <div>
             <p className="eyebrow">Signed in: {signedInUser.role}</p>
-            <h1>Audit Assignment Tracker</h1>
+            <h1>MosaicAuditTracker</h1>
             <p>
               Intake, document readiness, workload, client contacts, and close-out
               in one operating view.
@@ -4521,7 +4521,7 @@ function LoginScreen({
       <section className="microsoft-login-stack">
         <div className="login-company-brand">
           <img src={mosaicLogoUrl} alt="Mosaic International Insurance Professionals" />
-          <span>Audit Assignment Tracker</span>
+          <span>MosaicAuditTracker</span>
         </div>
         <div className="microsoft-login-card">
           <div className="microsoft-brand">
@@ -4533,7 +4533,7 @@ function LoginScreen({
             </span>
             <strong>Microsoft</strong>
           </div>
-          <h1>Audit Assignment Tracker</h1>
+          <h1>MosaicAuditTracker</h1>
           <p className="microsoft-login-copy">
             Secure access uses your company Microsoft account. If you are new or
             unapproved, start with account approval before trying normal sign-in.
