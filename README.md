@@ -1,4 +1,4 @@
-# MosaicAuditTracker
+# Mosaic Audit Tracker
 
 Secure React and Node tracker for audit assignments from intake through report, invoice, and close-out.
 
